@@ -1,0 +1,98 @@
+@base = http://127.0.0.1:8791
+@token = testtoken123
+
+### Health (no auth)
+GET {{base}}/health
+
+### Machine + monitors + desktop state
+GET {{base}}/machine
+Authorization: Bearer {{token}}
+
+### Which desktop currently owns input
+GET {{base}}/desktop/state
+Authorization: Bearer {{token}}
+
+### Foreground window (copy its "ref" into the calls below)
+GET {{base}}/foreground
+Authorization: Bearer {{token}}
+
+### Focused element
+GET {{base}}/focused
+Authorization: Bearer {{token}}
+
+### Tree from the desktop root, 2 levels deep
+POST {{base}}/uia/tree
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "depth": 2, "maxChildren": 20 }
+
+### Find buttons anywhere
+POST {{base}}/uia/find
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "controlType": "Button", "max": 10 }
+
+### Invoke an element (replace ref)
+POST {{base}}/uia/invoke
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "reference": "el_REPLACE_ME" }
+
+### Set a text box value (replace ref)
+POST {{base}}/uia/set-value
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "reference": "el_REPLACE_ME", "text": "hello" }
+
+### Capture primary-ish monitor 1 as JSON+base64
+POST {{base}}/capture/screen
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "monitor": 1, "format": "png" }
+
+### Capture whole virtual desktop as raw PNG bytes
+POST {{base}}/capture/screen?raw=true
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### Capture a region as JPEG
+POST {{base}}/capture/region
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "x": 0, "y": 0, "width": 400, "height": 300, "format": "jpeg", "quality": 70 }
+
+### Move the mouse
+POST {{base}}/mouse/move
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "x": 960, "y": 540 }
+
+### Click left button at a point
+POST {{base}}/mouse/click
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "button": "left", "x": 960, "y": 540, "count": 1 }
+
+### Type text
+POST {{base}}/keyboard/type
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "text": "Hello from Deskhand" }
+
+### Send a chord
+POST {{base}}/keyboard/keys
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "chord": "ctrl+a" }

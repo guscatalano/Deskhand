@@ -1,0 +1,210 @@
+# Deskhand — local HTTP automation server
+
+A **localhost-only HTTP server** that exposes Windows **UI Automation**, **screen capture**, and
+**synthetic input** for the machine it runs on. It is the HTTP surface of the Deskhand design
+(see `Deskhand.html` for the full architecture doc). Built on **.NET 9 + FlaUI (UIA3)**.
+
+This is the **Phase 1** deliverable: the single-machine, in-session **Default desktop** path.
+The secure desktop (UAC / lock / logon) is *reported* by `/desktop/state` but driving it requires
+the SYSTEM "Secure Helper" (Phase 2), which is not in this build.
+
+## Layout
+
+```
+Deskhand.slnx
+src/
+  Deskhand.Core/          # backend: IAutomationBackend + LocalAutomationBackend
+    Services/             #   UiaService (FlaUI), ScreenCapture (GDI), InputInjector (SendInput),
+                          #   DesktopInfo, SecureCapture (input-desktop attach — Phase 2)
+    Elements/             #   ElementRegistry — opaque refs + re-resolution recipe
+    Interop/              #   P/Invoke (SendInput, PrintWindow, monitors, desktop attach, DPI)
+    StaExecutor.cs        #   single STA thread that serializes all COM/UIA work
+  Deskhand.Http/          # ASP.NET Core minimal API + web dashboard (wwwroot/index.html)
+  Deskhand.Mcp/           # MCP server (stdio) — same IAutomationBackend, exposed as MCP tools
+  Deskhand.SecureHelper/  # Phase 2: runs as SYSTEM in the console session to capture the secure desktop
+  Deskhand.Broker/        # Phase 2: elevated launcher that starts the Secure Helper as SYSTEM
+```
+
+Both hosts — **HTTP** (`Deskhand.Http`) and **MCP** (`Deskhand.Mcp`) — are thin shells over the
+same `IAutomationBackend`, so they expose identical capabilities.
+
+The whole surface routes through `IAutomationBackend`, so a future gRPC **fleet-agent** backend or a
+protocol-level **RDP** backend can implement the same contract without changing the HTTP layer.
+
+## Build & run
+
+```powershell
+dotnet build Deskhand.slnx -c Release
+
+# optional: pin a token and port (otherwise a random token is generated and printed)
+$env:DESKHAND_TOKEN = "your-secret"
+$env:DESKHAND_PORT  = "8791"          # default 8791
+
+dotnet run --project src/Deskhand.Http -c Release
+```
+
+On start it prints the URL. **Just open it in a browser** — no token needed.
+
+## Web dashboard
+
+Open **http://127.0.0.1:8791** in any browser. The single-page console lets you:
+
+- see live machine / desktop / monitor status (auto-refreshing);
+- capture a monitor (or the whole virtual desktop) and click the screenshot to read desktop
+  coordinates — or, in *control mode*, to move/click there for real;
+- explore the UIA tree (foreground / focused / desktop root, lazy-expand), and per element
+  **Invoke / Focus / Capture / Highlight** it on the screenshot;
+- drive mouse and keyboard from the Input panel;
+- watch an activity log of every request.
+
+The dashboard talks to the API same-origin, so it needs no token.
+
+## Security
+
+No bearer token is required for the browser dashboard. The server is protected by:
+
+- **Loopback only** — Kestrel binds `127.0.0.1` / `::1`; no external interface is ever exposed.
+- **Host check** — non-loopback `Host` headers are rejected (DNS-rebinding defense).
+- **Cross-site block** — any request whose `Origin` isn't this server is rejected `403`, so other
+  web pages in your browser cannot reach it. No CORS headers are emitted.
+- **Optional token** — set `DESKHAND_TOKEN` to require `Authorization: Bearer <token>` from
+  *non-browser* clients (curl / scripts). The same-origin dashboard still needs none.
+- **No stealth** — input is honest `SendInput`; there is no anti-detection behavior.
+- Run **unelevated** to automate normal apps. Elevated / secure-desktop targets are refused with a
+  clear error (UIPI / secure desktop), by design.
+
+## Endpoints
+
+All bodies and responses are JSON (camelCase). `reference` values (`el_…`) come from any read call.
+
+| Method & path | Body | Purpose |
+|---|---|---|
+| `GET /health` | — | Liveness (no auth) |
+| `GET /machine` | — | Machine, monitors, virtual screen, desktop state |
+| `GET /desktop/state` | — | `default` / `secure` / `screensaver` + input availability |
+| `GET /control` | — | Kill-switch / capability state + audit directory |
+| `POST /control` | `{armed?, inputEnabled?, captureEnabled?}` | Arm/disarm; toggle input/capture |
+| `GET /foreground` | — | Foreground window element |
+| `GET /focused` | — | Focused element |
+| `GET /windows` | — | All top-level windows (the reliable way to enter a specific app) |
+| `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |
+| `POST /uia/find` | `{rootRef?, name?, automationId?, controlType?, className?, scope?, max?}` | Query elements |
+| `GET /uia/element/{ref}` | — | Re-read one element |
+| `GET /uia/element/{ref}/properties` | — | **Every** UIA property of an element (name → value) |
+| `POST /uia/invoke` | `{reference}` | Invoke pattern (click a button, etc.) |
+| `POST /uia/set-value` | `{reference, text}` | Set a value (text boxes) |
+| `POST /uia/toggle` | `{reference}` | Toggle a checkbox/switch |
+| `POST /uia/expand-collapse` | `{reference, expand}` | Expand/collapse a tree item |
+| `POST /uia/select` | `{reference}` | Select a list/tab item |
+| `POST /uia/set-focus` | `{reference}` | Focus an element |
+| `POST /capture/screen` | `{monitor?, format?, quality?}` | Whole virtual desktop, or one monitor |
+| `POST /capture/region` | `{x, y, width, height, format?, quality?}` | Arbitrary rectangle |
+| `POST /capture/window` | `{reference? \| hwnd?, format?, quality?}` | One window (PrintWindow) |
+| `POST /capture/element` | `{reference, format?, quality?}` | One element's bounds |
+| `POST /capture/input-desktop` | `{format?, quality?}` | **Phase 2** — the desktop currently owning input (secure desktop when run as SYSTEM) |
+| `POST /mouse/move` | `{x, y}` | Move cursor (virtual-desktop pixels) |
+| `POST /mouse/click` | `{button?, x?, y?, count?}` | Click (`left`/`right`/`middle`) |
+| `POST /mouse/down` · `/mouse/up` | `{button?, x?, y?}` | Press / release |
+| `POST /mouse/scroll` | `{dx, dy}` | Wheel notches (dy up+, dx right+) |
+| `POST /keyboard/type` | `{text}` | Type a literal string (Unicode) |
+| `POST /keyboard/keys` | `{chord}` | Chord, e.g. `"ctrl+shift+s"`, `"alt+F4"`, `"enter"` |
+
+**Capture responses** default to JSON `{desktop, rect, monitor, dpiScale, format, imageBase64}`.
+Add `?raw=true` (or send `Accept: image/png`) to get raw image bytes instead.
+
+`format` is `png` (default) or `jpeg`; `quality` (1–100) applies to JPEG.
+
+## Governance & safety (Phase 3)
+
+Both hosts wrap the backend in a `GovernedBackend`, so a single seam enforces safety and records
+history for HTTP and MCP alike:
+
+- **Audit log** — every action (reads, input, capture, refusals) is written as a JSON line to
+  `%LOCALAPPDATA%\Deskhand\audit\audit-YYYYMMDD.jsonl`, with timestamp, user, action, detail, and a
+  content hash for captures.
+- **Kill switch** — `Armed` is the master switch; disarmed, all input and capture are refused
+  (`403 disarmed`) while read-only introspection still works. Toggle it from the dashboard, the
+  `POST /control` endpoint, the MCP tools `deskhand_disarm` / `deskhand_arm`, or the global hotkey
+  **Ctrl+Alt+Pause**.
+- **Capability gates** — disable input or capture independently (dashboard switches, `/control`, or
+  env at startup: `DESKHAND_DISABLE_INPUT`, `DESKHAND_DISABLE_CAPTURE`, `DESKHAND_START_DISARMED`).
+- **Screenshot toast** — an on-screen toast pops up in the bottom-right corner **every time a
+  screenshot is taken**, so the user always knows their screen was captured. On by default; toggle
+  via the dashboard Safety panel, `POST /control {notifyOnCapture}`, or `DESKHAND_DISABLE_CAPTURE_TOAST`.
+
+The dashboard shows armed state in the top bar and a **Safety** panel (Screen & Input tab) with the
+switches and the audit-log path. The Explorer also has a **↻ Refresh** button that reloads the current
+tree and keeps your selection, for when the app under inspection changes.
+
+## MCP server
+
+`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (25 tools:
+`deskhand_list_windows`, `deskhand_get_tree`, `deskhand_get_all_properties`, `deskhand_invoke`,
+`deskhand_capture_window`, `deskhand_mouse_click`, …). Screenshots are returned as real MCP image
+content, so a model sees them directly.
+
+```powershell
+dotnet build src/Deskhand.Mcp -c Release
+```
+
+Register it with an MCP client (e.g. Claude Desktop / Claude Code) — `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "deskhand": {
+      "command": "C:\\Users\\crimson\\source\\repos\\uia_mcp\\src\\Deskhand.Mcp\\bin\\x64\\Release\\net9.0-windows10.0.19041.0\\deskhand-mcp.exe"
+    }
+  }
+}
+```
+
+The MCP server runs in your user session and covers the Default desktop, exactly like the HTTP one.
+
+## Phase 2 — secure desktop (UAC / lock / logon)
+
+The HTTP server runs in your user session and covers the **Default** desktop. The **secure
+desktop** (`Winsta0\Winlogon`) — where UAC prompts, the lock screen, and the logon UI live —
+can only be captured by a process running as **SYSTEM inside the console session**. Three pieces
+implement this:
+
+1. **`SecureCapture`** (in Core) — the primitive: attach a throwaway thread to whichever desktop
+   currently owns input (`OpenInputDesktop` + `SetThreadDesktop`) and GDI-capture it. As a normal
+   user this captures Default; as SYSTEM it also captures the secure desktop (WGC/DXGI cannot).
+   Exposed at `POST /capture/input-desktop` and in the dashboard's **Secure desktop** panel.
+2. **`deskhand-secure`** (Secure Helper) — a standalone exe that runs the primitive:
+   ```
+   deskhand-secure capture C:\temp\shot.png
+   ```
+   Run as a normal user it saves the Default desktop (proves the mechanism). Run **as SYSTEM in
+   the console session** it saves the secure desktop.
+3. **`deskhand-broker`** (Broker) — the elevated launcher that starts the Secure Helper as SYSTEM
+   by borrowing winlogon's token:
+   ```
+   deskhand-broker deskhand-secure.exe capture C:\temp\secure.png     (run elevated)
+   ```
+
+**To capture the secure desktop right now**, either run the Broker elevated (above), or use
+Sysinternals PsExec: `psexec -s -i <consoleSessionId> deskhand-secure.exe capture C:\temp\secure.png`
+(`query session` shows the id). To actually see secure content, trigger a UAC prompt or lock the
+workstation while the SYSTEM helper runs.
+
+> **Tested vs. not:** the capture primitive, the Secure Helper, and `/capture/input-desktop` were
+> verified capturing the Default desktop. The Broker's SYSTEM-launch path needs elevation +
+> `SeDebugPrivilege` and was **not exercised in the build sandbox** — run it on a real elevated
+> console. Driving *input* on the secure desktop (clicking the UAC button) additionally requires a
+> signed `uiAccess` binary and admin policy, and is not enabled here — capture is the reliable part.
+
+## Notes & limits
+
+- **Coordinates** are physical pixels on the virtual desktop; the process is Per-Monitor-v2 DPI aware.
+- **Element refs** are volatile UIA handles; a stale ref is re-resolved from a stored selector recipe,
+  and returns `404 stale_element` if it truly cannot be found — re-query the tree.
+- **Chromium/Electron** apps may expose thin UIA trees; launch with `--force-renderer-accessibility`
+  or fall back to capture + coordinate input.
+- **Window capture** (`/capture/window`, `deskhand_capture_window`) uses **Windows.Graphics.Capture**,
+  which faithfully captures GPU/DWM-accelerated apps (Chrome, Firefox, Electron) even when the window
+  is **unfocused or occluded — without raising it**. It falls back to `PrintWindow` when WGC is
+  unavailable (pre-1903). Screen/region/element capture use GDI `CopyFromScreen`.
+
+See `Deskhand.http` for ready-to-run sample requests.

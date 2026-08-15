@@ -1,0 +1,683 @@
+<title>Deskhand</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #F1F4F7;
+    --surface: #FFFFFF;
+    --surface-2: #E7ECF1;
+    --surface-3: #DCE3EA;
+    --ink: #10161D;
+    --ink-2: #45515F;
+    --ink-3: #6C7885;
+    --line: #CFD8E0;
+    --line-2: #E2E8EE;
+    --accent: #0C7F86;
+    --accent-soft: #D6ECEC;
+    --action: #B44311;
+    --action-soft: #F4E0D3;
+    --good: #197C50;
+    --warn: #9A5A08;
+    --crit: #AE2A1C;
+    --shadow: 0 1px 2px rgba(16,22,29,.06), 0 8px 24px rgba(16,22,29,.06);
+    --mono: "Cascadia Code", "Cascadia Mono", "SFMono-Regular", "Consolas", ui-monospace, monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0A0E12;
+      --surface: #10161C;
+      --surface-2: #171F27;
+      --surface-3: #1E2831;
+      --ink: #E8EDF2;
+      --ink-2: #A6B2BE;
+      --ink-3: #76828F;
+      --line: #232E38;
+      --line-2: #1A232B;
+      --accent: #24BABF;
+      --accent-soft: #12312F;
+      --action: #EB824B;
+      --action-soft: #2E1D12;
+      --good: #37B87F;
+      --warn: #D79A3E;
+      --crit: #EF7A6C;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A0E12;
+    --surface: #10161C;
+    --surface-2: #171F27;
+    --surface-3: #1E2831;
+    --ink: #E8EDF2;
+    --ink-2: #A6B2BE;
+    --ink-3: #76828F;
+    --line: #232E38;
+    --line-2: #1A232B;
+    --accent: #24BABF;
+    --accent-soft: #12312F;
+    --action: #EB824B;
+    --action-soft: #2E1D12;
+    --good: #37B87F;
+    --warn: #D79A3E;
+    --crit: #EF7A6C;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 17px; line-height: 1.62;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 14px;
+    padding: 11px clamp(16px, 5vw, 40px);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .brand b { font-weight: 700; letter-spacing: .18em; }
+  .topbar .spacer { flex: 1; }
+  .topbar .meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); letter-spacing: .04em; }
+  .toggle { font-family: var(--mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); padding: 6px 11px; border-radius: 7px; cursor: pointer; }
+  .toggle:hover { color: var(--ink); border-color: var(--accent); }
+  .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  main { max-width: 1120px; margin: 0 auto; padding: 0 clamp(16px, 5vw, 40px) 120px; }
+  .col { max-width: 760px; }
+
+  .hero { padding: clamp(48px, 8vw, 92px) 0 36px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin: 0 0 20px; }
+  h1 { font-size: clamp(38px, 7vw, 74px); line-height: .98; letter-spacing: -.03em; font-weight: 800; margin: 0; text-wrap: balance; }
+  h1 .thin { font-weight: 300; color: var(--ink-2); }
+  .lede { font-size: clamp(19px, 2.4vw, 23px); line-height: 1.5; color: var(--ink-2); max-width: 660px; margin: 26px 0 0; text-wrap: pretty; }
+  .lede b { color: var(--ink); font-weight: 650; }
+
+  .spec { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 40px 0 8px; }
+  .spec > div { background: var(--surface); padding: 15px 17px; }
+  .spec dt { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 6px; }
+  .spec dd { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .spec dd small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12.5px; letter-spacing: 0; margin-top: 2px; }
+
+  section { padding-top: 66px; scroll-margin-top: 70px; }
+  .kicker { display: flex; align-items: baseline; gap: 14px; margin: 0 0 8px; }
+  .kicker .num { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
+  .kicker .rule { flex: 1; height: 1px; background: var(--line); align-self: center; }
+  h2 { font-size: clamp(26px, 3.6vw, 34px); line-height: 1.12; letter-spacing: -.022em; font-weight: 750; margin: 0 0 22px; text-wrap: balance; }
+  h3 { font-size: 18.5px; letter-spacing: -.01em; font-weight: 700; margin: 34px 0 10px; }
+  p { margin: 0 0 16px; }
+  p a, li a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  p a:hover { border-bottom-color: var(--accent); }
+  strong { font-weight: 680; }
+  .col ul, .col ol { padding-left: 0; margin: 0 0 16px; list-style: none; }
+  .col ul li, .col ol li { position: relative; padding-left: 26px; margin-bottom: 9px; }
+  .col ul li::before { content: ""; position: absolute; left: 6px; top: .68em; width: 6px; height: 6px; border-radius: 1px; background: var(--accent); transform: rotate(45deg); }
+  .col ol { counter-reset: li; }
+  .col ol li { counter-increment: li; }
+  .col ol li::before { content: counter(li); position: absolute; left: 0; top: 0; font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent); }
+  code { font-family: var(--mono); font-size: .87em; background: var(--surface-2); padding: .12em .4em; border-radius: 5px; border: 1px solid var(--line-2); }
+  .lead-line { color: var(--ink-2); }
+
+  .note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 22px 0; font-size: 15.5px; box-shadow: var(--shadow); }
+  .note.limit { border-left-color: var(--crit); }
+  .note.warn { border-left-color: var(--warn); }
+  .note.ok { border-left-color: var(--good); }
+  .note .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 6px; }
+  .note.limit .lbl { color: var(--crit); }
+  .note.warn .lbl { color: var(--warn); }
+  .note.ok .lbl { color: var(--good); }
+  .note p:last-child { margin-bottom: 0; }
+
+  figure { margin: 34px 0; }
+  .figwrap { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px clamp(16px, 3vw, 30px) 18px; box-shadow: var(--shadow); overflow-x: auto; }
+  figure svg { display: block; width: 100%; height: auto; color: var(--ink-2); }
+  figcaption { font-size: 13.5px; color: var(--ink-3); margin-top: 14px; max-width: 720px; line-height: 1.5; }
+  figcaption b { color: var(--ink-2); font-weight: 650; }
+
+  .n-fill { fill: var(--surface-2); }
+  .n-fill-2 { fill: var(--surface-3); }
+  .n-stroke { stroke: var(--line); }
+  .n-line { stroke: var(--ink-3); }
+  .t { fill: var(--ink); font-family: var(--sans); }
+  .t-mono { fill: var(--ink-2); font-family: var(--mono); }
+  .t-mut { fill: var(--ink-3); font-family: var(--mono); }
+  .ac-fill { fill: var(--accent); }
+  .ac-fill-soft { fill: var(--accent-soft); }
+  .ac-stroke { stroke: var(--accent); }
+  .ac-t { fill: var(--accent); font-family: var(--mono); }
+  .act-fill { fill: var(--action); }
+  .act-stroke { stroke: var(--action); }
+  .act-t { fill: var(--action); font-family: var(--mono); }
+  .crit-stroke { stroke: var(--crit); }
+  .crit-fill-soft { fill: color-mix(in srgb, var(--crit) 12%, transparent); }
+  .crit-t { fill: var(--crit); font-family: var(--mono); }
+  .dash { stroke-dasharray: 5 4; }
+
+  .tablewrap { overflow-x: auto; margin: 24px 0; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; background: var(--surface); min-width: 560px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  thead th { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { background: var(--surface-2); }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+  .tag.read { color: var(--accent); background: var(--accent-soft); }
+  .tag.act { color: var(--action); background: var(--action-soft); }
+  .tag.cap { color: var(--good); background: color-mix(in srgb, var(--good) 15%, transparent); }
+  .tag.agent { color: var(--accent); background: var(--accent-soft); }
+  .tag.portable { color: var(--good); background: color-mix(in srgb, var(--good) 15%, transparent); }
+  .tag.gated { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+
+  .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 24px 0; }
+  .toolcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .toolcard h4 { margin: 0 0 6px; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); display: flex; align-items: center; gap: 8px; }
+  .toolcard h4::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--accent); flex: none; }
+  .toolcard.act h4::before { background: var(--action); }
+  .toolcard .scope { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-3); margin: 0 0 11px; }
+  .toolcard ul { margin: 0; padding: 0; list-style: none; }
+  .toolcard li { padding: 0; margin-bottom: 7px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); }
+  .toolcard li::before { display: none; }
+  .toolcard li span { color: var(--ink-3); }
+
+  .phases { display: flex; flex-direction: column; gap: 0; margin: 24px 0; border-left: 2px solid var(--line); }
+  .phase { position: relative; padding: 4px 0 26px 28px; }
+  .phase::before { content: ""; position: absolute; left: -7px; top: 8px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); }
+  .phase.future::before { border-color: var(--ink-3); }
+  .phase:last-child { padding-bottom: 0; }
+  .phase .pnum { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .phase.future .pnum { color: var(--ink-3); }
+  .phase h4 { margin: 3px 0 6px; font-size: 17px; font-weight: 700; }
+  .phase p { margin: 0; font-size: 15px; color: var(--ink-2); }
+
+  footer { border-top: 1px solid var(--line); margin-top: 90px; padding-top: 26px; font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: .03em; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+
+  @media (max-width: 620px) { body { font-size: 16px; } .topbar .meta { display: none; } }
+</style>
+
+<div class="topbar">
+  <span class="brand"><span class="dot"></span><b>Deskhand</b></span>
+  <span class="spacer"></span>
+  <span class="meta">DESIGN&nbsp;·&nbsp;v0.2 &nbsp;·&nbsp; 2026-08-14</span>
+  <button class="toggle" id="themeBtn" aria-label="Toggle color theme">Theme</button>
+</div>
+
+<main>
+  <header class="hero">
+    <p class="eyebrow">Technical design · MCP server for Windows desktop automation</p>
+    <h1>Read and drive<br>one machine's<br><span class="thin">every desktop.</span></h1>
+    <p class="lede">Deskhand is an <b>MCP server</b> that exposes UI Automation, screen capture, and synthetic input for a <b>single Windows machine</b> — covering <b>both the normal desktop and the secure desktop</b> (UAC, lock, and logon). Built on <b>.NET&nbsp;8 and FlaUI</b>, with a backend seam left open so a fleet — and later an <b>RDP</b> — server can reuse the same tool surface. No code written yet; this is the design.</p>
+
+    <dl class="spec">
+      <div><dt>Primary target</dt><dd>Single machine<small>local, both desktops</small></dd></div>
+      <div><dt>Desktops covered</dt><dd>Default + Secure<small>Winsta0\Default · Winlogon</small></dd></div>
+      <div><dt>Runtime</dt><dd>.NET 8 (LTS)<small>FlaUI · UIA3</small></dd></div>
+      <div><dt>Capture</dt><dd>WGC + GDI<small>GDI path for secure desktop</small></dd></div>
+      <div><dt>Input</dt><dd>SendInput<small>uiAccess for secure desktop</small></dd></div>
+      <div><dt>Remote</dt><dd>Kept open<small>agent + RDP backends later</small></dd></div>
+    </dl>
+  </header>
+
+  <div class="col">
+
+  <section id="s1">
+    <div class="kicker"><span class="num">01</span><span class="rule"></span></div>
+    <h2>Scope &amp; priorities</h2>
+    <p>The first deliverable is <strong>one machine, done thoroughly.</strong> A single MCP endpoint exposes three capability families for the local Windows box the model is driving:</p>
+    <ul>
+      <li><strong>UIA introspection &amp; control</strong> — walk the accessibility tree, query elements, and invoke control patterns (Invoke, Value, Toggle, ExpandCollapse, Selection, Scroll, Window…) via FlaUI.</li>
+      <li><strong>Screen capture</strong> — full monitor, single window, or a single element's rectangle, returned as image content with coordinate + DPI metadata.</li>
+      <li><strong>Synthetic input</strong> — mouse move / click / drag / scroll and keyboard typing / chords, injected into the target desktop's real input stream.</li>
+    </ul>
+    <p>Two requirements shape this version specifically, and both are treated as first-class rather than deferred:</p>
+    <ol>
+      <li><strong>Cover the local (Default) desktop <em>and</em> the secure desktop.</strong> Most tools stop at the normal desktop and go blind the moment a UAC prompt, the lock screen, or the logon UI appears. Deskhand follows input onto the secure desktop and keeps seeing — within the honest limits the OS enforces (§05).</li>
+      <li><strong>Keep remote open.</strong> Nothing in the single-machine build may hard-code "local only." The command layer sits behind a backend seam so a networked <em>fleet agent</em> and, later, a protocol-level <em>RDP</em> server can implement the identical tool contract (§08).</li>
+    </ol>
+    <h3>Non-goals for v1</h3>
+    <ul>
+      <li>No fleet routing, no remote transport yet — designed for, not built.</li>
+      <li>No stealth or anti-detection behavior. Deskhand announces its presence; it isn't built to imitate a human to software trying to tell the difference.</li>
+      <li>No defeating OS security gates. Secure-desktop coverage uses the <em>supported</em> SYSTEM + signed-accessibility paths (§05); where Windows denies synthetic input to the consent UI, we surface that, we don't bypass it.</li>
+    </ul>
+  </section>
+
+  <section id="s2">
+    <div class="kicker"><span class="num">02</span><span class="rule"></span></div>
+    <h2>Why .NET and FlaUI</h2>
+    <p>Windows UI Automation is a COM API that lives closest to C++/.NET. <a href="https://github.com/FlaUI/FlaUI">FlaUI</a> is a mature .NET wrapper over UIA2/UIA3 giving typed <code>AutomationElement</code>s and control-pattern objects instead of raw COM interop — the right spine, and the reason not to reinvent the wrapper. Staying on .NET also puts the rest within reach: <code>SendInput</code>, <code>Windows.Graphics.Capture</code>, GDI, and the desktop/window-station APIs (<code>OpenInputDesktop</code>, <code>SetThreadDesktop</code>) are all plain P/Invoke; the <code>ModelContextProtocol</code> C# SDK provides the server plumbing and both transports; and the agent ships as one signed, self-contained executable. Python would fight the platform on every one of these.</p>
+  </section>
+
+  <section id="s3">
+    <div class="kicker"><span class="num">03</span><span class="rule"></span></div>
+    <h2>The desktop model — the thing that shapes everything</h2>
+    <p>The load-bearing facts sit below the "session" most tools stop at. An interactive Windows session contains one <em>window station</em>, <code>Winsta0</code>, which holds several <em>desktop objects</em>. Two matter:</p>
+    <ul>
+      <li><strong><code>Winsta0\Default</code></strong> — the normal desktop, where the user's apps live. This is what everyone automates.</li>
+      <li><strong><code>Winsta0\Winlogon</code></strong> — the <strong>secure desktop</strong>. UAC consent prompts, the lock screen, the logon UI, and Ctrl+Alt+Del all render here.</li>
+    </ul>
+    <p>Only one desktop is the <em>input desktop</em> at any instant, and input flips to <code>Winlogon</code> whenever the system escalates, locks, or logs on. Two rules follow, and together they force the whole process layout:</p>
+    <ul>
+      <li>A user-session process on <code>Default</code> <strong>cannot see or touch</strong> <code>Winlogon</code>. Reaching the secure desktop needs a <strong>SYSTEM</strong> process in the console session that can open that desktop and set its thread to it.</li>
+      <li>Neither of those can run from an isolated Session&nbsp;0 service — since Vista, services there have no interactive desktop at all. The service can only <em>supervise and spawn</em>; the real work happens in processes it launches into the session.</li>
+    </ul>
+
+    <figure>
+      <div class="figwrap">
+        <svg viewBox="0 0 720 372" role="img" aria-label="A broker service in Session 0 spawns a user-token Session Agent onto the Default desktop and a SYSTEM Secure Helper onto the Winlogon secure desktop.">
+          <defs>
+            <marker id="a-ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ac-fill"/></marker>
+            <marker id="a-def" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+          </defs>
+
+          <!-- Session 0 -->
+          <rect x="16" y="18" width="688" height="78" rx="10" class="n-fill n-stroke"/>
+          <text x="30" y="40" class="t-mut" font-size="11" letter-spacing="1.5">SESSION 0 · SERVICES · NO DESKTOP</text>
+          <rect x="30" y="50" width="230" height="38" rx="8" class="ac-fill-soft ac-stroke"/>
+          <text x="145" y="68" text-anchor="middle" class="t" font-size="13" font-weight="700">Broker Service</text>
+          <text x="145" y="83" text-anchor="middle" class="t-mut" font-size="10">LocalSystem · supervises · routes · audits</text>
+
+          <!-- Console session -->
+          <rect x="16" y="128" width="688" height="176" rx="10" class="n-fill n-stroke"/>
+          <text x="30" y="150" class="t-mut" font-size="11" letter-spacing="1.5">CONSOLE SESSION 1 · WINDOW STATION Winsta0</text>
+
+          <!-- Default desktop -->
+          <rect x="30" y="164" width="330" height="126" rx="9" class="n-fill-2 n-stroke"/>
+          <text x="46" y="185" class="ac-t" font-size="11" letter-spacing="1">DESKTOP · Winsta0\Default</text>
+          <rect x="46" y="198" width="150" height="46" rx="8" class="ac-fill-soft ac-stroke"/>
+          <text x="121" y="218" text-anchor="middle" class="t" font-size="12.5" font-weight="700">Session Agent</text>
+          <text x="121" y="233" text-anchor="middle" class="t-mut" font-size="9.5">user token</text>
+          <rect x="210" y="198" width="134" height="46" rx="8" class="n-fill n-stroke"/>
+          <text x="277" y="216" text-anchor="middle" class="t-mono" font-size="10">FlaUI · WGC</text>
+          <text x="277" y="230" text-anchor="middle" class="t-mono" font-size="10">SendInput</text>
+          <text x="46" y="272" class="t-mut" font-size="10">the user's apps &amp; windows</text>
+
+          <!-- Secure desktop -->
+          <rect x="374" y="164" width="316" height="126" rx="9" class="crit-fill-soft crit-stroke"/>
+          <text x="390" y="185" class="crit-t" font-size="11" letter-spacing="1">DESKTOP · Winsta0\Winlogon (secure)</text>
+          <rect x="390" y="198" width="150" height="46" rx="8" class="n-fill n-stroke crit-stroke"/>
+          <text x="465" y="218" text-anchor="middle" class="t" font-size="12.5" font-weight="700">Secure Helper</text>
+          <text x="465" y="233" text-anchor="middle" class="t-mut" font-size="9.5">SYSTEM token</text>
+          <rect x="554" y="198" width="122" height="46" rx="8" class="n-fill n-stroke"/>
+          <text x="615" y="216" text-anchor="middle" class="t-mono" font-size="10">GDI capture</text>
+          <text x="615" y="230" text-anchor="middle" class="act-t" font-size="10">uiAccess in</text>
+          <text x="390" y="272" class="t-mut" font-size="10">UAC · lock · logon · CAD</text>
+
+          <!-- spawn arrows -->
+          <path d="M120 90 C 118 120, 116 150, 118 196" fill="none" class="ac-stroke" stroke-width="1.6" style="marker-end:url(#a-ac)"/>
+          <path d="M200 90 C 340 130, 420 158, 460 196" fill="none" class="ac-stroke" stroke-width="1.6" style="marker-end:url(#a-ac)"/>
+          <text x="70" y="118" class="ac-t" font-size="9.5">CreateProcessAsUser</text>
+          <text x="360" y="128" class="ac-t" font-size="9.5">spawn as SYSTEM</text>
+
+          <!-- input desktop follow -->
+          <rect x="16" y="330" width="688" height="30" rx="8" class="n-fill n-stroke"/>
+          <text x="30" y="349" class="t-mut" font-size="10.5">INPUT DESKTOP follows the active surface — the broker routes each command to whichever helper owns it (§06)</text>
+        </svg>
+      </div>
+      <figcaption><b>One machine, two desktops, three processes.</b> The <b>Broker Service</b> (LocalSystem, Session&nbsp;0) is a supervisor and privilege broker — it spawns the <b>Session Agent</b> (user token) onto <code>Default</code> for normal automation, and the <b>Secure Helper</b> (SYSTEM token) onto <code>Winlogon</code> for the secure desktop. Because only a process actually attached to a desktop can capture or drive it, the coverage is split by desktop, not bolted on.</figcaption>
+    </figure>
+  </section>
+
+  <section id="s4">
+    <div class="kicker"><span class="num">04</span><span class="rule"></span></div>
+    <h2>Covering the local (Default) desktop</h2>
+    <p>This is the main path and where most calls land. The <strong>Session Agent</strong> runs under the logged-in user's token on <code>Winsta0\Default</code> and holds all three engines: FlaUI over UIA3 for the tree and control patterns, <code>Windows.Graphics.Capture</code> for images, and <code>SendInput</code> for mouse and keyboard. It declares <strong>Per-Monitor-v2 DPI awareness</strong> in its manifest so the pixels it reasons about match what capture returns and where input lands — no silent scaling drift across mixed-DPI monitors.</p>
+    <div class="note limit">
+      <span class="lbl">Elevated windows on the Default desktop</span>
+      <p>A medium-integrity Session Agent can't send input to — or fully read — a high-integrity elevated window; that's User Interface Privilege Isolation. To automate elevated apps the agent must itself run elevated, or ship as a signed binary with <code>uiAccess="true"</code> under Program Files. This is distinct from the secure desktop below; an elevated app's <em>window</em> can sit on the Default desktop even though its UAC <em>prompt</em> appeared on the secure one.</p>
+    </div>
+  </section>
+
+  <section id="s5">
+    <div class="kicker"><span class="num">05</span><span class="rule"></span></div>
+    <h2>Covering the secure desktop — honestly</h2>
+    <p>This is the capability most tools skip. It's buildable, but it comes with real gates, and the design's job is to be exact about which parts are reliable and which the OS deliberately restricts.</p>
+    <h3>The mechanism</h3>
+    <p>The <strong>Secure Helper</strong> runs as <strong>SYSTEM inside the console session</strong> (the broker duplicates a suitable SYSTEM token for that session rather than acting from its own Session-0 window station). From there it can <code>OpenInputDesktop</code> / <code>OpenDesktop("Winlogon")</code> and <code>SetThreadDesktop</code> onto the secure desktop, then operate on it:</p>
+    <ul>
+      <li><strong>Capture — reliable.</strong> A SYSTEM thread bound to the secure desktop can <strong>BitBlt the desktop DC</strong> to read its pixels (the UAC prompt, the lock screen, LogonUI). This is why the secure path uses <strong>GDI capture</strong> rather than WGC/DXGI, which are restricted on that desktop. So "take a screenshot during a UAC prompt" returns the actual prompt.</li>
+      <li><strong>Reading the tree — partial.</strong> Some UIA is available for LogonUI/consent elements from a SYSTEM context, but coverage varies by build; capture + coordinates is the dependable fallback for the secure desktop.</li>
+      <li><strong>Input — gated.</strong> Windows specifically hardens the consent UI against synthetic input. The <em>supported</em> way to drive it is a signed <strong>uiAccess accessibility application</strong> installed in a trusted location, and even then admin policy (e.g. the secure-desktop / consent-prompt Group Policy settings) governs whether it's permitted. Deskhand implements that supported path; where policy denies input to the consent button, it reports <code>secure_input_denied</code> and does not attempt to bypass the gate.</li>
+    </ul>
+    <div class="note warn">
+      <span class="lbl">Logon automation — use the right door</span>
+      <p>Typing credentials into the logon screen via synthetic keystrokes is fragile and mostly blocked. For test rigs and kiosks that must log in unattended, the robust, supported mechanism is a <strong>custom Credential Provider</strong> (or configured autologon) — a first-class Windows extension point — not fake keypresses at LogonUI. Deskhand exposes secure-desktop <em>capture and state</em> everywhere; genuine logon <em>automation</em> is steered toward the credential-provider path.</p>
+    </div>
+    <div class="note ok">
+      <span class="lbl">Why this isn't a security bypass</span>
+      <p>Every secure-desktop capability requires SYSTEM (the machine's owner already has that) <em>and</em> a signed accessibility binary <em>and</em> admin-set policy. It grants an administrator automation of a machine they already fully control; it does not let an unprivileged user escalate, and it doesn't defeat any consent gate the administrator hasn't explicitly opened. That's the line, and the design stays on the correct side of it (§13).</p>
+    </div>
+  </section>
+
+  <section id="s6">
+    <div class="kicker"><span class="num">06</span><span class="rule"></span></div>
+    <h2>Following the input desktop</h2>
+    <p>With two desktops covered, the server has to route each command to the process that actually owns the surface in view. The broker tracks the input desktop and exposes its state, so a capture taken mid-UAC returns the prompt and input is refused when nothing can legally receive it.</p>
+
+    <figure>
+      <div class="figwrap">
+        <svg viewBox="0 0 700 220" role="img" aria-label="State machine: input desktop moves between Default, Secure, and Locked; the broker routes to the Session Agent, Secure Helper, or refuses.">
+          <defs>
+            <marker id="s-def" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+          </defs>
+          <!-- states -->
+          <rect x="40" y="80" width="150" height="60" rx="12" class="ac-fill-soft ac-stroke"/>
+          <text x="115" y="105" text-anchor="middle" class="t" font-size="13" font-weight="700">DEFAULT</text>
+          <text x="115" y="124" text-anchor="middle" class="ac-t" font-size="10">→ Session Agent</text>
+
+          <rect x="275" y="30" width="150" height="60" rx="12" class="crit-fill-soft crit-stroke"/>
+          <text x="350" y="55" text-anchor="middle" class="t" font-size="13" font-weight="700">SECURE</text>
+          <text x="350" y="74" text-anchor="middle" class="crit-t" font-size="10">→ Secure Helper</text>
+
+          <rect x="275" y="130" width="150" height="60" rx="12" class="n-fill n-stroke"/>
+          <text x="350" y="155" text-anchor="middle" class="t" font-size="13" font-weight="700">LOCKED</text>
+          <text x="350" y="174" text-anchor="middle" class="t-mut" font-size="10">capture ok · input off</text>
+
+          <rect x="510" y="80" width="150" height="60" rx="12" class="n-fill n-stroke"/>
+          <text x="585" y="102" text-anchor="middle" class="t" font-size="12.5" font-weight="700">result carries</text>
+          <text x="585" y="120" text-anchor="middle" class="t-mono" font-size="10">desktop: "…"</text>
+          <text x="585" y="134" text-anchor="middle" class="t-mut" font-size="9.5">every response</text>
+
+          <!-- transitions -->
+          <path d="M175 84 C 220 55, 250 52, 273 56" fill="none" class="n-line" stroke-width="1.5" style="marker-end:url(#s-def)"/>
+          <text x="205" y="46" text-anchor="middle" class="t-mut" font-size="9.5">UAC / CAD</text>
+          <path d="M300 88 C 260 105, 240 110, 190 116" fill="none" class="n-line" stroke-width="1.5" style="marker-end:url(#s-def)"/>
+          <text x="240" y="132" text-anchor="middle" class="t-mut" font-size="9.5">consent done</text>
+          <path d="M175 128 C 220 150, 250 155, 273 158" fill="none" class="n-line" stroke-width="1.5" style="marker-end:url(#s-def)"/>
+          <text x="205" y="172" text-anchor="middle" class="t-mut" font-size="9.5">Win+L</text>
+          <path d="M350 130 L 350 92" fill="none" class="n-line dash" stroke-width="1.4" style="marker-end:url(#s-def)"/>
+          <text x="392" y="114" text-anchor="middle" class="t-mut" font-size="9.5">unlock</text>
+          <path d="M427 84 C 470 78, 490 80, 508 92" fill="none" class="n-line" stroke-width="1.4" style="marker-end:url(#s-def)"/>
+          <path d="M427 150 C 470 135, 490 128, 508 118" fill="none" class="n-line" stroke-width="1.4" style="marker-end:url(#s-def)"/>
+        </svg>
+      </div>
+      <figcaption><b>Auto-follow &amp; state reporting.</b> The broker watches session/desktop-switch notifications and <code>OpenInputDesktop</code>, routing capture and input to whichever process owns the current surface. Every tool result carries a <code>desktop</code> field (<code>"default"</code> / <code>"secure"</code> / <code>"locked"</code>) so the model always knows which surface it's looking at and acting on.</figcaption>
+    </figure>
+  </section>
+
+  <section id="s7">
+    <div class="kicker"><span class="num">07</span><span class="rule"></span></div>
+    <h2>Single-machine architecture &amp; addressing</h2>
+    <p>On one box the wiring is deliberately small. The MCP host launches the <strong>MCP server as a stdio child</strong>; the server bridges over a local, ACL'd <strong>named pipe</strong> to the <strong>Broker Service</strong>, which routes to the Session Agent or Secure Helper per §06. No network, no certificates, no listening sockets — but the same command objects that a remote transport will carry later.</p>
+    <h3>The element-handle problem</h3>
+    <p>UIA <code>AutomationElement</code>s are live COM references that don't survive the trip to a model, and their <code>RuntimeId</code> is only stable while the element exists. So a tool never returns a raw pointer: it returns an <strong>opaque <code>elementRef</code></strong> that maps, agent-side, to a cached element <em>and</em> a re-resolution recipe — a selector chain of <code>ControlType</code>&nbsp;/&nbsp;<code>AutomationId</code>&nbsp;/&nbsp;<code>Name</code> plus sibling index from a stable root. A stale token re-resolves silently; if that fails, the tool returns a typed <code>stale_element</code> error telling the model to re-query rather than acting on the wrong node. Subtree property reads are batched with a UIA <code>CacheRequest</code> to collapse many cross-process hops into one.</p>
+  </section>
+
+  <section id="s8">
+    <div class="kicker"><span class="num">08</span><span class="rule"></span></div>
+    <h2>Keeping remote open: the backend seam</h2>
+    <p>The single-machine build must not paint us into "local only." The design's insurance is one interface — call it <code>IAutomationBackend</code> — that every command routes through: <code>ReadTree</code>, <code>FindElements</code>, <code>Invoke</code>, <code>SetValue</code>, <code>Capture</code>, <code>Move</code>, <code>Click</code>, <code>Type</code>, and so on. The single-machine broker is simply the first implementation. Two more can slot in behind the identical MCP tool contract without touching it:</p>
+
+    <figure>
+      <div class="figwrap">
+        <svg viewBox="0 0 720 236" role="img" aria-label="One MCP tool contract over an automation-backend interface with three implementations: local broker, fleet agent, and RDP protocol; UIA is marked agent-only.">
+          <defs>
+            <marker id="b-def" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+          </defs>
+          <!-- contract -->
+          <rect x="200" y="18" width="320" height="46" rx="10" class="ac-fill-soft ac-stroke"/>
+          <text x="360" y="39" text-anchor="middle" class="t" font-size="13" font-weight="700">MCP tool contract</text>
+          <text x="360" y="55" text-anchor="middle" class="t-mut" font-size="10">UIA · capture · input — one surface</text>
+          <!-- interface -->
+          <rect x="230" y="92" width="260" height="34" rx="8" class="n-fill n-stroke"/>
+          <text x="360" y="114" text-anchor="middle" class="t-mono" font-size="11">IAutomationBackend</text>
+          <line x1="360" y1="64" x2="360" y2="90" class="n-line" stroke-width="1.5" style="marker-end:url(#b-def)"/>
+
+          <!-- three backends -->
+          <g>
+            <rect x="24" y="158" width="210" height="66" rx="10" class="n-fill n-stroke"/>
+            <text x="129" y="180" text-anchor="middle" class="t" font-size="12" font-weight="700">Local Broker</text>
+            <text x="129" y="197" text-anchor="middle" class="ac-t" font-size="9.5">this build · both desktops</text>
+            <text x="129" y="213" text-anchor="middle" class="t-mut" font-size="9.5">UIA + capture + input</text>
+
+            <rect x="255" y="158" width="210" height="66" rx="10" class="n-fill n-stroke"/>
+            <text x="360" y="180" text-anchor="middle" class="t" font-size="12" font-weight="700">Fleet Agent</text>
+            <text x="360" y="197" text-anchor="middle" class="t-mut" font-size="9.5">later · gRPC / mTLS</text>
+            <text x="360" y="213" text-anchor="middle" class="t-mut" font-size="9.5">UIA + capture + input</text>
+
+            <rect x="486" y="158" width="210" height="66" rx="10" class="n-fill n-stroke"/>
+            <text x="591" y="180" text-anchor="middle" class="t" font-size="12" font-weight="700">RDP Protocol</text>
+            <text x="591" y="197" text-anchor="middle" class="t-mut" font-size="9.5">later · no agent on target</text>
+            <text x="591" y="213" text-anchor="middle" class="crit-t" font-size="9.5">capture + input · NO UIA</text>
+          </g>
+          <line x1="300" y1="126" x2="150" y2="156" class="n-line" stroke-width="1.4" style="marker-end:url(#b-def)"/>
+          <line x1="360" y1="126" x2="360" y2="156" class="n-line" stroke-width="1.4" style="marker-end:url(#b-def)"/>
+          <line x1="420" y1="126" x2="570" y2="156" class="n-line" stroke-width="1.4" style="marker-end:url(#b-def)"/>
+        </svg>
+      </div>
+      <figcaption><b>One contract, swappable backends.</b> A <b>Fleet Agent</b> is the same in-session code reached over gRPC/mTLS. An <b>RDP Protocol</b> backend has the server dial RDP to a host and drive it over the wire — <b>no software on the target</b>. The seam also exposes the one honest constraint: UIA needs something running <i>in</i> the session, so the RDP backend advertises <b>capture + input only</b>. Keeping the tool contract split between <i>agent-required</i> (UIA) and <i>transport-portable</i> (capture, input) is exactly what keeps RDP open.</figcaption>
+    </figure>
+  </section>
+
+  <section id="s9">
+    <div class="kicker"><span class="num">09</span><span class="rule"></span></div>
+    <h2>The tool catalog</h2>
+    <p>Grouped by capability, and — the detail that keeps §08 honest — annotated by portability. <span class="tag agent">agent-only</span> tools need something running inside the session (UIA); <span class="tag portable">portable</span> tools work over any pixel-plus-input transport, including a future RDP backend; <span class="tag gated">gated</span> tools work on the secure desktop only through the SYSTEM + uiAccess path.</p>
+
+    <div class="tools">
+      <div class="toolcard">
+        <h4>Orientation</h4>
+        <p class="scope"><span class="tag agent">agent-only</span></p>
+        <ul>
+          <li>get_machine_info <span>()</span></li>
+          <li>get_desktop_state <span>()</span></li>
+          <li>get_foreground_window <span>()</span></li>
+          <li>get_focused_element <span>()</span></li>
+        </ul>
+      </div>
+      <div class="toolcard">
+        <h4>UIA — read</h4>
+        <p class="scope"><span class="tag agent">agent-only</span></p>
+        <ul>
+          <li>get_desktop_tree <span>(depth,root)</span></li>
+          <li>find_elements <span>(scope,cond)</span></li>
+          <li>get_element <span>(ref)</span></li>
+          <li>get_properties <span>(ref)</span></li>
+          <li>wait_for_element <span>(cond,ms)</span></li>
+        </ul>
+      </div>
+      <div class="toolcard act">
+        <h4>UIA — act</h4>
+        <p class="scope"><span class="tag agent">agent-only</span></p>
+        <ul>
+          <li>invoke <span>(ref)</span></li>
+          <li>set_value <span>(ref,text)</span></li>
+          <li>toggle · expand_collapse</li>
+          <li>select_item · scroll_into_view</li>
+          <li>set_focus · window_action</li>
+        </ul>
+      </div>
+      <div class="toolcard">
+        <h4>Capture</h4>
+        <p class="scope"><span class="tag portable">portable</span> <span class="tag gated">secure: gated</span></p>
+        <ul>
+          <li>capture_screen <span>(monitor)</span></li>
+          <li>capture_window <span>(ref|hwnd)</span></li>
+          <li>capture_element <span>(ref)</span></li>
+          <li>capture_region <span>(rect)</span></li>
+        </ul>
+      </div>
+      <div class="toolcard act">
+        <h4>Mouse</h4>
+        <p class="scope"><span class="tag portable">portable</span> <span class="tag gated">secure: gated</span></p>
+        <ul>
+          <li>mouse_move <span>(x,y)</span></li>
+          <li>mouse_click <span>(btn,pt,n)</span></li>
+          <li>mouse_down · mouse_up</li>
+          <li>mouse_drag <span>(from,to)</span></li>
+          <li>mouse_scroll <span>(dx,dy)</span></li>
+        </ul>
+      </div>
+      <div class="toolcard act">
+        <h4>Keyboard</h4>
+        <p class="scope"><span class="tag portable">portable</span> <span class="tag gated">secure: gated</span></p>
+        <ul>
+          <li>type_text <span>(text)</span></li>
+          <li>send_keys <span>(chord)</span></li>
+          <li>key_down · key_up</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note">
+      <span class="lbl">Design principle</span>
+      <p>Prefer <strong>element-anchored actions over raw coordinate clicks</strong> on the Default desktop: invoking a button through its UIA pattern is resolution-independent and survives window moves. Coordinate input is the vision path — for the secure desktop, poor UIA trees, and the future RDP backend — and every capture returns bounding rectangles and DPI so a pixel the model sees maps to a point it can click.</p>
+    </div>
+  </section>
+
+  <section id="s10">
+    <div class="kicker"><span class="num">10</span><span class="rule"></span></div>
+    <h2>Screen-capture pipeline</h2>
+    <p>Three capture APIs exist and none wins everywhere, so the agent carries all three and picks per request and per desktop:</p>
+
+    <figure>
+      <div class="figwrap">
+        <svg viewBox="0 0 720 250" role="img" aria-label="Comparison of three capture APIs by what each can and cannot capture, and which desktop each serves.">
+          <g>
+            <rect x="16" y="20" width="220" height="212" rx="12" class="ac-fill-soft ac-stroke"/>
+            <text x="126" y="46" text-anchor="middle" class="t" font-size="13" font-weight="700">Windows.Graphics</text>
+            <text x="126" y="62" text-anchor="middle" class="t" font-size="13" font-weight="700">.Capture</text>
+            <text x="126" y="80" text-anchor="middle" class="ac-t" font-size="10" letter-spacing="1">DEFAULT DESKTOP</text>
+            <line x1="34" y1="92" x2="218" y2="92" class="ac-stroke" opacity=".4"/>
+            <text x="34" y="116" class="t-mono" font-size="11">✓ per-monitor</text>
+            <text x="34" y="138" class="t-mono" font-size="11">✓ per-window (HWND)</text>
+            <text x="34" y="160" class="t-mono" font-size="11">✓ GPU / DWM content</text>
+            <text x="34" y="182" class="t-mono" font-size="11">✓ occluded windows</text>
+            <text x="34" y="212" class="t-mut" font-size="10.5">restricted on secure desktop</text>
+          </g>
+          <g>
+            <rect x="250" y="20" width="220" height="212" rx="12" class="crit-fill-soft crit-stroke"/>
+            <text x="360" y="46" text-anchor="middle" class="t" font-size="13" font-weight="700">GDI BitBlt</text>
+            <text x="360" y="62" text-anchor="middle" class="t" font-size="13" font-weight="700">/ PrintWindow</text>
+            <text x="360" y="80" text-anchor="middle" class="crit-t" font-size="10" letter-spacing="1">SECURE DESKTOP</text>
+            <line x1="268" y1="92" x2="452" y2="92" class="crit-stroke" opacity=".4"/>
+            <text x="268" y="116" class="t-mono" font-size="11">✓ secure desktop DC</text>
+            <text x="268" y="138" class="t-mono" font-size="11">✓ background windows</text>
+            <text x="268" y="160" class="t-mono" font-size="11">✓ no version floor</text>
+            <text x="268" y="182" class="crit-t" font-size="11">✗ misses some GPU surfaces</text>
+            <text x="268" y="212" class="t-mut" font-size="10.5">PW_RENDERFULLCONTENT</text>
+          </g>
+          <g>
+            <rect x="484" y="20" width="220" height="212" rx="12" class="n-fill n-stroke"/>
+            <text x="594" y="46" text-anchor="middle" class="t" font-size="13" font-weight="700">DXGI Desktop</text>
+            <text x="594" y="62" text-anchor="middle" class="t" font-size="13" font-weight="700">Duplication</text>
+            <text x="594" y="80" text-anchor="middle" class="t-mut" font-size="10" letter-spacing="1">HIGH-FPS FULLSCREEN</text>
+            <line x1="502" y1="92" x2="686" y2="92" class="n-stroke"/>
+            <text x="502" y="116" class="t-mono" font-size="11">✓ fastest, GPU</text>
+            <text x="502" y="138" class="t-mono" font-size="11">✓ whole monitor</text>
+            <text x="502" y="160" class="crit-t" font-size="11">✗ no per-window</text>
+            <text x="502" y="182" class="crit-t" font-size="11">✗ breaks on mode change</text>
+            <text x="502" y="212" class="t-mut" font-size="10.5">reserved for streaming</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption><b>Capture selection.</b> <b>WGC</b> is the default on the Default desktop — the only API doing DWM-composited per-window and per-monitor capture of GPU and occluded content. The <b>GDI</b> path is what makes secure-desktop capture work at all, reading the secure desktop's device context directly. <b>DXGI</b> is reserved for high-frame-rate full-monitor streaming.</figcaption>
+    </figure>
+    <p>Every image returns with its source rectangle, monitor id, DPI scale, and the <code>desktop</code> it came from. Full-screen shots default to quality-tuned JPEG/WebP with optional downscaling to respect the model's context budget; element and window shots stay PNG for text fidelity. A redaction hook can mask configured regions before an image ever leaves the process.</p>
+  </section>
+
+  <section id="s11">
+    <div class="kicker"><span class="num">11</span><span class="rule"></span></div>
+    <h2>Input engine</h2>
+    <p>Synthetic input goes through <code>SendInput</code> — real <code>WM_INPUT</code> events indistinguishable from hardware. Two details make it correct rather than approximate: absolute mouse events normalize to 0–65535 across the whole virtual desktop with <code>MOUSEEVENTF_VIRTUALDESK</code> so secondary monitors are addressable, and the agent's Per-Monitor-v2 DPI awareness keeps its coordinates in the same physical pixels capture reported. On the secure desktop, input runs through the gated uiAccess path of §05 or is refused with <code>secure_input_denied</code>; when the workstation is merely locked, input is off and capture stays on.</p>
+    <div class="note warn">
+      <span class="lbl">Deliberate omission</span>
+      <p>No "human-like" jitter, curved paths, or randomized timing. Those exist to defeat automation detection, and building them shades the tool toward deception. Deskhand's motion is functional and honest.</p>
+    </div>
+  </section>
+
+  <section id="s12">
+    <div class="kicker"><span class="num">12</span><span class="rule"></span></div>
+    <h2>Failure modes &amp; edge cases</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Situation</th><th>Behavior</th></tr></thead>
+        <tbody>
+          <tr><td>UAC / lock / logon appears</td><td>Broker follows input to the secure desktop; capture returns the real surface; <code>desktop</code> field flips to <code>"secure"</code>/<code>"locked"</code>.</td></tr>
+          <tr><td>Secure-desktop input denied by policy</td><td>Return <code>secure_input_denied</code> with the policy reason; never bypass the gate.</td></tr>
+          <tr><td>Stale <code>elementRef</code></td><td>Re-resolve from the selector recipe; on failure return typed <code>stale_element</code> so the model re-queries.</td></tr>
+          <tr><td>Elevated window on Default desktop</td><td>Fail with guidance unless the agent is elevated or <code>uiAccess</code>-signed.</td></tr>
+          <tr><td>Poor UIA tree (Electron/Chrome)</td><td>Fall back to capture + coordinate input; document <code>--force-renderer-accessibility</code> for Chromium.</td></tr>
+          <tr><td>Mixed-DPI monitors</td><td>Coordinates normalized across the virtual desktop; per-monitor DPI travels with every capture.</td></tr>
+          <tr><td>Secure Helper can't attach</td><td>Report secure desktop unavailable; Default-desktop tools keep working.</td></tr>
+          <tr><td>Tree-walk cost</td><td>Scoped conditions, bounded depth, batched <code>CacheRequest</code> reads.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="s13">
+    <div class="kicker"><span class="num">13</span><span class="rule"></span></div>
+    <h2>Security, consent &amp; audit</h2>
+    <p>Even on one machine, this is full local control plus screen capture — and the secure-desktop coverage raises the stakes further. Be honest that it's legitimate (RPA, QA, assistive tech, kiosk, supervised IT) and shaped exactly like something that isn't. The controls are part of the design:</p>
+    <ul>
+      <li><strong>Local trust boundary.</strong> The stdio→named-pipe channel to the broker is ACL'd to the launching user; the broker validates its callers rather than trusting any local process.</li>
+      <li><strong>Capability flags.</strong> Input and capture can be disabled independently; the <em>secure-desktop</em> capability is off by default and enabled only by explicit admin policy plus the signed uiAccess binary.</li>
+      <li><strong>Consent &amp; visibility.</strong> A tray presence shows when Deskhand is connected and flashes on active control; capture is treated as sensitive and can require a per-session opt-in.</li>
+      <li><strong>Audit.</strong> Every tool call — action, arguments, target desktop, and a hash of any returned image — is written to an append-only log.</li>
+      <li><strong>Kill switch.</strong> A local hotkey instantly revokes control and drops the broker channel.</li>
+      <li><strong>Signed binaries.</strong> Required throughout, and mandatory for the uiAccess secure-desktop path.</li>
+    </ul>
+    <div class="note ok">
+      <span class="lbl">Operating boundary</span>
+      <p>For authorized use on a machine whose owner has consented. Secure-desktop coverage is admin-gated and non-bypassing by construction; there's no anti-detection behavior; presence is visible. Those aren't limitations to engineer around later — they're what keeps the tool distinct from the thing it resembles.</p>
+    </div>
+  </section>
+
+  <section id="s14">
+    <div class="kicker"><span class="num">14</span><span class="rule"></span></div>
+    <h2>Delivery roadmap</h2>
+    <div class="phases">
+      <div class="phase">
+        <span class="pnum">Phase 1 · Prove the spine</span>
+        <h4>Default desktop, end to end</h4>
+        <p>MCP server (stdio) → broker → Session Agent. UIA read, WGC capture, and <code>SendInput</code> working on the local Default desktop. The <code>IAutomationBackend</code> seam exists from day one.</p>
+      </div>
+      <div class="phase">
+        <span class="pnum">Phase 2 · The hard part</span>
+        <h4>Secure desktop coverage</h4>
+        <p>SYSTEM Secure Helper, GDI capture of <code>Winlogon</code>, input-desktop auto-follow and <code>desktop</code> state, and the gated uiAccess input path with its policy checks.</p>
+      </div>
+      <div class="phase">
+        <span class="pnum">Phase 3 · Make it reliable</span>
+        <h4>Handles, patterns, DPI, safety</h4>
+        <p>The <code>elementRef</code> resolver, full control-pattern coverage, Per-Monitor-v2 correctness, capture-budget encoding, and the security controls of §13 — audit, consent, kill switch.</p>
+      </div>
+      <div class="phase future">
+        <span class="pnum">Phase 4 · Kept open</span>
+        <h4>Fleet agent</h4>
+        <p>The same in-session code behind a gRPC/mTLS <code>FleetAgentBackend</code> with outbound-dialing agents and a central registry. No tool-contract change.</p>
+      </div>
+      <div class="phase future">
+        <span class="pnum">Phase 5 · Kept open</span>
+        <h4>RDP protocol backend</h4>
+        <p>An <code>RdpProtocolBackend</code> that dials RDP to a host and drives it over the wire with no software on the target — advertising the capture + input subset of the same contract.</p>
+      </div>
+    </div>
+  </section>
+
+  </div>
+
+  <footer>
+    <span>DESKHAND — design document</span>
+    <span>·</span>
+    <span>.NET 8 · FlaUI · MCP · single machine, both desktops</span>
+    <span>·</span>
+    <span>no code written yet — architecture only</span>
+  </footer>
+</main>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    var root = document.documentElement;
+    btn.addEventListener('click', function () {
+      var cur = root.getAttribute('data-theme');
+      var isDark = cur ? cur === 'dark'
+        : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    });
+  })();
+</script>

@@ -292,7 +292,20 @@ Client API (bearer token when configured): `GET /agents`, then the same surface 
 The fleet server also serves a **web dashboard** at `http://127.0.0.1:8799` — a live grid of every
 connected PC (screenshot thumbnails, machine/desktop/monitor info); click a PC to open it, watch its
 screen live, and drive it (click-to-click, keyboard). This is where you *see other machines* (the
-single-machine dashboard on `:8791` only shows the local one).
+single-machine dashboard on `:8791` only shows the local one). The two dashboards cross-link in the
+top bar (**Fleet** ⇄ **This PC**).
+
+**The fleet is exposed over MCP too**, at `http://127.0.0.1:8799/mcp` — fleet-aware tools so a model
+can list your PCs and drive any of them by id: `deskhand_list_agents`, then `deskhand_agent_capture_screen`,
+`deskhand_agent_get_tree`, `deskhand_agent_click`, `deskhand_agent_type`, `deskhand_agent_invoke`,
+`deskhand_agent_launch`, etc. Register it alongside the local one:
+
+```powershell
+claude mcp add --transport http deskhand-fleet http://127.0.0.1:8799/mcp
+```
+
+So a model gets both surfaces: `deskhand_*` for the local PC (`:8791/mcp`) and `deskhand_list_agents`
++ `deskhand_agent_*` for the whole fleet (`:8799/mcp`).
 
 **Done & tested:** outbound WebSocket transport, agent registry + routing, the full remote backend,
 **shared-token auth** for agents and clients, and AnyIP binding — verified: no-token → 401,

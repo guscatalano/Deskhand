@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <ProjectReference Include="..\Deskhand.Core\Deskhand.Core.csproj" />
   </ItemGroup>
 

@@ -15,6 +15,11 @@ builder.WebHost.ConfigureKestrel(k => { if (bindAny) k.ListenAnyIP(port); else k
 builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
 builder.Services.AddSingleton<AgentRegistry>();
 
+// Fleet-aware MCP over Streamable HTTP at /mcp: list + drive any connected PC by agentId.
+builder.Services.AddMcpServer()
+    .WithHttpTransport()
+    .WithToolsFromAssembly(typeof(Deskhand.Fleet.Server.FleetTools).Assembly);
+
 var app = builder.Build();
 app.UseWebSockets();
 app.UseDefaultFiles();   // the fleet dashboard (wwwroot/index.html) — served before auth
@@ -49,7 +54,7 @@ app.Map("/agent/connect", async (HttpContext ctx) =>
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path.Value ?? "";
-    if (path is "/health" || path.StartsWith("/agent/connect")) { await next(); return; }
+    if (path is "/health" || path.StartsWith("/agent/connect") || path.StartsWith("/mcp")) { await next(); return; }
     if (token is not null && Bearer(ctx) != token)
     {
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -123,6 +128,9 @@ app.MapPost("/agents/{id}/mouse/click", (string id, ClickReq r) => { A(id).Mouse
 app.MapPost("/agents/{id}/mouse/scroll", (string id, ScrollReq r) => { A(id).MouseScroll(r.Dx, r.Dy); return Results.Ok(new { ok = true }); });
 app.MapPost("/agents/{id}/keyboard/type", (string id, TypeReq r) => { A(id).TypeText(r.Text); return Results.Ok(new { ok = true }); });
 app.MapPost("/agents/{id}/keyboard/keys", (string id, KeysReq r) => { A(id).SendKeys(r.Chord); return Results.Ok(new { ok = true }); });
+
+// Fleet MCP endpoint (list + drive any agent by agentId).
+app.MapMcp("/mcp");
 
 Console.WriteLine();
 Console.WriteLine($"  Deskhand Fleet Server   ·   {(bindAny ? "0.0.0.0" : "127.0.0.1")}:{port}   ·   token {(token is null ? "OFF" : "required")}");

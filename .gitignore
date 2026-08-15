@@ -2,3 +2,9 @@ bin/
 obj/
 *.user
 .vs/
+
+# installer build artifacts (built by scripts / CI)
+installer/stage/
+installer/out/
+installer/msix/layout/
+publish/

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Deskhand MSI (WiX 5). Machine-wide install of the per-user apps (dashboard + MCP server).
+     Build:  wix build installer\Deskhand.wxs -arch x64 -d StageDir=<abs path to installer\stage> -o installer\out\Deskhand.msi
+     The apps run AS THE LOGGED-IN USER (no SYSTEM); the MSI only lays down files + a Start-menu shortcut. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Deskhand"
+           Manufacturer="Gus Catalano"
+           Version="0.1.0"
+           UpgradeCode="7A3C2E10-9B4D-4F8A-A1C2-1A2B3C4D5E01"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Deskhand is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="DeskhandIcon" SourceFile="$(var.StageDir)\http\deskhand-http.exe" />
+    <Property Id="ARPPRODUCTICON" Value="DeskhandIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/guscatalano/Deskhand" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Deskhand">
+        <Directory Id="HttpDir" Name="http" />
+        <Directory Id="McpDir" Name="mcp" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="MenuDir" Name="Deskhand" />
+    </StandardDirectory>
+
+    <!-- Self-contained publish output, auto-harvested (exe + runtime + wwwroot). -->
+    <ComponentGroup Id="HttpFiles" Directory="HttpDir">
+      <Files Include="$(var.StageDir)\http\**" />
+    </ComponentGroup>
+    <ComponentGroup Id="McpFiles" Directory="McpDir">
+      <Files Include="$(var.StageDir)\mcp\**" />
+    </ComponentGroup>
+
+    <Component Id="Shortcuts" Directory="MenuDir" Guid="7A3C2E10-9B4D-4F8A-A1C2-1A2B3C4D5E02">
+      <Shortcut Id="DashboardShortcut"
+                Name="Deskhand Console"
+                Description="Start the Deskhand dashboard (http://127.0.0.1:8791)"
+                Target="[HttpDir]deskhand-http.exe"
+                WorkingDirectory="HttpDir" />
+      <RemoveFolder Id="RemoveMenuDir" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Deskhand" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="Main" Title="Deskhand (dashboard + MCP)" Level="1">
+      <ComponentGroupRef Id="HttpFiles" />
+      <ComponentGroupRef Id="McpFiles" />
+      <ComponentRef Id="Shortcuts" />
+    </Feature>
+  </Package>
+</Wix>

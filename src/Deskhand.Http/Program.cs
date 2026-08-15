@@ -45,12 +45,14 @@ var captureNotifier = new ToastNotifier();
 var macroRecorder = new Deskhand.Core.Macros.MacroRecorder();
 var eventHub = new Deskhand.Core.Events.EventHub();
 var localBackend = new LocalAutomationBackend();
-localBackend.StartEvents(eventHub);
+localBackend.StartEvents(eventHub);                          // UIA events: focus_changed, window_opened
+var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);  // process_started / process_exited
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(captureNotifier);
 builder.Services.AddSingleton(macroRecorder);
 builder.Services.AddSingleton(eventHub);
+builder.Services.AddSingleton(processWatcher);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
@@ -188,6 +190,15 @@ api.MapPost("/macro/play", (IAutomationBackend b, Deskhand.Core.Macros.MacroReco
 // ---- UIA events (focus, window-open) ----
 api.MapGet("/events/poll", (Deskhand.Core.Events.EventHub hub, long since) =>
     Results.Ok(new { lastId = hub.LastId, events = hub.Since(since) }));
+
+// Block until a process starts/exits (event=start|exit), matched by name substring and/or pid.
+api.MapPost("/process/wait", (Deskhand.Core.Events.ProcessWatcher w, ProcessWaitRequest r) =>
+{
+    var hit = w.WaitForProcess(r.Event ?? "start", r.Name, r.Pid, r.TimeoutMs ?? 30000);
+    return hit is null
+        ? Results.Json(new { error = "No matching process event within the timeout.", type = "wait_timeout" }, statusCode: 404)
+        : Results.Ok(hit);
+});
 api.MapGet("/events", async (HttpContext ctx, Deskhand.Core.Events.EventHub hub) =>
 {
     ctx.Response.Headers.ContentType = "text/event-stream";
@@ -353,6 +364,7 @@ record WaitRequest(string? RootRef, string? Name, string? AutomationId, string? 
 record LaunchRequest(string Path, string? Args, string? WorkingDir, int? WaitForWindowMs);
 record RefRequest(string Reference);
 record PointRequest(int X, int Y);
+record ProcessWaitRequest(string? Event, string? Name, int? Pid, int? TimeoutMs);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);
 record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality);

@@ -104,9 +104,20 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_foreground_window"), Description("The current foreground window element.")]
     public static string ForegroundWindow(IAutomationBackend b) => Json(b.GetForegroundWindow());
 
-    [McpServerTool(Name = "deskhand_get_events"), Description("Poll buffered UIA events (focus changes, windows opening) newer than sinceId. Returns lastId to pass next time.")]
+    [McpServerTool(Name = "deskhand_get_events"), Description("Poll buffered events newer than sinceId — the hook feed. Event types: focus_changed, window_opened (a window was created), process_started, process_exited. Each carries type, name, controlType, processId, ts. Returns lastId to pass next time.")]
     public static string GetEvents(Deskhand.Core.Events.EventHub hub, long sinceId = 0) =>
         Json(new { lastId = hub.LastId, events = hub.Since(sinceId) });
+
+    [McpServerTool(Name = "deskhand_wait_for_process"), Description("Block until a process starts or exits, then return it. event=\"start\" waits for a NEW launch after this call; event=\"exit\" waits for a matching process to exit (returns immediately if the given pid is already gone). Match by name (substring, e.g. \"chrome\") and/or pid. Returns {event, processId, name}, or a wait_timeout message on timeout. For passive monitoring instead of blocking, poll deskhand_get_events for process_started/process_exited.")]
+    public static string WaitForProcess(Deskhand.Core.Events.ProcessWatcher w,
+        [Description("\"start\" or \"exit\".")] string @event = "start",
+        [Description("Process name substring to match (e.g. \"notepad\"); \".exe\" optional.")] string? name = null,
+        [Description("Specific process id to match.")] int? pid = null,
+        [Description("Timeout in milliseconds (default 30000).")] int timeoutMs = 30000)
+    {
+        var hit = w.WaitForProcess(@event, name, pid, timeoutMs);
+        return hit is null ? "{\"error\":\"wait_timeout\"}" : Json(hit);
+    }
 
     [McpServerTool(Name = "deskhand_focused_element"), Description("The element that currently has keyboard focus.")]
     public static string FocusedElement(IAutomationBackend b) => Json(b.GetFocusedElement());

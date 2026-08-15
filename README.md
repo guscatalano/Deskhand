@@ -161,7 +161,13 @@ sees them directly.
   (`%LOCALAPPDATA%\Deskhand\recordings`), are audited, and auto-delete after 24h.
 - **User-input recording** — `deskhand_user_input_start` records the *user's* clicks (each annotated with
   the UIA element it hit), scrolls, and typed text via global hooks. Off by default; `captureText=false`
-  for mouse-only (keystrokes may include passwords).
+  for mouse-only (keystrokes may include passwords). While it runs, the user sees a **persistent
+  always-on-top banner + toast**, so no one is observed silently.
+
+All four observation capabilities are also **routed over the fleet** — drive any agent's events,
+`wait_for_process`, screen recording (downloadable through the server), and user-input recording by
+`agentId` (`deskhand_agent_*` tools / `/agents/{id}/…` endpoints). Recording a fleet PC's user shows the
+consent banner on *that* PC.
 
 `deskhand_element_from_point(x, y)` returns the deepest UIA element at a screen coordinate
 (virtual-desktop pixels), resolved fresh via UIA `FromPoint` — no tree walk, no stored ref. This

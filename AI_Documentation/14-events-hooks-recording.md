@@ -88,9 +88,27 @@ GET  /input/record/status  ·  GET /input/record/events?since=<id>
 deskhand_user_input_start(captureText) / deskhand_user_input_stop / deskhand_user_input_get(sinceId)
 ```
 
-**Privacy:** this captures real keystrokes, which can include passwords. It is **off by default**, must be
-started explicitly, `user_input_record_start` is audited, and `captureText=false` records mouse only.
-Element resolution uses the *raw* backend (unaudited) so per-click resolution doesn't flood the audit log.
+**Privacy & consent:** this captures real keystrokes, which can include passwords. It is **off by default**,
+must be started explicitly, `user_input_record_start` is audited, and `captureText=false` records mouse
+only. Element resolution uses the *raw* backend (unaudited) so per-click resolution doesn't flood the audit
+log. **While recording is active, the user sees a persistent, always-on-top red banner**
+(`Deskhand.Ui.RecordingIndicator`, driven via the Core `IActivityIndicator` seam) plus a start/stop toast —
+so no one can be observed silently. The banner shows even in mouse-only mode.
+
+## Over the fleet
+
+All four capabilities are routed per-agent, not just on the local host:
+
+- The agent bundles its backend + observation services into `AgentServices`; `AgentConnection` /
+  `AgentDispatcher` carry it, so new `FleetMethods` (`get_events`, `wait_for_process`,
+  `record_start|stop|status|read`, `input_start|stop|get`) execute against the agent's own services.
+- Server side, `RemoteAgentObserver(link)` forwards each call; the fleet server exposes
+  `GET /agents/{id}/events`, `POST /agents/{id}/process/wait`, `/agents/{id}/record/start|stop`,
+  `GET /agents/{id}/record/status`, **`GET /agents/{id}/recordings/{recId}`** (streams the agent's saved
+  file back through the server), and `/agents/{id}/input/record/start|stop|events`. MCP mirrors:
+  `deskhand_agent_get_events`, `deskhand_agent_wait_for_process`, `deskhand_agent_record_*`,
+  `deskhand_agent_user_input_*`.
+- **Consent still holds remotely:** recording a fleet PC's user shows the banner + toast on *that* PC.
 
 ## Reproduce quickly
 

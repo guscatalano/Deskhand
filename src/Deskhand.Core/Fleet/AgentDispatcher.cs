@@ -15,6 +15,7 @@ public static class AgentDispatcher
             FleetMethods.ForegroundWindow => b.GetForegroundWindow(),
             FleetMethods.FocusedElement => b.GetFocusedElement(),
             FleetMethods.ListWindows => b.GetTopLevelWindows(),
+            FleetMethods.ListProcesses => b.GetProcesses(),
             FleetMethods.Launch => b.LaunchProcess(a.Str("path")!, a.Str("args"), a.Str("workingDir"), a.Int("waitForWindowMs", 0)),
             FleetMethods.GetTree => b.GetTree(a.Str("rootRef"), a.Int("depth", 2), a.Int("maxChildren", 40)),
             FleetMethods.Find => b.Find(a.Str("rootRef"), a.Obj<FindQuery>("query")!),

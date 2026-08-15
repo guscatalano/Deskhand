@@ -54,6 +54,9 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_list_windows"), Description("List all top-level windows. The reliable way to target a specific app (foreground is unreliable when a tool has focus).")]
     public static string ListWindows(IAutomationBackend b) => Json(b.GetTopLevelWindows());
 
+    [McpServerTool(Name = "deskhand_list_processes"), Description("List every running process, each with the top-level windows it owns (windowed apps first; background processes have an empty windows list). Each window carries a live ref you can pass straight to deskhand_get_tree to expand its UIA tree — process → windows → elements.")]
+    public static string ListProcesses(IAutomationBackend b) => Json(b.GetProcesses());
+
     [McpServerTool(Name = "deskhand_launch_process"), Description("Launch a program by path or shell name/URL (e.g. \"notepad\", \"C:\\\\app.exe\", \"https://...\"). Waits up to waitForWindowMs for its main window and returns it if it appears.")]
     public static string LaunchProcess(IAutomationBackend b, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 4000)
         => Json(b.LaunchProcess(path, args, workingDir, waitForWindowMs));

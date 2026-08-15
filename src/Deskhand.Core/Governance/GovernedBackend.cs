@@ -63,6 +63,7 @@ public sealed class GovernedBackend(IAutomationBackend inner, ControlState state
     public ElementInfoDto GetForegroundWindow() => Audited("foreground_window", null, inner.GetForegroundWindow);
     public ElementInfoDto GetFocusedElement() => Audited("focused_element", null, inner.GetFocusedElement);
     public IReadOnlyList<ElementInfoDto> GetTopLevelWindows() => Audited("list_windows", null, inner.GetTopLevelWindows);
+    public IReadOnlyList<ProcessInfoDto> GetProcesses() => Audited("list_processes", null, inner.GetProcesses);
 
     public ProcessLaunchResultDto LaunchProcess(string path, string? args, string? workingDir, int waitForWindowMs)
     {

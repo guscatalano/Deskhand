@@ -86,6 +86,47 @@ public sealed class UiaService : IDisposable
             .ToList();
     }
 
+    /// <summary>Every running process, each with the top-level UIA windows it owns (empty for
+    /// background processes). Windowed apps are ordered first. The windows carry live refs, so a
+    /// caller can expand any of them straight into the UIA tree.</summary>
+    public IReadOnlyList<ProcessInfoDto> GetProcesses()
+    {
+        // Group the desktop's top-level windows by owning pid (one UIA pass, same filter as list_windows).
+        var byPid = new Dictionary<int, List<ElementInfoDto>>();
+        foreach (var k in Desktop.FindAllChildren())
+        {
+            var ct = SafeControlType(k);
+            var hwnd = SafeStruct(() => k.Properties.NativeWindowHandle.ValueOrDefault, IntPtr.Zero);
+            if (ct != ControlType.Window && hwnd == IntPtr.Zero) continue;
+            var info = Register(k);
+            int pid = info.ProcessId ?? 0;
+            if (pid == 0) continue;
+            if (!byPid.TryGetValue(pid, out var l)) byPid[pid] = l = new();
+            l.Add(info);
+        }
+
+        var list = new List<ProcessInfoDto>();
+        foreach (var p in System.Diagnostics.Process.GetProcesses())
+        {
+            try
+            {
+                byPid.TryGetValue(p.Id, out var wins);
+                string? title = null;
+                try { title = string.IsNullOrEmpty(p.MainWindowTitle) ? null : p.MainWindowTitle; } catch { }
+                long mem = 0; try { mem = p.WorkingSet64; } catch { }
+                list.Add(new ProcessInfoDto(p.Id, p.ProcessName, title, mem,
+                    wins ?? (IReadOnlyList<ElementInfoDto>)Array.Empty<ElementInfoDto>()));
+            }
+            catch { /* process may exit mid-enumeration */ }
+            finally { p.Dispose(); }
+        }
+
+        return list
+            .OrderByDescending(x => x.Windows.Count)
+            .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     // Total nodes any single get_tree may emit. Bushy trees (Chromium/Electron a11y) can be enormous;
     // without a cap the walk + JSON blow up. When hit, the tree comes back partial rather than failing.
     private const int TreeNodeBudget = 4000;

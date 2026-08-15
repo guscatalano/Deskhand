@@ -124,6 +124,7 @@ app.MapGet("/agents/{id}/desktop-state", (string id) => Results.Ok(A(id).GetDesk
 app.MapGet("/agents/{id}/foreground", (string id) => Results.Ok(A(id).GetForegroundWindow()));
 app.MapGet("/agents/{id}/focused", (string id) => Results.Ok(A(id).GetFocusedElement()));
 app.MapGet("/agents/{id}/windows", (string id) => Results.Ok(A(id).GetTopLevelWindows()));
+app.MapGet("/agents/{id}/processes", (string id) => Results.Ok(A(id).GetProcesses()));
 app.MapPost("/agents/{id}/process/launch", (string id, LaunchReq r) => Results.Ok(A(id).LaunchProcess(r.Path, r.Args, r.WorkingDir, r.WaitForWindowMs ?? 4000)));
 
 // ---- uia read ----

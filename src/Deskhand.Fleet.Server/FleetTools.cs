@@ -56,6 +56,9 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_list_windows"), Description("Top-level windows on a fleet PC (the reliable way to target an app).")]
     public static string AgentWindows(AgentRegistry r, FleetAudit audit, string agentId) => Json(A(r, audit, agentId, "list_windows").GetTopLevelWindows());
 
+    [McpServerTool(Name = "deskhand_agent_list_processes"), Description("Every running process on a fleet PC with the top-level windows it owns (windowed apps first). Each window ref expands into the UIA tree via deskhand_agent_get_tree.")]
+    public static string AgentProcesses(AgentRegistry r, FleetAudit audit, string agentId) => Json(A(r, audit, agentId, "list_processes").GetProcesses());
+
     [McpServerTool(Name = "deskhand_agent_foreground"), Description("The foreground window on a fleet PC.")]
     public static string AgentForeground(AgentRegistry r, FleetAudit audit, string agentId) => Json(A(r, audit, agentId, "foreground").GetForegroundWindow());
 

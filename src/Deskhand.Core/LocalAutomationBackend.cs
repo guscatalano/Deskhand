@@ -94,6 +94,7 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     public ElementInfoDto GetForegroundWindow() => _sta.Invoke(_uia.GetForegroundWindow);
     public ElementInfoDto GetFocusedElement() => _sta.Invoke(_uia.GetFocusedElement);
     public IReadOnlyList<ElementInfoDto> GetTopLevelWindows() => _sta.Invoke(_uia.GetTopLevelWindows);
+    public IReadOnlyList<ProcessInfoDto> GetProcesses() => _sta.Invoke(_uia.GetProcesses);
 
     // ---- uia read ----
     public TreeNodeDto GetTree(string? rootRef, int depth, int maxChildren)

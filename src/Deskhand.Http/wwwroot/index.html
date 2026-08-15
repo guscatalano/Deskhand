@@ -177,6 +177,7 @@
   <span class="spacer"></span>
   <div class="tabs">
     <button class="tabbtn active" data-tab="explorer">Explorer</button>
+    <button class="tabbtn" data-tab="processes">Processes</button>
     <button class="tabbtn" data-tab="screen">Screen &amp; Input</button>
   </div>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8799/" target="_blank" title="Fleet dashboard — other PCs">⛶ Fleet</a>
@@ -210,6 +211,24 @@
       <div class="tree" id="tree"><div style="color:var(--ink-3);padding:8px">Pick a window above, or use Foreground (3s) after focusing the app you want.</div></div>
     </div>
     <div class="detailcol" id="detail"><div class="empty">Select an element in the tree to see every property it has.</div></div>
+  </div>
+
+  <!-- PROCESSES -->
+  <div class="tab" id="tab-processes">
+    <div class="treecol">
+      <div class="treetools">
+        <div class="row">
+          <button class="btn sm p" id="procRefresh">↻ Refresh processes</button>
+          <label class="lbl" id="procCount" style="margin-left:auto">—</label>
+        </div>
+        <div class="row">
+          <label class="lbl"><input type="checkbox" id="procWinOnly" style="vertical-align:-1px"> windowed only</label>
+          <input type="text" id="procFilter" placeholder="filter by name / pid / title…" style="flex:1">
+        </div>
+      </div>
+      <div class="tree" id="ptree"><div style="color:var(--ink-3);padding:8px">Loading processes…</div></div>
+    </div>
+    <div class="detailcol" id="pdetail"><div class="empty">Expand a process → its windows → the UIA tree. Select any element to see its properties.</div></div>
   </div>
 
   <!-- SCREEN + INPUT -->
@@ -429,7 +448,10 @@ async function selectNode(info, selEl){
   document.querySelectorAll(".self.sel").forEach(n=>n.classList.remove("sel"));
   if(selEl) selEl.classList.add("sel");
   selected=info;
-  const d=$("#detail"); d.innerHTML="";
+  // derive the detail + tree containers from whichever tab the row lives in (Explorer or Processes)
+  const tab=(selEl&&selEl.closest(".tab"))||document.querySelector(".tab.active");
+  const treeEl=tab.querySelector(".tree");
+  const d=tab.querySelector(".detailcol"); d.innerHTML="";
 
   // breadcrumb from DOM ancestry
   const crumbs=elm("div","crumbs");
@@ -439,7 +461,7 @@ async function selectNode(info, selEl){
     chain.forEach((ci,i)=>{
       if(i){ const sep=elm("span","sep"); sep.textContent="›"; crumbs.append(sep); }
       const a=elm("a"); a.textContent=(ci.name||ci.controlType); a.title=ci.controlType;
-      a.onclick=()=>{ const row=[...$("#tree").querySelectorAll(".self")].find(s=>s._info===ci); if(row){ row.click(); row.scrollIntoView({block:"nearest"}); } };
+      a.onclick=()=>{ const row=[...treeEl.querySelectorAll(".self")].find(s=>s._info===ci); if(row){ row.click(); row.scrollIntoView({block:"nearest"}); } };
       crumbs.append(a);
     });
   }
@@ -483,9 +505,10 @@ async function selectNode(info, selEl){
   }
 
   // ALL properties
-  const ps=elm("div","sect"); const ph=elm("div","h"); ph.innerHTML=`all properties <span class="count" id="propCount">…</span>`;
+  const ps=elm("div","sect"); const ph=elm("div","h"); ph.innerHTML=`all properties <span class="count">…</span>`;
+  const propCountEl=ph.querySelector(".count");
   const pfilter=elm("input","pfilter"); pfilter.type="text"; pfilter.placeholder="filter properties…";
-  const pbox=elm("div","props"); pbox.id="propBox";
+  const pbox=elm("div","props");
   ps.append(ph,pfilter,pbox); d.append(ps);
   pfilter.addEventListener("input",()=>{ const q=pfilter.value.trim().toLowerCase();
     [...pbox.children].forEach(r=>{ r.style.display=(!q||r.dataset.k.includes(q))?"grid":"none"; }); });
@@ -493,7 +516,7 @@ async function selectNode(info, selEl){
   try {
     const props=await api(`/uia/element/${encodeURIComponent(info.ref)}/properties`);
     const keys=Object.keys(props);
-    $("#propCount").textContent=keys.length;
+    propCountEl.textContent=keys.length;
     pbox.innerHTML="";
     keys.forEach(k=>{
       const row=elm("div","prow"); row.dataset.k=(k+" "+(props[k]||"")).toLowerCase();
@@ -501,7 +524,7 @@ async function selectNode(info, selEl){
       const vv=props[k]; const vc=elm("div","v"+(vv==null?" null":"")); vc.textContent=vv==null?"null":vv;
       row.append(kc,vc); pbox.append(row);
     });
-  } catch(e){ $("#propCount").textContent="error"; toast("properties: "+e.message,true); }
+  } catch(e){ propCountEl.textContent="error"; toast("properties: "+e.message,true); }
 }
 const capElement = guard(async(ref)=>{
   const c=await api("/capture/element","POST",{reference:ref,format:"png"});
@@ -606,11 +629,63 @@ $("#launchPath").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#launchB
 $("#typeTxt").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#typeBtn").click(); });
 $("#keysTxt").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#keysBtn").click(); });
 
+/* ---------- processes (combined process → windows → tree) ---------- */
+let procData=[], procLoaded=false;
+function fmtMem(b){ return b>=1048576 ? Math.round(b/1048576)+" MB" : Math.round(b/1024)+" KB"; }
+function renderProcRow(p, container){
+  const node=elm("div","node"); node._plabel=(p.name+" "+p.processId+" "+(p.mainWindowTitle||"")).toLowerCase();
+  const self=elm("div","self");
+  const caret=elm("span","caret"); caret.textContent="▸"; if(!p.windows.length) caret.style.visibility="hidden";
+  const nm=elm("span","nname"); nm.innerHTML=`<b>${p.name}</b> <span style="color:var(--ink-3)">· ${p.processId}</span>`;
+  self.append(caret,nm);
+  if(p.mainWindowTitle){ const t=elm("span","ctype"); t.textContent="“"+p.mainWindowTitle+"”"; self.append(t); }
+  const meta=elm("span","naid"); meta.textContent=(p.windows.length?p.windows.length+" win · ":"")+fmtMem(p.workingSet); self.append(meta);
+  const kids=elm("div","kids"); kids.style.display="none";
+  node.append(self,kids);
+  let loaded=false;
+  const toggle=()=>{ if(!p.windows.length) return;
+    if(kids.style.display==="none"){ if(!loaded){ p.windows.forEach(w=>renderNode(w,kids,null)); loaded=true; } kids.style.display="block"; caret.textContent="▾"; }
+    else { kids.style.display="none"; caret.textContent="▸"; } };
+  caret.addEventListener("click",e=>{ e.stopPropagation(); toggle(); });
+  self.addEventListener("click",()=>{ showProcDetail(p); toggle(); });
+  container.append(node);
+}
+function showProcDetail(p){
+  const d=$("#pdetail"); d.innerHTML="";
+  const head=elm("div","dhead"); const ct=elm("span","ct"); ct.textContent="Process"; const h1=elm("h1"); h1.textContent=`${p.name} · ${p.processId}`; head.append(ct,h1); d.append(head);
+  const s=elm("div","sect");
+  s.innerHTML=`<div class="prow"><div class="k">pid</div><div class="v">${p.processId}</div></div>`+
+    `<div class="prow"><div class="k">memory</div><div class="v">${fmtMem(p.workingSet)}</div></div>`+
+    `<div class="prow"><div class="k">windows</div><div class="v">${p.windows.length}</div></div>`+
+    `<div class="prow"><div class="k">main title</div><div class="v${p.mainWindowTitle?"":" null"}">${p.mainWindowTitle||"null"}</div></div>`;
+  d.append(s);
+}
+function renderProcList(){
+  const ptree=$("#ptree"); ptree.innerHTML="";
+  const winOnly=$("#procWinOnly").checked, q=$("#procFilter").value.trim().toLowerCase();
+  let shown=0; const withWin=procData.filter(p=>p.windows.length).length;
+  procData.forEach(p=>{
+    if(winOnly&&!p.windows.length) return;
+    if(q&&!(p.name+" "+p.processId+" "+(p.mainWindowTitle||"")).toLowerCase().includes(q)) return;
+    renderProcRow(p,ptree); shown++;
+  });
+  $("#procCount").textContent=`${shown} shown · ${withWin} windowed · ${procData.length} total`;
+  if(!shown) ptree.innerHTML='<div style="color:var(--ink-3);padding:8px">no matches</div>';
+}
+const loadProcesses=guard(async()=>{
+  const ptree=$("#ptree"); ptree.innerHTML='<div style="color:var(--ink-3);padding:8px">Loading processes…</div>';
+  procData=await api("/processes"); procLoaded=true; renderProcList();
+});
+$("#procRefresh").onclick=loadProcesses;
+$("#procWinOnly").addEventListener("change",()=>{ if(procLoaded) renderProcList(); });
+$("#procFilter").addEventListener("input",()=>{ if(procLoaded) renderProcList(); });
+
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   b.classList.add("active"); $("#tab-"+b.dataset.tab).classList.add("active");
+  if(b.dataset.tab==="processes"&&!procLoaded) loadProcesses();
 });
 $("#logBtn").onclick=()=>$("#logdrawer").classList.toggle("show");
 $("#clrLog").onclick=()=>$("#log").innerHTML="";

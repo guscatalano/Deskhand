@@ -39,6 +39,15 @@ public record TreeNodeDto(
     ElementInfoDto Element,
     IReadOnlyList<TreeNodeDto> Children);
 
+/// <summary>A running process and the top-level UIA windows it owns. <see cref="Windows"/> is empty for
+/// background/no-window processes; each window carries a live ref you can expand with <c>get_tree</c>.</summary>
+public record ProcessInfoDto(
+    int ProcessId,
+    string Name,
+    string? MainWindowTitle,
+    long WorkingSet,
+    IReadOnlyList<ElementInfoDto> Windows);
+
 /// <summary>Query for <c>find_elements</c>. Conditions are AND-combined; null fields are ignored.</summary>
 public record FindQuery(
     string? Name = null,

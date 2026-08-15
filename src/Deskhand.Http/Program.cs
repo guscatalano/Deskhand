@@ -213,6 +213,7 @@ api.MapGet("/desktop/state", (IAutomationBackend b) => Results.Ok(b.GetDesktopSt
 api.MapGet("/foreground", (IAutomationBackend b) => Results.Ok(b.GetForegroundWindow()));
 api.MapGet("/focused", (IAutomationBackend b) => Results.Ok(b.GetFocusedElement()));
 api.MapGet("/windows", (IAutomationBackend b) => Results.Ok(b.GetTopLevelWindows()));
+api.MapGet("/processes", (IAutomationBackend b) => Results.Ok(b.GetProcesses()));
 api.MapPost("/process/launch", (IAutomationBackend b, LaunchRequest r) =>
     Results.Ok(b.LaunchProcess(r.Path, r.Args, r.WorkingDir, r.WaitForWindowMs ?? 4000)));
 

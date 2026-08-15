@@ -47,7 +47,11 @@ var eventHub = new Deskhand.Core.Events.EventHub();
 var localBackend = new LocalAutomationBackend();
 localBackend.StartEvents(eventHub);                          // UIA events: focus_changed, window_opened
 var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);  // process_started / process_exited
-var screenRecorder = new Deskhand.Core.Services.ScreenRecorder();
+var screenRecorder = new Deskhand.Core.Services.ScreenRecorder(auditLog);
+// Records the USER's physical input; resolves each click's element via the raw backend (unaudited,
+// so per-click resolution doesn't flood the audit log).
+var inputRecorder = new Deskhand.Core.Services.InputRecorder((x, y) =>
+{ try { return localBackend.GetElementFromPoint(x, y); } catch { return null; } });
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(captureNotifier);
@@ -55,6 +59,7 @@ builder.Services.AddSingleton(macroRecorder);
 builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton(processWatcher);
 builder.Services.AddSingleton(screenRecorder);
+builder.Services.AddSingleton(inputRecorder);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
@@ -210,6 +215,15 @@ api.MapGet("/record/status/{id}", (Deskhand.Core.Services.ScreenRecorder rec, st
 api.MapGet("/record/list", (Deskhand.Core.Services.ScreenRecorder rec) => Results.Ok(rec.List()));
 api.MapGet("/recordings/{id}", (Deskhand.Core.Services.ScreenRecorder rec, string id) =>
 { var (bytes, mime, name) = rec.Read(id); return Results.File(bytes, mime, name); });
+
+// ---- record the USER's own mouse/keyboard, noting the element each click hit ----
+api.MapPost("/input/record/start", (Deskhand.Core.Services.InputRecorder ir, AuditLog al, InputRecordRequest? r) =>
+{ var s = ir.Start(r?.CaptureText ?? true); al.Record("user_input_record_start", $"captureText={r?.CaptureText ?? true}", "recording"); return Results.Ok(s); });
+api.MapPost("/input/record/stop", (Deskhand.Core.Services.InputRecorder ir, AuditLog al) =>
+{ var s = ir.Stop(); al.Record("user_input_record_stop", null, "stopped"); return Results.Ok(new { status = s, events = ir.Since(0) }); });
+api.MapGet("/input/record/status", (Deskhand.Core.Services.InputRecorder ir) => Results.Ok(ir.Status()));
+api.MapGet("/input/record/events", (Deskhand.Core.Services.InputRecorder ir, long since) =>
+    Results.Ok(new { lastId = ir.LastId, events = ir.Since(since) }));
 
 // Block until a process starts/exits (event=start|exit), matched by name substring and/or pid.
 api.MapPost("/process/wait", (Deskhand.Core.Events.ProcessWatcher w, ProcessWaitRequest r) =>
@@ -386,6 +400,7 @@ record RefRequest(string Reference);
 record PointRequest(int X, int Y);
 record ProcessWaitRequest(string? Event, string? Name, int? Pid, int? TimeoutMs);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
+record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);
 record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality);

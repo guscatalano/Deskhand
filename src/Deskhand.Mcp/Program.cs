@@ -23,13 +23,16 @@ var eventHub = new Deskhand.Core.Events.EventHub();
 var localBackend = new LocalAutomationBackend();
 localBackend.StartEvents(eventHub);
 var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);
-var screenRecorder = new Deskhand.Core.Services.ScreenRecorder();
+var screenRecorder = new Deskhand.Core.Services.ScreenRecorder(auditLog);
+var inputRecorder = new Deskhand.Core.Services.InputRecorder((x, y) =>
+{ try { return localBackend.GetElementFromPoint(x, y); } catch { return null; } });
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(macroRecorder);
 builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton(processWatcher);
 builder.Services.AddSingleton(screenRecorder);
+builder.Services.AddSingleton(inputRecorder);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 

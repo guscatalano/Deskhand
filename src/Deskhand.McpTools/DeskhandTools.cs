@@ -204,6 +204,21 @@ public static class DeskhandTools
     public static string RecordStatus(Deskhand.Core.Services.ScreenRecorder rec, string? id = null) =>
         Json(id is null ? (object)rec.List() : rec.GetStatus(id));
 
+    // ---------- record the USER's input (what the human did) ----------
+
+    [McpServerTool(Name = "deskhand_user_input_start"), Description("Start recording the USER's own mouse and keyboard input (global hooks). Each click is annotated with the UIA element it landed on (controlType, name, ref), so you can see WHAT was clicked, not just coordinates. Scrolls and typed text are captured too. This is the human's activity — distinct from macro recording, which records the agent's own actions. PRIVACY: this captures real keystrokes (may include passwords); set captureText=false to record mouse only. Poll deskhand_user_input_get, then deskhand_user_input_stop.")]
+    public static string UserInputStart(Deskhand.Core.Services.InputRecorder ir,
+        [Description("Also capture typed text/keys (default true). Set false for mouse-only.")] bool captureText = true)
+        => Json(ir.Start(captureText));
+
+    [McpServerTool(Name = "deskhand_user_input_stop"), Description("Stop recording the user's input and return the full sequence of events (clicks with their elements, scrolls, typed text, special keys).")]
+    public static string UserInputStop(Deskhand.Core.Services.InputRecorder ir)
+        => Json(new { status = ir.Stop(), events = ir.Since(0) });
+
+    [McpServerTool(Name = "deskhand_user_input_get"), Description("Get recorded user-input events newer than sinceId (clicks+elements, scrolls, text, keys) while recording is in progress. Returns lastId to pass next time.")]
+    public static string UserInputGet(Deskhand.Core.Services.InputRecorder ir, long sinceId = 0)
+        => Json(new { lastId = ir.LastId, recording = ir.IsRecording, events = ir.Since(sinceId) });
+
     // ---------- capture (returns MCP image content) ----------
 
     [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an image.")]

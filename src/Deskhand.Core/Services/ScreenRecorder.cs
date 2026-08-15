@@ -48,17 +48,48 @@ public sealed class ScreenRecorder : IDisposable
         public bool Finalized;
     }
 
+    public const int RetentionHours = 24;   // saved media is auto-deleted after this many hours
+
     private readonly ConcurrentDictionary<string, Session> _sessions = new();
     private readonly string _dir;
+    private readonly Deskhand.Core.Governance.AuditLog? _audit;
+    private readonly System.Threading.Timer _janitor;
 
-    public ScreenRecorder()
+    public ScreenRecorder(Deskhand.Core.Governance.AuditLog? audit = null)
     {
+        _audit = audit;
+        // One predefined location for all saved media, shared with screenshots the dashboard downloads.
         _dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Deskhand", "recordings");
         System.IO.Directory.CreateDirectory(_dir);
+        CleanupExpired();
+        _janitor = new System.Threading.Timer(_ => CleanupExpired(), null,
+            TimeSpan.FromHours(6), TimeSpan.FromHours(6));
     }
 
     public string Directory => _dir;
+
+    /// <summary>Delete saved media older than <see cref="RetentionHours"/>, auditing each removal.</summary>
+    private void CleanupExpired()
+    {
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddHours(-RetentionHours);
+            foreach (var f in System.IO.Directory.EnumerateFiles(_dir))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(f) < cutoff)
+                    {
+                        File.Delete(f);
+                        _audit?.Record("recording_expired", Path.GetFileName(f), $"deleted (>{RetentionHours}h)");
+                    }
+                }
+                catch { /* file may be in use; skip this pass */ }
+            }
+        }
+        catch { }
+    }
 
     public RecordingStatus Start(RecordingOptions o)
     {
@@ -140,6 +171,7 @@ public sealed class ScreenRecorder : IDisposable
             string path = Path.Combine(_dir, $"{s.Id}.{ext}");
             File.WriteAllBytes(path, outBytes);
             s.File = path; s.SizeBytes = outBytes.LongLength; s.State = "completed";
+            _audit?.Record("recording_saved", path, $"{s.Opt.Format} {frames.Length}f {outBytes.LongLength}B (auto-delete {RetentionHours}h)");
         }
         catch (Exception ex) { s.State = "error"; s.Error = ex.Message; }
         finally { lock (s.Gate) s.JpegFrames.Clear(); }
@@ -191,6 +223,7 @@ public sealed class ScreenRecorder : IDisposable
 
     public void Dispose()
     {
+        try { _janitor.Dispose(); } catch { }
         foreach (var s in _sessions.Values) { try { s.Timer?.Dispose(); s.AutoStop?.Dispose(); } catch { } }
         _sessions.Clear();
     }

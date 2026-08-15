@@ -49,9 +49,12 @@ localBackend.StartEvents(eventHub);                          // UIA events: focu
 var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);  // process_started / process_exited
 var screenRecorder = new Deskhand.Core.Services.ScreenRecorder(auditLog);
 // Records the USER's physical input; resolves each click's element via the raw backend (unaudited,
-// so per-click resolution doesn't flood the audit log).
-var inputRecorder = new Deskhand.Core.Services.InputRecorder((x, y) =>
-{ try { return localBackend.GetElementFromPoint(x, y); } catch { return null; } });
+// so per-click resolution doesn't flood the audit log). While it runs, a persistent on-screen banner
+// (recordingIndicator) + a toast make sure the user knows they're being observed.
+var recordingIndicator = new Deskhand.Ui.RecordingIndicator();
+var inputRecorder = new Deskhand.Core.Services.InputRecorder(
+    (x, y) => { try { return localBackend.GetElementFromPoint(x, y); } catch { return null; } },
+    captureNotifier, recordingIndicator);
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(captureNotifier);

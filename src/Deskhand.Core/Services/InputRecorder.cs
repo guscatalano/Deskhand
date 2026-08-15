@@ -23,6 +23,8 @@ public record UserInputEventDto(
 public sealed class InputRecorder : IDisposable
 {
     private readonly Func<int, int, ElementInfoDto?> _resolveAt;
+    private readonly Deskhand.Core.Governance.ICaptureNotifier? _notifier;
+    private readonly Deskhand.Core.Governance.IActivityIndicator? _indicator;
     private readonly object _gate = new();
     private readonly List<UserInputEventDto> _events = new();
     private long _seq;
@@ -37,7 +39,12 @@ public sealed class InputRecorder : IDisposable
     private Thread? _worker;
     private readonly StringBuilder _textRun = new();
 
-    public InputRecorder(Func<int, int, ElementInfoDto?> resolveAt) => _resolveAt = resolveAt;
+    public InputRecorder(Func<int, int, ElementInfoDto?> resolveAt,
+        Deskhand.Core.Governance.ICaptureNotifier? notifier = null,
+        Deskhand.Core.Governance.IActivityIndicator? indicator = null)
+    {
+        _resolveAt = resolveAt; _notifier = notifier; _indicator = indicator;
+    }
 
     public bool IsRecording { get { lock (_gate) return _recording; } }
     public long LastId { get { lock (_gate) return _seq; } }
@@ -55,12 +62,18 @@ public sealed class InputRecorder : IDisposable
         _hookThread = new Thread(HookLoop) { IsBackground = true, Name = "deskhand-input-hooks" };
         _hookThread.SetApartmentState(ApartmentState.STA);
         _hookThread.Start();
+        // The user MUST know they're being observed: a persistent banner for as long as it runs, plus a toast.
+        string what = captureText ? "mouse & keyboard" : "mouse";
+        try { _indicator?.Begin($"Deskhand is recording your {what}"); } catch { }
+        try { _notifier?.Notify($"🔴 Deskhand is now recording your {what}"); } catch { }
         return Status();
     }
 
     public object Stop()
     {
         lock (_gate) { if (!_recording) return Status(); _recording = false; }
+        try { _indicator?.End(); } catch { }
+        try { _notifier?.Notify("Deskhand stopped recording your input"); } catch { }
         if (_hookThreadId != 0) PostThreadMessage(_hookThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
         _queue?.CompleteAdding();
         try { _worker?.Join(1500); } catch { }

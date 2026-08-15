@@ -271,14 +271,24 @@ There are two ways Deskhand reaches a **Remote Desktop** machine:
    Verified: run as SYSTEM, it discovered the session and registered `PORTARE-S1`; on a host with RDP
    sessions you get `…-S2`, `…-S3`, etc., side by side.
 
-2. **Protocol-level, zero-install (design/seam).** The other model is a server that speaks the RDP
-   wire protocol to a host with **nothing installed on the target** — capture + input only, **no UIA**
-   (nothing runs in the session to read the tree). This needs a real RDP client (FreeRDP, or the MSTSC
-   ActiveX hosted headlessly), which is a substantial native integration; it plugs in as another
-   `IAutomationBackend` advertising only the transport-portable subset. Not built.
+2. **Protocol-level, zero-install (`Deskhand.Rdp`, built).** A client that speaks the RDP wire
+   protocol to a host with **nothing installed on the target** — capture + input only, **no UIA**
+   (nothing runs in the session to read the tree). It hosts the **Microsoft RDP ActiveX control**
+   (`mstscax.dll`) headlessly on an STA thread, connects with NLA credentials, captures the remote
+   desktop with `PrintWindow`, and posts mouse/keyboard to the control's render window. `RdpBackend`
+   implements the shared `IAutomationBackend` (capture + input; UIA members throw). CLI:
 
-For most uses, model 1 is what you want — full fidelity over RDP with an agent the Launcher already
-places in each session.
+   ```powershell
+   deskhand-rdp <host> <user> <password> [--domain D] [--size 1280x800] [--capture out.png]
+   ```
+
+   The ActiveX interop (`src/Deskhand.Rdp/lib/*.dll`) is generated once from `C:\Windows\System32\mstscax.dll`:
+   `AxImp.exe mstscax.dll` (NETFX 4.8 Tools). **Verified:** the control hosts, the connect pipeline
+   fires, and capture returns a valid PNG. Input (posted to the render window) and a live connected
+   session need a reachable RDP host to validate — self-RDP to localhost would hijack the console.
+
+Model 1 gives full fidelity (UIA + capture + input) with an agent the Launcher places in each session;
+model 2 gives agentless reach when you can't install anything on the target.
 
 ## Recreation docs
 

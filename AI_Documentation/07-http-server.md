@@ -96,6 +96,7 @@ All bodies/responses JSON camelCase. `reference` values (`el_…`) come from any
 | `POST /uia/wait` | `{rootRef?, …, timeoutMs?=5000}` | poll; `404 wait_timeout` on miss |
 | `GET /uia/element/{ref}` | — | re-read one element |
 | `GET /uia/element/{ref}/properties` | — | every UIA property (name→value) |
+| `POST /uia/element-from-point` | `{x, y}` | element under a virtual-desktop pixel (no walk, no ref) |
 | `POST /uia/invoke` | `{reference}` | Invoke pattern |
 | `POST /uia/set-value` | `{reference, text}` | Value pattern |
 | `POST /uia/toggle` | `{reference}` | Toggle pattern |

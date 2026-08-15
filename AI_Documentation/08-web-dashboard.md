@@ -48,9 +48,11 @@ A responsive card grid:
 - **Screen card.** Monitor `<select>` (`all (virtual)` + each monitor), format `png`/`jpeg`, **Capture**
   button → `POST /capture/screen`. The result is drawn into a **viewer**. Clicking the image converts the
   click to **desktop coordinates** (`rect.x + fx*rect.width`, etc.), drops a marker, and — per the **on
-  click** selector — either just reads the coordinates, or performs **move / left / right / double** via the
-  mouse endpoints ("control mode" warning shown when not in read-only inspect mode). The read coordinates
-  auto-fill the Input card's x/y.
+  click** selector — either just reads the coordinates, **🔍 picks the element** at that pixel (`POST
+  /uia/element-from-point`, showing its controlType/name/class with an "open in Explorer →" link), or
+  performs **move / left / right / double** via the mouse endpoints ("control mode" warning shown for the
+  input actions; "pick mode" hint for the picker). The read coordinates auto-fill the Input card's x/y.
+  The picker is the reliable way to target elements in Chromium/Electron apps, whose tree is thin/unstable.
 - **Secure desktop card (Phase 2).** A **Capture input desktop** button → `POST /capture/input-desktop`;
   shows the returned `desktopName (kind)` + note and the image if `success`. As a normal user this captures
   Default; only the SYSTEM Secure Helper captures the secure desktop.

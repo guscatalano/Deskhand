@@ -2,7 +2,7 @@
 
 A console `Exe` (`AssemblyName=deskhand-mcp`) that exposes the **same `IAutomationBackend`** as **MCP tools
 over stdio**, using `ModelContextProtocol` 2.2.0 + `Microsoft.Extensions.Hosting` 9.0.0. Because it shares
-the governed backend, it has identical capabilities and safety to the HTTP host — 25 tools.
+the governed backend, it has identical capabilities and safety to the HTTP host — 26 tools.
 
 ## Host bootstrap (`Program.cs`)
 
@@ -64,13 +64,14 @@ public static string GetTree(IAutomationBackend b,
 Reads return **JSON text** (`System.Text.Json`, camelCase, indented, string enums, null-ignoring). Actions
 return the literal string `"ok"`.
 
-### The 25 tools
+### The 26 tools
 
 Orientation: `deskhand_machine_info`, `deskhand_desktop_state`, `deskhand_list_windows`,
 `deskhand_foreground_window`, `deskhand_focused_element`.
 Governance: `deskhand_control_status`, `deskhand_disarm`, `deskhand_arm`.
 UIA read: `deskhand_get_tree`, `deskhand_find_elements`, `deskhand_wait_for_element`, `deskhand_get_element`,
-`deskhand_get_all_properties`.
+`deskhand_get_all_properties`, `deskhand_element_from_point` (resolve the element under a screen pixel —
+the reliable "find element" for thin/unstable trees; see `04-uia.md`).
 UIA act: `deskhand_invoke`, `deskhand_set_value`, `deskhand_toggle`, `deskhand_expand_collapse`,
 `deskhand_select`, `deskhand_set_focus`.
 Capture: `deskhand_capture_screen`, `deskhand_capture_region`, `deskhand_capture_window`,

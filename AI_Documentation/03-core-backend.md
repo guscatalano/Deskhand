@@ -24,6 +24,7 @@ public interface IAutomationBackend : IDisposable
     ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs); // null on timeout
     ElementInfoDto GetElement(string reference);
     IReadOnlyDictionary<string, string?> GetAllProperties(string reference);
+    ElementInfoDto GetElementFromPoint(int x, int y);   // deepest element under a virtual-desktop pixel
 
     // uia — act
     void Invoke(string reference);

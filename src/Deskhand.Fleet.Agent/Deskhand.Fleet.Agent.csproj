@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Deskhand.Core\Deskhand.Core.csproj" />
+    <ProjectReference Include="..\Deskhand.Ui\Deskhand.Ui.csproj" />
   </ItemGroup>
 
 </Project>

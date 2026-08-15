@@ -307,6 +307,13 @@ claude mcp add --transport http deskhand-fleet http://127.0.0.1:8799/mcp
 So a model gets both surfaces: `deskhand_*` for the local PC (`:8791/mcp`) and `deskhand_list_agents`
 + `deskhand_agent_*` for the whole fleet (`:8799/mcp`).
 
+**Audit & consent.** Every agent connect/disconnect and every routed action — from the dashboard,
+the HTTP API, *or* MCP — is recorded with the caller's address to a **durable append-only JSONL file**
+(`%LOCALAPPDATA%\Deskhand\fleet-audit\fleet-YYYYMMDD.jsonl`), flushed per line so it survives a crash
+and can be read afterward. View it live in the fleet dashboard's **Audit** drawer, or via the
+`deskhand_fleet_audit` MCP tool. And whenever the fleet captures or controls a PC, that machine's
+agent pops an on-screen **toast**, so the person there knows they're being watched.
+
 **Done & tested:** outbound WebSocket transport, agent registry + routing, the full remote backend,
 **shared-token auth** for agents and clients, and AnyIP binding — verified: no-token → 401,
 authenticated agent routing across the whole surface.

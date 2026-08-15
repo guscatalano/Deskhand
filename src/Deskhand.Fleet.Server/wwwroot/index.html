@@ -73,6 +73,14 @@
   #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;transition:.25s;background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-family:var(--mono);font-size:12px;z-index:50;box-shadow:var(--shadow);}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   #toast.err{background:var(--crit);color:#fff;}
+  #auditdrawer{position:fixed;right:14px;bottom:14px;width:min(560px,94vw);max-height:54vh;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);display:none;flex-direction:column;z-index:40;overflow:hidden;}
+  #auditdrawer.show{display:flex;}
+  #auditdrawer header{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line-2);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+  #auditlist{overflow:auto;font-family:var(--mono);font-size:11px;padding:4px 8px;display:flex;flex-direction:column-reverse;}
+  .arow{display:grid;grid-template-columns:80px 130px 1fr;gap:8px;padding:3px 2px;border-bottom:1px solid var(--line-2);}
+  .arow .k{font-weight:700;} .arow .k.connect{color:var(--good);} .arow .k.disconnect{color:var(--crit);} .arow .k.action{color:var(--accent);}
+  .arow .ag{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .arow .dt{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -83,6 +91,7 @@
   <span class="spacer"></span>
   <button class="ghost" id="backBtn" style="display:none">← All PCs</button>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8791/" target="_blank" title="This PC's dashboard">This PC →</a>
+  <button class="ghost" id="auditBtn" title="Who connected & what they did">Audit</button>
   <button class="ghost" id="refreshBtn">Refresh</button>
   <button class="ghost" id="themeBtn">Theme</button>
 </div>
@@ -92,6 +101,7 @@
   <div id="detail"></div>
 </main>
 <div id="toast"></div>
+<div id="auditdrawer"><header>Fleet audit — who connected &amp; what they did<span style="flex:1"></span><span id="auditdir" style="font-family:var(--mono);font-size:9px;color:var(--ink-3)"></span></header><div id="auditlist"></div></div>
 
 <script>
 "use strict";
@@ -205,6 +215,27 @@ $("#themeBtn").onclick=()=>{ const r=document.documentElement; const dark=r.getA
 
 loadAgents().then(thumbAll).catch(()=>{ $("#count").textContent="server unreachable"; });
 gridTimer=setInterval(()=>{ loadAgents().catch(()=>{}); if(!current) thumbAll(); }, 5000);
+
+/* ---------- fleet audit ---------- */
+let auditSince=0;
+$("#auditBtn").onclick=()=>$("#auditdrawer").classList.toggle("show");
+async function pollAudit(){
+  try{
+    const r=await api(`/fleet/audit?since=${auditSince}`);
+    if(r.dir && !$("#auditdir").textContent) $("#auditdir").textContent=r.dir;
+    (r.entries||[]).forEach(e=>{
+      const row=elm("div","arow");
+      const kind=e.kind.replace("agent_","");
+      const k=elm("span","k "+kind); k.textContent=kind;
+      const ag=elm("span","ag"); ag.textContent=(e.agent||"—")+(e.client?` · ${e.client}`:"");
+      const dt=elm("span","dt"); dt.textContent=e.detail||"";
+      $("#auditlist").append(row); row.append(k,ag,dt);
+      while($("#auditlist").children.length>400) $("#auditlist").firstChild.remove();
+    });
+    if(r.entries && r.entries.length) auditSince=r.lastId;
+  }catch{}
+}
+pollAudit(); setInterval(pollAudit, 3000);
 </script>
 </body>
 </html>

@@ -15,7 +15,9 @@ string? argAgentId = args.FirstOrDefault(a => !a.StartsWith("ws", StringComparis
 string agentId = argAgentId ?? Environment.GetEnvironmentVariable("DESKHAND_AGENT_ID") ?? Environment.MachineName;
 string? token = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN");
 
-var backend = new GovernedBackend(new LocalAutomationBackend(), ControlState.FromEnvironment(), new AuditLog());
+// Toast on this PC whenever the fleet captures/controls it — so the local user knows they're watched.
+var notifier = new Deskhand.Ui.ToastNotifier();
+var backend = new GovernedBackend(new LocalAutomationBackend(), ControlState.FromEnvironment(), new AuditLog(), notifier);
 
 Console.WriteLine($"Deskhand agent '{agentId}'  ->  {server}{(token is null ? "" : "  (authenticated)")}");
 

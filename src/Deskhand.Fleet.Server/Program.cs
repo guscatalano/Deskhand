@@ -1,5 +1,6 @@
 using Deskhand.Core;
 using Deskhand.Core.Fleet;
+using Deskhand.Fleet.Server;
 
 // Deskhand Fleet Server: accepts outbound agent connections and exposes the full automation surface,
 // routed to a selected agent. Agents authenticate with a shared token (DESKHAND_FLEET_TOKEN); the
@@ -20,11 +21,16 @@ builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithToolsFromAssembly(typeof(Deskhand.Fleet.Server.FleetTools).Assembly);
 
+builder.Services.AddSingleton<FleetAudit>();
+builder.Services.AddHttpContextAccessor();
+
 var app = builder.Build();
 app.UseWebSockets();
 app.UseDefaultFiles();   // the fleet dashboard (wwwroot/index.html) — served before auth
 app.UseStaticFiles();
 var registry = app.Services.GetRequiredService<AgentRegistry>();
+var audit = app.Services.GetRequiredService<FleetAudit>();
+app.Logger.LogInformation("Fleet audit -> {dir}", audit.Directory);
 
 static string Bearer(HttpContext ctx)
 {
@@ -44,10 +50,18 @@ app.Map("/agent/connect", async (HttpContext ctx) =>
     if (hello is null) return;
 
     var link = new ServerAgentLink(ws, hello);
+    var ip = ctx.Connection.RemoteIpAddress?.ToString();
     registry.Add(link);
+    audit.Record("agent_connect", ip, hello.AgentId, hello.MachineName);
     app.Logger.LogInformation("agent connected: {id} ({machine})", hello.AgentId, hello.MachineName);
     try { await link.ReadLoopAsync(); }
-    finally { registry.Remove(hello.AgentId); link.Dispose(); app.Logger.LogInformation("agent disconnected: {id}", hello.AgentId); }
+    finally
+    {
+        registry.Remove(hello.AgentId);
+        link.Dispose();
+        audit.Record("agent_disconnect", ip, hello.AgentId, hello.MachineName);
+        app.Logger.LogInformation("agent disconnected: {id}", hello.AgentId);
+    }
 });
 
 // ---- client auth (bearer, when a token is configured) ----
@@ -75,6 +89,20 @@ app.Use(async (ctx, next) =>
     }
 });
 
+// Record every routed /agents/{id}/... action (dashboard + HTTP API) with the caller's address.
+app.Use(async (ctx, next) =>
+{
+    await next();
+    var p = ctx.Request.Path.Value ?? "";
+    if (p.StartsWith("/agents/", StringComparison.Ordinal))
+    {
+        var seg = p.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (seg.Length >= 3)
+            audit.Record("action", ctx.Connection.RemoteIpAddress?.ToString(), seg[1],
+                $"{ctx.Request.Method} /{string.Join('/', seg.Skip(2))} -> {ctx.Response.StatusCode}");
+    }
+});
+
 IAutomationBackend A(string id) =>
     new RemoteAgentBackend(registry.Get(id) ?? throw new ArgumentException($"No agent '{id}' is connected."));
 
@@ -88,6 +116,7 @@ app.MapGet("/agents", () => Results.Ok(registry.All.Select(a => new
     id = a.AgentId, machine = a.MachineName,
     monitors = a.Info?.Monitors.Count ?? 0, desktop = a.Info?.DesktopState.Desktop, elevated = a.Info?.IsElevated ?? false,
 })));
+app.MapGet("/fleet/audit", (FleetAudit a, long since) => Results.Ok(new { lastId = a.LastId, dir = a.Directory, entries = a.Since(since) }));
 
 // ---- orientation ----
 app.MapGet("/agents/{id}/machine", (string id) => Results.Ok(A(id).GetMachineInfo()));

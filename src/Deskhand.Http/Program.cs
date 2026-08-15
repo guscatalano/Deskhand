@@ -48,6 +48,12 @@ builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
+// Also serve MCP over Streamable HTTP at /mcp, sharing the SAME backend + governance + events, so
+// the dashboard reflects and controls whatever an MCP client does through this one process.
+builder.Services.AddMcpServer()
+    .WithHttpTransport()
+    .WithToolsFromAssembly(typeof(Deskhand.McpTools.DeskhandTools).Assembly);
+
 var app = builder.Build();
 
 // The dashboard: static files (index.html at "/") are served before auth runs.
@@ -58,9 +64,9 @@ app.UseStaticFiles();
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path.Value ?? "";
-    if (path is "/health")
+    if (path is "/health" || path.StartsWith("/mcp", StringComparison.Ordinal))
     {
-        await next();
+        await next(); // MCP transport handles its own protocol; loopback binding still applies
         return;
     }
 
@@ -281,10 +287,14 @@ api.MapPost("/mouse/scroll", (IAutomationBackend b, ScrollRequest r) => { b.Mous
 api.MapPost("/keyboard/type", (IAutomationBackend b, TypeRequest r) => { b.TypeText(r.Text); return Ok(); });
 api.MapPost("/keyboard/keys", (IAutomationBackend b, KeysRequest r) => { b.SendKeys(r.Chord); return Ok(); });
 
+// MCP over Streamable HTTP — same server, same state as the dashboard.
+app.MapMcp("/mcp");
+
 Console.WriteLine();
-Console.WriteLine("  Deskhand — open the dashboard in your browser:");
+Console.WriteLine("  Deskhand — one server, two faces:");
 Console.WriteLine();
-Console.WriteLine($"      http://127.0.0.1:{port}");
+Console.WriteLine($"      dashboard   http://127.0.0.1:{port}");
+Console.WriteLine($"      MCP (HTTP)  http://127.0.0.1:{port}/mcp");
 Console.WriteLine();
 Console.WriteLine(requireToken
     ? "  DESKHAND_TOKEN is set: scripts/curl must send 'Authorization: Bearer <token>'. The web UI does not."

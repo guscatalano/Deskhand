@@ -32,7 +32,7 @@ builder.Services.AddSingleton<IAutomationBackend>(_ =>
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly(typeof(Deskhand.McpTools.DeskhandTools).Assembly);
 
 var app = builder.Build();
 using var killSwitch = new KillSwitch(controlState, auditLog);

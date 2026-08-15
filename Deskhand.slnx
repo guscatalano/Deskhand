@@ -17,6 +17,9 @@
     <Project Path="src/Deskhand.Mcp/Deskhand.Mcp.csproj">
       <Platform Project="x64" />
     </Project>
+    <Project Path="src/Deskhand.McpTools/Deskhand.McpTools.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Deskhand.Rdp/Deskhand.Rdp.csproj">
       <Platform Project="x64" />
     </Project>

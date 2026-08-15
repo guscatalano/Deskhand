@@ -6,7 +6,7 @@ using Deskhand.Core.Governance;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace Deskhand.Mcp;
+namespace Deskhand.McpTools;
 
 /// <summary>
 /// The Deskhand MCP tool surface. Every tool delegates to the shared <see cref="IAutomationBackend"/>

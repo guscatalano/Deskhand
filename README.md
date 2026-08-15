@@ -165,10 +165,22 @@ Register it with an MCP client (e.g. Claude Desktop / Claude Code) — `mcp.json
 
 The MCP server runs in your user session and covers the Default desktop, exactly like the HTTP one.
 
-### Configure your MCP client
+### Two ways to run MCP
 
-The server is one stdio executable. After building (`dotnet build src/Deskhand.Mcp -c Release`) or
-installing the MSI, point your client at it. The examples use the MSI path
+- **stdio** — the standalone `deskhand-mcp.exe`; your client launches it on demand. No port, no
+  dashboard.
+- **HTTP (unified)** — the **dashboard server also serves MCP** over Streamable HTTP at
+  **`http://127.0.0.1:8791/mcp`**. Run `deskhand-http` once and you get the browser dashboard *and*
+  the MCP endpoint in **one process sharing one backend** — so the dashboard shows and governs
+  exactly what your MCP client does (same audit, events, kill switch, macros, screenshot toast).
+
+For Claude Code: `claude mcp add --transport http deskhand http://127.0.0.1:8791/mcp` (keep
+`deskhand-http` running). Clients that support HTTP MCP take a URL instead of a command
+(`{ "type": "http", "url": "http://127.0.0.1:8791/mcp" }`).
+
+### Configure your MCP client (stdio)
+
+For the stdio server, point your client at `deskhand-mcp.exe`. The examples use the MSI path
 `C:\Program Files\Deskhand\mcp\deskhand-mcp.exe` — swap in your build path if running from source.
 
 Most clients share the **`mcpServers`** shape:

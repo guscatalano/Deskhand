@@ -11,8 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <ProjectReference Include="..\Deskhand.Core\Deskhand.Core.csproj" />
     <ProjectReference Include="..\Deskhand.Ui\Deskhand.Ui.csproj" />
+    <ProjectReference Include="..\Deskhand.McpTools\Deskhand.McpTools.csproj" />
   </ItemGroup>
 
 </Project>

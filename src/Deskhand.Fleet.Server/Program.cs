@@ -105,6 +105,8 @@ app.Use(async (ctx, next) =>
 
 IAutomationBackend A(string id) =>
     new RemoteAgentBackend(registry.Get(id) ?? throw new ArgumentException($"No agent '{id}' is connected."));
+RemoteAgentObserver O(string id) =>
+    new(registry.Get(id) ?? throw new ArgumentException($"No agent '{id}' is connected."));
 
 static IResult Cap(CaptureResultDto c) =>
     Results.Ok(new { c.Desktop, c.Rect, c.Monitor, c.DpiScale, c.Format, imageBase64 = Convert.ToBase64String(c.Bytes) });
@@ -138,6 +140,22 @@ app.MapPost("/agents/{id}/uia/wait", (string id, WaitReq r) =>
 app.MapPost("/agents/{id}/uia/element", (string id, RefReq r) => Results.Ok(A(id).GetElement(r.Reference)));
 app.MapPost("/agents/{id}/uia/properties", (string id, RefReq r) => Results.Ok(A(id).GetAllProperties(r.Reference)));
 app.MapPost("/agents/{id}/uia/element-from-point", (string id, PointReq r) => Results.Ok(A(id).GetElementFromPoint(r.X, r.Y)));
+
+// ---- observation: events, hooks, recording, user-input (routed to the agent's services) ----
+app.MapGet("/agents/{id}/events", (string id, long since) => Results.Ok(O(id).GetEvents(since)));
+app.MapPost("/agents/{id}/process/wait", (string id, ProcWaitReq r) => Results.Ok(O(id).WaitForProcess(r.Event ?? "start", r.Name, r.Pid, r.TimeoutMs ?? 30000)));
+app.MapPost("/agents/{id}/record/start", (string id, RecReq r) => Results.Ok(O(id).RecordStart(r.Monitor, r.Format ?? "gif", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000)));
+app.MapPost("/agents/{id}/record/stop", (string id, RefReq r) => Results.Ok(O(id).RecordStop(r.Reference)));
+app.MapGet("/agents/{id}/record/status", (string id, string? recId) => Results.Ok(O(id).RecordStatus(recId)));
+app.MapGet("/agents/{id}/recordings/{recId}", (string id, string recId) =>
+{
+    var j = O(id).RecordRead(recId);
+    var bytes = Convert.FromBase64String(j.GetProperty("base64").GetString()!);
+    return Results.File(bytes, j.GetProperty("mime").GetString(), j.GetProperty("name").GetString());
+});
+app.MapPost("/agents/{id}/input/record/start", (string id, InputRecReq r) => Results.Ok(O(id).InputStart(r.CaptureText ?? true)));
+app.MapPost("/agents/{id}/input/record/stop", (string id) => Results.Ok(O(id).InputStop()));
+app.MapGet("/agents/{id}/input/record/events", (string id, long since) => Results.Ok(O(id).InputGet(since)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -202,3 +220,6 @@ record TypeReq(string Text);
 record KeysReq(string Chord);
 record LaunchReq(string Path, string? Args, string? WorkingDir, int? WaitForWindowMs);
 record PointReq(int X, int Y);
+record ProcWaitReq(string? Event, string? Name, int? Pid, int? TimeoutMs);
+record RecReq(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
+record InputRecReq(bool? CaptureText);

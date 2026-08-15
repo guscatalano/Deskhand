@@ -66,4 +66,15 @@ public static class FleetMethods
     public const string MouseScroll = "mouse_scroll";
     public const string TypeText = "type_text";
     public const string SendKeys = "send_keys";
+
+    // observation: events, hooks, recording, user-input recording
+    public const string GetEvents = "get_events";
+    public const string WaitForProcess = "wait_for_process";
+    public const string RecordStart = "record_start";
+    public const string RecordStop = "record_stop";
+    public const string RecordStatus = "record_status";
+    public const string RecordRead = "record_read";
+    public const string InputStart = "input_start";
+    public const string InputStop = "input_stop";
+    public const string InputGet = "input_get";
 }

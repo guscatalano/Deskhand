@@ -10,7 +10,7 @@ namespace Deskhand.Core.Fleet;
 /// </summary>
 public static class AgentConnection
 {
-    public static async Task RunForeverAsync(string serverWsUrl, string agentId, IAutomationBackend backend,
+    public static async Task RunForeverAsync(string serverWsUrl, string agentId, AgentServices services,
         Action<string>? log, CancellationToken ct, string? token = null)
     {
         int backoffMs = 1000;
@@ -18,7 +18,7 @@ public static class AgentConnection
         {
             try
             {
-                await ConnectOnceAsync(serverWsUrl, agentId, backend, log, ct, token);
+                await ConnectOnceAsync(serverWsUrl, agentId, services, log, ct, token);
                 backoffMs = 1000;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
@@ -31,7 +31,7 @@ public static class AgentConnection
         }
     }
 
-    private static async Task ConnectOnceAsync(string serverWsUrl, string agentId, IAutomationBackend backend,
+    private static async Task ConnectOnceAsync(string serverWsUrl, string agentId, AgentServices services,
         Action<string>? log, CancellationToken ct, string? token)
     {
         using var ws = new ClientWebSocket();
@@ -39,7 +39,7 @@ public static class AgentConnection
         await ws.ConnectAsync(new Uri(serverWsUrl), ct);
         var gate = new SemaphoreSlim(1, 1);
 
-        var hello = new AgentHello(agentId, Environment.MachineName, backend.GetMachineInfo());
+        var hello = new AgentHello(agentId, Environment.MachineName, services.Backend.GetMachineInfo());
         await WsUtil.SendTextAsync(ws, FleetJson.Serialize(hello), gate, ct);
         log?.Invoke($"connected to {serverWsUrl} as '{agentId}'");
 
@@ -57,7 +57,7 @@ public static class AgentConnection
                 FleetResult result;
                 try
                 {
-                    var value = AgentDispatcher.Dispatch(cmd, backend);
+                    var value = AgentDispatcher.Dispatch(cmd, services);
                     var element = JsonSerializer.SerializeToElement(value, FleetJson.Options);
                     result = new FleetResult(cmd.Id, true, element, null, null);
                 }

@@ -5,9 +5,48 @@ namespace Deskhand.Core.Fleet;
 /// <summary>Agent side: turns an incoming <see cref="FleetCommand"/> into a call on the local backend.</summary>
 public static class AgentDispatcher
 {
-    public static object? Dispatch(FleetCommand cmd, IAutomationBackend b)
+    public static object? Dispatch(FleetCommand cmd, AgentServices svc)
     {
         var a = cmd.Args;
+        var b = svc.Backend;
+        switch (cmd.Method)
+        {
+            // ---- observation: events, hooks, recording, user-input (require the extra services) ----
+            case FleetMethods.GetEvents:
+            {
+                var h = Req(svc.Events, "events");
+                return new { lastId = h.LastId, events = h.Since(a.Long("sinceId", 0)) };
+            }
+            case FleetMethods.WaitForProcess:
+                return Req(svc.Processes, "process watcher")
+                    .WaitForProcess(a.Str("event") ?? "start", a.Str("name"), a.IntN("pid"), a.Int("timeoutMs", 30000));
+            case FleetMethods.RecordStart:
+                return Req(svc.Recorder, "recorder").Start(new Services.RecordingOptions(
+                    a.IntN("monitor"), a.Str("format") ?? "gif", a.Int("fps", 10), a.Int("scale", 100),
+                    a.Int("quality", 75), a.Int("maxDurationMs", 30000)));
+            case FleetMethods.RecordStop:
+                return Req(svc.Recorder, "recorder").Stop(a.Str("id")!);
+            case FleetMethods.RecordStatus:
+                return a.Str("id") is { } rid ? Req(svc.Recorder, "recorder").GetStatus(rid)
+                                              : (object)Req(svc.Recorder, "recorder").List();
+            case FleetMethods.RecordRead:
+            {
+                var (bytes, mime, name) = Req(svc.Recorder, "recorder").Read(a.Str("id")!);
+                return new { name, mime, base64 = Convert.ToBase64String(bytes) };
+            }
+            case FleetMethods.InputStart:
+                return Req(svc.Input, "input recorder").Start(a.Bool("captureText", true));
+            case FleetMethods.InputStop:
+            {
+                var ir = Req(svc.Input, "input recorder");
+                return new { status = ir.Stop(), events = ir.Since(0) };
+            }
+            case FleetMethods.InputGet:
+            {
+                var ir = Req(svc.Input, "input recorder");
+                return new { lastId = ir.LastId, recording = ir.IsRecording, events = ir.Since(a.Long("sinceId", 0)) };
+            }
+        }
         return cmd.Method switch
         {
             FleetMethods.MachineInfo => b.GetMachineInfo(),
@@ -45,6 +84,9 @@ public static class AgentDispatcher
             _ => throw new ArgumentException($"Unknown fleet method '{cmd.Method}'."),
         };
     }
+
+    private static T Req<T>(T? svc, string name) where T : class =>
+        svc ?? throw new InvalidOperationException($"This agent has no {name} service.");
 
     private static object Void(Action act) { act(); return new { ok = true }; }
 

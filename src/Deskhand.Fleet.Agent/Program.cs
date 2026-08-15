@@ -17,11 +17,24 @@ string? token = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN");
 
 // Toast on this PC whenever the fleet captures/controls it — so the local user knows they're watched.
 var notifier = new Deskhand.Ui.ToastNotifier();
-var backend = new GovernedBackend(new LocalAutomationBackend(), ControlState.FromEnvironment(), new AuditLog(), notifier);
+var indicator = new Deskhand.Ui.RecordingIndicator();
+var audit = new AuditLog();
+var local = new LocalAutomationBackend();
+var backend = new GovernedBackend(local, ControlState.FromEnvironment(), audit, notifier);
+
+// Observation services, so the fleet can pull this PC's events and drive its recorders remotely.
+var hub = new Deskhand.Core.Events.EventHub();
+local.StartEvents(hub);                                   // focus_changed, window_opened
+var processes = new Deskhand.Core.Events.ProcessWatcher(hub);        // process_started/exited
+var recorder = new Deskhand.Core.Services.ScreenRecorder(audit);
+var input = new Deskhand.Core.Services.InputRecorder(
+    (x, y) => { try { return local.GetElementFromPoint(x, y); } catch { return null; } },
+    notifier, indicator);                                // banner + toast on THIS PC when the fleet records its user
+var services = new AgentServices { Backend = backend, Events = hub, Processes = processes, Recorder = recorder, Input = input };
 
 Console.WriteLine($"Deskhand agent '{agentId}'  ->  {server}{(token is null ? "" : "  (authenticated)")}");
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-await AgentConnection.RunForeverAsync(server, agentId, backend, m => Console.WriteLine("  " + m), cts.Token, token);
+await AgentConnection.RunForeverAsync(server, agentId, services, m => Console.WriteLine("  " + m), cts.Token, token);

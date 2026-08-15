@@ -24,12 +24,20 @@ public static class FleetTools
         WriteIndented = true,
     };
     private static string Json(object? o) => JsonSerializer.Serialize(o, J);
+    private static string Raw(JsonElement e) => e.ValueKind == JsonValueKind.Undefined ? "null" : e.GetRawText();
 
     // Resolve the remote backend for an agent AND record the action in the audit.
     private static IAutomationBackend A(AgentRegistry r, FleetAudit audit, string agentId, string action)
     {
         audit.Record("action", "mcp", agentId, action);
         return new RemoteAgentBackend(r.Get(agentId) ?? throw new ArgumentException($"No agent '{agentId}' is connected. Use deskhand_list_agents."));
+    }
+
+    // Resolve the remote OBSERVER (events/hooks/recording/input) for an agent AND audit the action.
+    private static RemoteAgentObserver O(AgentRegistry r, FleetAudit audit, string agentId, string action)
+    {
+        audit.Record("action", "mcp", agentId, action);
+        return new RemoteAgentObserver(r.Get(agentId) ?? throw new ArgumentException($"No agent '{agentId}' is connected. Use deskhand_list_agents."));
     }
 
     private static ImageFormat Fmt(string? f) => f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
@@ -116,4 +124,38 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_launch"), Description("Launch a program on a fleet PC; returns its window if it appears.")]
     public static string AgentLaunch(AgentRegistry r, FleetAudit audit, string agentId, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 4000)
         => Json(A(r, audit, agentId, $"launch {path}").LaunchProcess(path, args, workingDir, waitForWindowMs));
+
+    // ---------- fleet observation: events, hooks, recording, user-input ----------
+
+    [McpServerTool(Name = "deskhand_agent_get_events"), Description("Poll a fleet PC's event feed newer than sinceId: focus_changed, window_opened, process_started, process_exited. Returns lastId to pass next time.")]
+    public static string AgentGetEvents(AgentRegistry r, FleetAudit audit, string agentId, long sinceId = 0)
+        => Raw(O(r, audit, agentId, "get_events").GetEvents(sinceId));
+
+    [McpServerTool(Name = "deskhand_agent_wait_for_process"), Description("Block until a process starts or exits on a fleet PC. event=\"start\"|\"exit\", matched by name substring and/or pid.")]
+    public static string AgentWaitForProcess(AgentRegistry r, FleetAudit audit, string agentId, string @event = "start", string? name = null, int? pid = null, int timeoutMs = 30000)
+        => Raw(O(r, audit, agentId, $"wait_for_process {@event}").WaitForProcess(@event, name, pid, timeoutMs));
+
+    [McpServerTool(Name = "deskhand_agent_record_start"), Description("Start recording a fleet PC's screen to GIF or MJPEG-AVI. monitor: index or omit for all monitors. Hard maxDurationMs auto-stops. Returns a recording id.")]
+    public static string AgentRecordStart(AgentRegistry r, FleetAudit audit, string agentId, int? monitor = null, string format = "gif", int fps = 10, int scale = 100, int quality = 75, int maxDurationMs = 30000)
+        => Raw(O(r, audit, agentId, "record_start").RecordStart(monitor, format, fps, scale, quality, maxDurationMs));
+
+    [McpServerTool(Name = "deskhand_agent_record_stop"), Description("Stop and finalize a fleet PC's screen recording. The file is saved on that PC; download it at /agents/{id}/recordings/{recId}.")]
+    public static string AgentRecordStop(AgentRegistry r, FleetAudit audit, string agentId, string recId)
+        => Raw(O(r, audit, agentId, "record_stop").RecordStop(recId));
+
+    [McpServerTool(Name = "deskhand_agent_record_status"), Description("Status of one recording (recId) or all recordings on a fleet PC (omit recId).")]
+    public static string AgentRecordStatus(AgentRegistry r, FleetAudit audit, string agentId, string? recId = null)
+        => Raw(O(r, audit, agentId, "record_status").RecordStatus(recId));
+
+    [McpServerTool(Name = "deskhand_agent_user_input_start"), Description("Start recording the USER's mouse/keyboard on a fleet PC; each click is annotated with the element it hit. The watched PC shows a persistent on-screen banner + toast. PRIVACY: captures real keystrokes; captureText=false for mouse-only.")]
+    public static string AgentInputStart(AgentRegistry r, FleetAudit audit, string agentId, bool captureText = true)
+        => Raw(O(r, audit, agentId, "input_record_start").InputStart(captureText));
+
+    [McpServerTool(Name = "deskhand_agent_user_input_stop"), Description("Stop user-input recording on a fleet PC and return the full event sequence (clicks+elements, scrolls, text, keys).")]
+    public static string AgentInputStop(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "input_record_stop").InputStop());
+
+    [McpServerTool(Name = "deskhand_agent_user_input_get"), Description("Get user-input events newer than sinceId from a fleet PC while recording is in progress.")]
+    public static string AgentInputGet(AgentRegistry r, FleetAudit audit, string agentId, long sinceId = 0)
+        => Raw(O(r, audit, agentId, "input_record_get").InputGet(sinceId));
 }

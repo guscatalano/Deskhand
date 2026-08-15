@@ -263,6 +263,8 @@
             <input type="text" id="typeTxt" placeholder="text to type" style="flex:1"><button class="btn a" id="typeBtn">Type</button></div>
           <div class="row"><label class="lbl">keys</label>
             <input type="text" id="keysTxt" placeholder="ctrl+a · alt+F4 · enter"><button class="btn a" id="keysBtn">Send</button></div>
+          <div class="row"><label class="lbl">launch</label>
+            <input type="text" id="launchPath" placeholder="notepad · C:\path\app.exe · https://…" style="flex:1"><button class="btn a" id="launchBtn">Launch</button></div>
         </div>
       </section>
       <section class="card">
@@ -582,6 +584,8 @@ $("#clickBtn").onclick=guard(async()=>{ await api("/mouse/click","POST",{button:
 $("#scrollBtn").onclick=guard(async()=>{ await api("/mouse/scroll","POST",{dx:+$("#sdx").value,dy:+$("#sdy").value}); toast("scrolled"); });
 $("#typeBtn").onclick=guard(async()=>{ await api("/keyboard/type","POST",{text:$("#typeTxt").value}); toast("typed"); });
 $("#keysBtn").onclick=guard(async()=>{ await api("/keyboard/keys","POST",{chord:$("#keysTxt").value}); toast("sent"); });
+$("#launchBtn").onclick=guard(async()=>{ const path=$("#launchPath").value.trim(); if(!path) return; const r=await api("/process/launch","POST",{path,waitForWindowMs:5000}); toast(r.hasWindow?`launched: ${r.window?.name||r.processName}`:`launched pid ${r.processId}`); if(r.window){ document.querySelector('.tabbtn[data-tab="explorer"]').click(); await loadRoot(r.window); } });
+$("#launchPath").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#launchBtn").click(); });
 $("#typeTxt").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#typeBtn").click(); });
 $("#keysTxt").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#keysBtn").click(); });
 

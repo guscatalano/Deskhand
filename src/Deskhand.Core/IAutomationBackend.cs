@@ -15,6 +15,10 @@ public interface IAutomationBackend : IDisposable
     ElementInfoDto GetFocusedElement();
     IReadOnlyList<ElementInfoDto> GetTopLevelWindows();
 
+    /// <summary>Launch a program (by path or shell name/URL/document), optionally waiting for its
+    /// main window. Governed as an input-class action.</summary>
+    ProcessLaunchResultDto LaunchProcess(string path, string? args, string? workingDir, int waitForWindowMs);
+
     // uia — read
     TreeNodeDto GetTree(string? rootRef, int depth, int maxChildren);
     IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query);

@@ -64,6 +64,14 @@ public sealed class GovernedBackend(IAutomationBackend inner, ControlState state
     public ElementInfoDto GetFocusedElement() => Audited("focused_element", null, inner.GetFocusedElement);
     public IReadOnlyList<ElementInfoDto> GetTopLevelWindows() => Audited("list_windows", null, inner.GetTopLevelWindows);
 
+    public ProcessLaunchResultDto LaunchProcess(string path, string? args, string? workingDir, int waitForWindowMs)
+    {
+        RequireInput("launch_process");
+        var r = Audited("launch_process", $"{path} {args}", () => inner.LaunchProcess(path, args, workingDir, waitForWindowMs));
+        recorder?.RecordInput(FleetMethods.Launch, new { path, args, workingDir, waitForWindowMs });
+        return r;
+    }
+
     // ---- uia read ----
     public TreeNodeDto GetTree(string? rootRef, int depth, int maxChildren)
         => Audited("get_tree", $"root={rootRef ?? "desktop"} depth={depth}", () => inner.GetTree(rootRef, depth, maxChildren));

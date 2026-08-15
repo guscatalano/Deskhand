@@ -89,6 +89,7 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /foreground` | — | Foreground window element |
 | `GET /focused` | — | Focused element |
 | `GET /windows` | — | All top-level windows (the reliable way to enter a specific app) |
+| `POST /process/launch` | `{path, args?, workingDir?, waitForWindowMs?}` | Launch a program; returns its window if it appears |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |
 | `POST /uia/find` | `{rootRef?, name?, automationId?, controlType?, className?, scope?, max?}` | Query elements |
 | `POST /uia/wait` | `{…conditions, timeoutMs?}` | Poll until a matching element appears (or `404 wait_timeout`) |

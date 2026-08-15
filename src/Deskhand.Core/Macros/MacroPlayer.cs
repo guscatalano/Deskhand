@@ -72,6 +72,7 @@ public static class MacroPlayer
             case FleetMethods.MouseScroll: b.MouseScroll(a.Int("dx"), a.Int("dy")); break;
             case FleetMethods.TypeText: b.TypeText(a.Str("text") ?? ""); break;
             case FleetMethods.SendKeys: b.SendKeys(a.Str("chord") ?? ""); break;
+            case FleetMethods.Launch: b.LaunchProcess(a.Str("path") ?? "", a.Str("args"), a.Str("workingDir"), a.Int("waitForWindowMs", 4000)); break;
         }
     }
 

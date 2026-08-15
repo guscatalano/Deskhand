@@ -65,6 +65,9 @@ public sealed class UiaService : IDisposable
         return Register(el);
     }
 
+    /// <summary>Resolve and register an element from a native window handle (e.g. a launched app's window).</summary>
+    public ElementInfoDto RegisterHandle(IntPtr hwnd) => Register(_automation.FromHandle(hwnd));
+
     /// <summary>Top-level windows (children of the desktop root) — the reliable entry points
     /// for exploring a specific app, since "foreground" is always the browser when clicked.</summary>
     public IReadOnlyList<ElementInfoDto> GetTopLevelWindows()

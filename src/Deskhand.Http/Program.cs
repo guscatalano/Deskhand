@@ -201,6 +201,8 @@ api.MapGet("/desktop/state", (IAutomationBackend b) => Results.Ok(b.GetDesktopSt
 api.MapGet("/foreground", (IAutomationBackend b) => Results.Ok(b.GetForegroundWindow()));
 api.MapGet("/focused", (IAutomationBackend b) => Results.Ok(b.GetFocusedElement()));
 api.MapGet("/windows", (IAutomationBackend b) => Results.Ok(b.GetTopLevelWindows()));
+api.MapPost("/process/launch", (IAutomationBackend b, LaunchRequest r) =>
+    Results.Ok(b.LaunchProcess(r.Path, r.Args, r.WorkingDir, r.WaitForWindowMs ?? 4000)));
 
 // ---- uia read ----
 api.MapPost("/uia/tree", (IAutomationBackend b, TreeRequest r) =>
@@ -328,6 +330,7 @@ static bool FixedEquals(string a, string b)
 record TreeRequest(string? RootRef, int? Depth, int? MaxChildren);
 record FindRequest(string? RootRef, string? Name, string? AutomationId, string? ControlType, string? ClassName, string? Scope, int? Max);
 record WaitRequest(string? RootRef, string? Name, string? AutomationId, string? ControlType, string? ClassName, string? Scope, int? TimeoutMs);
+record LaunchRequest(string Path, string? Args, string? WorkingDir, int? WaitForWindowMs);
 record RefRequest(string Reference);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);

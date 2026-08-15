@@ -40,6 +40,7 @@ public sealed class RemoteAgentBackend(IAgentLink link) : IAutomationBackend
     public ElementInfoDto GetForegroundWindow() => Call<ElementInfoDto>(FleetMethods.ForegroundWindow, null);
     public ElementInfoDto GetFocusedElement() => Call<ElementInfoDto>(FleetMethods.FocusedElement, null);
     public IReadOnlyList<ElementInfoDto> GetTopLevelWindows() => Call<List<ElementInfoDto>>(FleetMethods.ListWindows, null);
+    public ProcessLaunchResultDto LaunchProcess(string path, string? args, string? workingDir, int waitForWindowMs) => Call<ProcessLaunchResultDto>(FleetMethods.Launch, new { path, args, workingDir, waitForWindowMs });
 
     public TreeNodeDto GetTree(string? rootRef, int depth, int maxChildren) => Call<TreeNodeDto>(FleetMethods.GetTree, new { rootRef, depth, maxChildren });
     public IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query) => Call<List<ElementInfoDto>>(FleetMethods.Find, new { rootRef, query });

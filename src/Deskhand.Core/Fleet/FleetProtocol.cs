@@ -39,6 +39,7 @@ public static class FleetMethods
     public const string ForegroundWindow = "foreground_window";
     public const string FocusedElement = "focused_element";
     public const string ListWindows = "list_windows";
+    public const string Launch = "launch";
     public const string GetTree = "get_tree";
     public const string Find = "find";
     public const string WaitForElement = "wait_for_element";

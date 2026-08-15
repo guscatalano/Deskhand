@@ -27,6 +27,44 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     public DesktopStateDto GetDesktopState() => DesktopInfo.GetDesktopState();
     public MachineInfoDto GetMachineInfo() => DesktopInfo.GetMachineInfo();
 
+    public ProcessLaunchResultDto LaunchProcess(string path, string? args, string? workingDir, int waitForWindowMs)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true };
+        if (!string.IsNullOrEmpty(args)) psi.Arguments = args;
+        if (!string.IsNullOrEmpty(workingDir)) psi.WorkingDirectory = workingDir;
+
+        var proc = System.Diagnostics.Process.Start(psi)
+                   ?? throw new ArgumentException($"Could not start '{path}' (the shell handled it without a new process).");
+
+        IntPtr hwnd = IntPtr.Zero;
+        if (waitForWindowMs > 0)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < waitForWindowMs)
+            {
+                try { proc.Refresh(); if (proc.HasExited) break; hwnd = proc.MainWindowHandle; if (hwnd != IntPtr.Zero) break; }
+                catch { }
+                Thread.Sleep(100);
+            }
+        }
+
+        ElementInfoDto? window = null;
+        if (hwnd != IntPtr.Zero) { var h = hwnd; window = _sta.Invoke(() => _uia.RegisterHandle(h)); }
+
+        int pid = -1; string name = "";
+        try { pid = proc.Id; name = proc.ProcessName; } catch { }
+
+        // Fallback: MainWindowHandle is 0 for some apps (a launcher/host owns the window). Look for a
+        // top-level window owned by the launched process. (Packaged apps whose window is hosted by a
+        // different process won't match — use list_windows to find those.)
+        if (window is null && waitForWindowMs > 0 && pid > 0)
+        {
+            try { window = _sta.Invoke(() => _uia.GetTopLevelWindows()).FirstOrDefault(w => w.ProcessId == pid); }
+            catch { }
+        }
+        return new ProcessLaunchResultDto(pid, name, window is not null, window);
+    }
+
     // ---- orientation via UIA ----
     public ElementInfoDto GetForegroundWindow() => _sta.Invoke(_uia.GetForegroundWindow);
     public ElementInfoDto GetFocusedElement() => _sta.Invoke(_uia.GetFocusedElement);

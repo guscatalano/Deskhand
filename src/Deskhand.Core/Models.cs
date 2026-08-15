@@ -57,3 +57,7 @@ public record CaptureResultDto(
     double DpiScale,
     string Format,
     byte[] Bytes);
+
+/// <summary>Result of launching a program. <c>Window</c> is populated when the process's main window
+/// appeared within the wait timeout.</summary>
+public record ProcessLaunchResultDto(int ProcessId, string ProcessName, bool HasWindow, ElementInfoDto? Window);

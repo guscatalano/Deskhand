@@ -261,6 +261,16 @@
             </select>
           </div>
           <div class="hint" id="controlHint"></div>
+          <div class="row" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+            <label class="lbl">🎥 record</label>
+            <select id="recFmt" title="format"><option value="gif">GIF</option><option value="avi">AVI (video)</option></select>
+            <label class="lbl">fps</label><input id="recFps" type="number" value="10" min="1" max="30" style="width:52px">
+            <label class="lbl">scale%</label><input id="recScale" type="number" value="60" min="10" max="100" style="width:56px">
+            <label class="lbl">max s</label><input id="recMax" type="number" value="30" min="1" max="300" style="width:56px" title="hard auto-stop after this many seconds">
+            <button class="btn p" id="recBtn2">● Record</button>
+            <button class="btn" id="recStop2" disabled>■ Stop</button>
+          </div>
+          <div class="coordbar" id="recStatus">Records the selected monitor (or “all”). Auto-stops at the max-seconds limit even if Stop is never pressed.</div>
         </div>
       </section>
       <section class="card">
@@ -608,6 +618,33 @@ $("#clickAction").addEventListener("change",()=>{ const v=$("#clickAction").valu
     :"Reading mode — clicking only reports coordinates."; });
 
 $("#capBtn").onclick=capture;
+
+/* ---------- screen recording ---------- */
+let recId=null, recPoll=null;
+const recBtn=$("#recBtn2"), recStopBtn=$("#recStop2");
+recBtn.onclick=guard(async()=>{
+  const monVal=$("#monSel").value; const body={format:$("#recFmt").value,fps:+$("#recFps").value||10,scale:+$("#recScale").value||60,quality:75,maxDurationMs:(+$("#recMax").value||30)*1000};
+  if(monVal!=="") body.monitor=Number(monVal);
+  const s=await api("/record/start","POST",body);
+  recId=s.id; recBtn.disabled=true; recStopBtn.disabled=false;
+  const started=Date.now();
+  recPoll=setInterval(async()=>{ try{ const st=await api("/record/status/"+recId); const secs=((Date.now()-started)/1000).toFixed(0);
+    $("#recStatus").innerHTML=`● <b style="color:var(--crit)">recording</b> ${st.format.toUpperCase()} ${st.width}×${st.height} · ${st.frames} frames · ${secs}s / ${st.maxDurationMs/1000}s max`;
+    if(st.state!=="recording"){ finishRec(st); } }catch(e){} },700);
+  toast("recording…");
+});
+recStopBtn.onclick=guard(async()=>{ if(!recId) return; const st=await api("/record/stop","POST",{reference:recId}); finishRec(st); });
+function finishRec(st){
+  if(recPoll){ clearInterval(recPoll); recPoll=null; }
+  recBtn.disabled=false; recStopBtn.disabled=true;
+  if(st.state==="completed"){
+    const url="/recordings/"+st.id; const kb=Math.round(st.sizeBytes/1024);
+    $("#recStatus").innerHTML=`✓ <b style="color:var(--good)">saved</b> ${st.format.toUpperCase()} · ${st.frames} frames · ${kb} KB · `+
+      `<a href="${url}" target="_blank">preview</a> · <a href="${url}" download="deskhand-${st.id}.${st.format}">⬇ download</a>`;
+    toast("recording saved");
+  } else if(st.state==="error"){ $("#recStatus").innerHTML=`✗ <b style="color:var(--crit)">error</b> — ${st.error||"?"}`; toast("record error",true); }
+  recId=null;
+}
 function saveImg(src, base){ if(!src){ toast("capture something first",true); return; } const a=document.createElement("a"); a.href=src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); a.download=`${base}-${ts}.${src.startsWith("data:image/jpeg")?"jpg":"png"}`; document.body.appendChild(a); a.click(); a.remove(); toast("saved"); }
 $("#saveBtn").onclick=()=>{ const img=$("#viewer img"); saveImg(img&&img.src, "deskhand-screen"); };
 $("#secBtn").onclick=guard(async()=>{

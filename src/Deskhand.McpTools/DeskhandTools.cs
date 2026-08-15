@@ -181,6 +181,29 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_set_focus"), Description("Raise the element's window to the foreground (defeating the foreground lock) and give it keyboard focus.")]
     public static string SetFocus(IAutomationBackend b, string reference) { b.SetFocus(reference); return "ok"; }
 
+    // ---------- screen recording (GIF / MJPEG-AVI) ----------
+
+    [McpServerTool(Name = "deskhand_record_start"), Description("Start recording the screen to an animated GIF or an MJPEG AVI video. monitor: an index for one monitor, or omit for the whole virtual desktop (all monitors). format: \"gif\" or \"avi\". A hard maxDurationMs auto-stops and finalizes the file even if stop is never called (safety against a runaway recording). Returns a recording id + status; poll deskhand_record_status and call deskhand_record_stop to finish. The finished file is saved on the host and downloadable at /recordings/{id}.")]
+    public static string RecordStart(Deskhand.Core.Services.ScreenRecorder rec, ControlState state,
+        [Description("Monitor index to record; omit for the whole virtual desktop (all monitors).")] int? monitor = null,
+        [Description("\"gif\" (animated, smaller, 256 colours) or \"avi\" (MJPEG video, full colour).")] string format = "gif",
+        [Description("Frames per second (1..30, default 10).")] int fps = 10,
+        [Description("Output scale percent (10..100, default 100). Lower = smaller file.")] int scale = 100,
+        [Description("AVI/JPEG quality 1..100 (default 75); ignored for gif.")] int quality = 75,
+        [Description("Hard auto-stop ceiling in ms (default 30000, max 300000).")] int maxDurationMs = 30000)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\"}";
+        if (!state.CaptureEnabled) return "{\"error\":\"capture_disabled\"}";
+        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs)));
+    }
+
+    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns the final status incl. the saved file path, size, and frame count.")]
+    public static string RecordStop(Deskhand.Core.Services.ScreenRecorder rec, string id) => Json(rec.Stop(id));
+
+    [McpServerTool(Name = "deskhand_record_status"), Description("Status of one recording (id) or, with no id, all recordings this session: state (recording|encoding|completed|error), frames, elapsed, size, file.")]
+    public static string RecordStatus(Deskhand.Core.Services.ScreenRecorder rec, string? id = null) =>
+        Json(id is null ? (object)rec.List() : rec.GetStatus(id));
+
     // ---------- capture (returns MCP image content) ----------
 
     [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an image.")]

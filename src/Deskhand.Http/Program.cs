@@ -47,12 +47,14 @@ var eventHub = new Deskhand.Core.Events.EventHub();
 var localBackend = new LocalAutomationBackend();
 localBackend.StartEvents(eventHub);                          // UIA events: focus_changed, window_opened
 var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);  // process_started / process_exited
+var screenRecorder = new Deskhand.Core.Services.ScreenRecorder();
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(captureNotifier);
 builder.Services.AddSingleton(macroRecorder);
 builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton(processWatcher);
+builder.Services.AddSingleton(screenRecorder);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
@@ -190,6 +192,24 @@ api.MapPost("/macro/play", (IAutomationBackend b, Deskhand.Core.Macros.MacroReco
 // ---- UIA events (focus, window-open) ----
 api.MapGet("/events/poll", (Deskhand.Core.Events.EventHub hub, long since) =>
     Results.Ok(new { lastId = hub.LastId, events = hub.Since(since) }));
+
+// ---- screen recording (GIF / MJPEG-AVI) with a hard max-duration auto-stop ----
+api.MapPost("/record/start", (Deskhand.Core.Services.ScreenRecorder rec, ControlState st, AuditLog al, ToastNotifier tn, RecordStartRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
+    var opt = new Deskhand.Core.Services.RecordingOptions(r.Monitor, r.Format ?? "gif", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000);
+    var s = rec.Start(opt);
+    al.Record("record_start", $"{s.Format} mon={r.Monitor?.ToString() ?? "all"} {s.Width}x{s.Height} fps={s.Fps} max={s.MaxDurationMs}ms", s.Id);
+    if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is recording the screen · {s.Format} · {s.Width}×{s.Height}"); } catch { } }
+    return Results.Ok(s);
+});
+api.MapPost("/record/stop", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RefRequest r) =>
+{ var s = rec.Stop(r.Reference); al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(s); });
+api.MapGet("/record/status/{id}", (Deskhand.Core.Services.ScreenRecorder rec, string id) => Results.Ok(rec.GetStatus(id)));
+api.MapGet("/record/list", (Deskhand.Core.Services.ScreenRecorder rec) => Results.Ok(rec.List()));
+api.MapGet("/recordings/{id}", (Deskhand.Core.Services.ScreenRecorder rec, string id) =>
+{ var (bytes, mime, name) = rec.Read(id); return Results.File(bytes, mime, name); });
 
 // Block until a process starts/exits (event=start|exit), matched by name substring and/or pid.
 api.MapPost("/process/wait", (Deskhand.Core.Events.ProcessWatcher w, ProcessWaitRequest r) =>
@@ -365,6 +385,7 @@ record LaunchRequest(string Path, string? Args, string? WorkingDir, int? WaitFor
 record RefRequest(string Reference);
 record PointRequest(int X, int Y);
 record ProcessWaitRequest(string? Event, string? Name, int? Pid, int? TimeoutMs);
+record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);
 record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality);

@@ -8,7 +8,13 @@ using Deskhand.Ui;
 // Per-Monitor-v2 DPI awareness MUST be set before anything touches windows or pixels.
 DpiHelper.EnablePerMonitorV2();
 
-var builder = WebApplication.CreateBuilder(args);
+// Pin ContentRoot to the exe directory so wwwroot (the dashboard) is found no matter what the
+// current working directory is when the exe is launched (shortcut, service, another folder).
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 
 int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_PORT"), out var p) ? p : 8791;
 

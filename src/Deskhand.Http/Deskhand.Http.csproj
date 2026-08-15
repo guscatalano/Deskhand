@@ -8,7 +8,14 @@
     <AssemblyName>deskhand-http</AssemblyName>
     <Platforms>x64</Platforms>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Copy wwwroot into the build output so the plain-built exe serves the dashboard too
+         (not just published / dotnet run). -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />

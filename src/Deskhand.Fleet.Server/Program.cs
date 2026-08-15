@@ -136,6 +136,7 @@ app.MapPost("/agents/{id}/uia/wait", (string id, WaitReq r) =>
 });
 app.MapPost("/agents/{id}/uia/element", (string id, RefReq r) => Results.Ok(A(id).GetElement(r.Reference)));
 app.MapPost("/agents/{id}/uia/properties", (string id, RefReq r) => Results.Ok(A(id).GetAllProperties(r.Reference)));
+app.MapPost("/agents/{id}/uia/element-from-point", (string id, PointReq r) => Results.Ok(A(id).GetElementFromPoint(r.X, r.Y)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -199,3 +200,4 @@ record ScrollReq(int Dx, int Dy);
 record TypeReq(string Text);
 record KeysReq(string Chord);
 record LaunchReq(string Path, string? Args, string? WorkingDir, int? WaitForWindowMs);
+record PointReq(int X, int Y);

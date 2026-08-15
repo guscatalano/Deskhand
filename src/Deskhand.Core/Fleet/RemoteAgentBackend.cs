@@ -46,6 +46,7 @@ public sealed class RemoteAgentBackend(IAgentLink link) : IAutomationBackend
     public IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query) => Call<List<ElementInfoDto>>(FleetMethods.Find, new { rootRef, query });
     public ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs) => Call<ElementInfoDto?>(FleetMethods.WaitForElement, new { rootRef, query, timeoutMs });
     public ElementInfoDto GetElement(string reference) => Call<ElementInfoDto>(FleetMethods.GetElement, new { reference });
+    public ElementInfoDto GetElementFromPoint(int x, int y) => Call<ElementInfoDto>(FleetMethods.ElementFromPoint, new { x, y });
     public IReadOnlyDictionary<string, string?> GetAllProperties(string reference) => Call<Dictionary<string, string?>>(FleetMethods.GetAllProperties, new { reference });
 
     public void Invoke(string reference) => Send(FleetMethods.Invoke, new { reference });

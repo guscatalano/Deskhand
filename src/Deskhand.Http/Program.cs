@@ -238,6 +238,9 @@ api.MapGet("/uia/element/{reference}", (IAutomationBackend b, string reference) 
 api.MapGet("/uia/element/{reference}/properties", (IAutomationBackend b, string reference) =>
     Results.Ok(b.GetAllProperties(reference)));
 
+api.MapPost("/uia/element-from-point", (IAutomationBackend b, PointRequest r) =>
+    Results.Ok(b.GetElementFromPoint(r.X, r.Y)));
+
 // ---- uia act ----
 api.MapPost("/uia/invoke", (IAutomationBackend b, RefRequest r) => { b.Invoke(r.Reference); return Ok(); });
 api.MapPost("/uia/set-value", (IAutomationBackend b, SetValueRequest r) => { b.SetValue(r.Reference, r.Text); return Ok(); });
@@ -348,6 +351,7 @@ record FindRequest(string? RootRef, string? Name, string? AutomationId, string? 
 record WaitRequest(string? RootRef, string? Name, string? AutomationId, string? ControlType, string? ClassName, string? Scope, int? TimeoutMs);
 record LaunchRequest(string Path, string? Args, string? WorkingDir, int? WaitForWindowMs);
 record RefRequest(string Reference);
+record PointRequest(int X, int Y);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);
 record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality);

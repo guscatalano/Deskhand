@@ -142,10 +142,19 @@ tree and keeps your selection, for when the app under inspection changes.
 
 ## MCP server
 
-`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (25 tools:
-`deskhand_list_windows`, `deskhand_get_tree`, `deskhand_get_all_properties`, `deskhand_invoke`,
-`deskhand_capture_window`, `deskhand_mouse_click`, …). Screenshots are returned as real MCP image
-content, so a model sees them directly.
+`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (26 tools:
+`deskhand_list_windows`, `deskhand_get_tree`, `deskhand_get_all_properties`,
+`deskhand_element_from_point`, `deskhand_invoke`, `deskhand_capture_window`,
+`deskhand_mouse_click`, …). Screenshots are returned as real MCP image content, so a model
+sees them directly.
+
+`deskhand_element_from_point(x, y)` returns the deepest UIA element at a screen coordinate
+(virtual-desktop pixels), resolved fresh via UIA `FromPoint` — no tree walk, no stored ref. This
+is the **reliable "find element"** for apps whose UIA tree is thin or whose refs go stale
+(Chromium/Electron): capture the app, pick a pixel on the target, and act on the element you get
+back. The fleet mirror is `deskhand_agent_element_from_point`; the HTTP endpoints are
+`POST /uia/element-from-point` and `POST /agents/{id}/uia/element-from-point`. Both dashboards
+expose it as an **on-click → 🔍 pick element** mode on the screenshot.
 
 ```powershell
 dotnet build src/Deskhand.Mcp -c Release
@@ -375,8 +384,18 @@ to recreate Deskhand from scratch.
 - **Coordinates** are physical pixels on the virtual desktop; the process is Per-Monitor-v2 DPI aware.
 - **Element refs** are volatile UIA handles; a stale ref is re-resolved from a stored selector recipe,
   and returns `404 stale_element` if it truly cannot be found — re-query the tree.
-- **Chromium/Electron** apps may expose thin UIA trees; launch with `--force-renderer-accessibility`
-  or fall back to capture + coordinate input.
+- **Chromium/Electron** apps expose thin/unstable UIA trees. Two mitigations, both built in:
+  - **Auto-flag on launch** — `LaunchProcess` (all hosts) appends `--force-renderer-accessibility`
+    automatically when the target is a known Chromium browser (chrome, msedge, brave, opera, vivaldi,
+    chromium, thorium), so its web contents show up in the tree. Force it on for *any* executable
+    (Electron apps, whose exe names vary) with `DESKHAND_FORCE_A11Y=always`, or disable entirely with
+    `DESKHAND_FORCE_A11Y=off`. Note: Chromium is single-instance per profile — the flag only takes
+    hold on a **fresh** instance (a new `--user-data-dir`, or the browser not already running).
+  - **Point-based access** — `deskhand_element_from_point(x, y)` resolves the element under a pixel
+    with no tree walk and no stored ref, so it works even when the tree is thin. Capture + coordinate
+    input remains the last-resort fallback (the model reads the screenshot and clicks by pixel).
+  - **Deep-tree safety** — `get_tree` is bounded to 4000 nodes per call, so a huge Chromium a11y tree
+    comes back partial rather than exhausting the walk.
 - **Window capture** (`/capture/window`, `deskhand_capture_window`) uses **Windows.Graphics.Capture**,
   which faithfully captures GPU/DWM-accelerated apps (Chrome, Firefox, Electron) even when the window
   is **unfocused or occluded — without raising it**. It falls back to `PrintWindow` when WGC is

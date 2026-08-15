@@ -141,6 +141,12 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_get_all_properties"), Description("Every UIA property the element supports, as a name→value map.")]
     public static string GetAllProperties(IAutomationBackend b, string reference) => Json(b.GetAllProperties(reference));
 
+    [McpServerTool(Name = "deskhand_element_from_point"), Description("Return the UIA element at a screen coordinate (virtual-desktop pixels). The reliable 'find element' when a window's tree is thin or its refs go stale (Chromium/Electron apps): screenshot the app, pick a pixel on the target, and get the element + a fresh ref to act on.")]
+    public static string ElementFromPoint(IAutomationBackend b,
+        [Description("X in virtual-desktop pixels.")] int x,
+        [Description("Y in virtual-desktop pixels.")] int y)
+        => Json(b.GetElementFromPoint(x, y));
+
     // ---------- uia act ----------
 
     [McpServerTool(Name = "deskhand_invoke"), Description("Invoke an element (press a button, activate a menu item) via its UIA Invoke pattern.")]

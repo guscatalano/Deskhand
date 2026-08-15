@@ -234,6 +234,7 @@
             <label class="lbl">on click</label>
             <select id="clickAction">
               <option value="inspect">read coordinates (no input)</option>
+              <option value="pick">🔍 pick element (from point)</option>
               <option value="move">move mouse</option>
               <option value="left">left click</option>
               <option value="right">right click</option>
@@ -565,13 +566,23 @@ $("#viewer").addEventListener("click", guard(async(ev)=>{
   const mk=$("#marker"); mk.style.display="block"; mk.style.left=(fx*100)+"%"; mk.style.top=(fy*100)+"%";
   $("#coordbar").innerHTML=`desktop <b>${dx}, ${dy}</b>`; $("#mx").value=dx; $("#my").value=dy;
   const a=$("#clickAction").value;
-  if(a==="move"){ await api("/mouse/move","POST",{x:dx,y:dy}); toast("moved"); }
+  if(a==="pick"){
+    const el=await api("/uia/element-from-point","POST",{x:dx,y:dy});
+    const nm=el.name?`"${el.name}"`:"(no name)";
+    $("#coordbar").innerHTML=`@ <b>${dx}, ${dy}</b> → <b>${el.controlType}</b> ${nm} `+
+      `<span style="color:var(--ink-3)">${el.className||""}</span> · <a href="#" id="pickOpen">open in Explorer →</a>`;
+    const open=$("#pickOpen"); if(open) open.onclick=(e)=>{ e.preventDefault(); document.querySelector('.tabbtn[data-tab="explorer"]').click(); loadRoot(el); };
+    toast(`picked ${el.controlType}`);
+  }
+  else if(a==="move"){ await api("/mouse/move","POST",{x:dx,y:dy}); toast("moved"); }
   else if(a==="left"){ await api("/mouse/click","POST",{button:"left",x:dx,y:dy,count:1}); toast("left click"); }
   else if(a==="right"){ await api("/mouse/click","POST",{button:"right",x:dx,y:dy,count:1}); toast("right click"); }
   else if(a==="double"){ await api("/mouse/click","POST",{button:"left",x:dx,y:dy,count:2}); toast("double click"); }
 }));
-$("#clickAction").addEventListener("change",()=>{ const on=$("#clickAction").value!=="inspect";
-  $("#controlHint").innerHTML=on?'<span class="danger-on">Control mode</span> — clicking the screenshot injects real mouse input at that desktop point.':"Reading mode — clicking only reports coordinates."; });
+$("#clickAction").addEventListener("change",()=>{ const v=$("#clickAction").value; const input=v!=="inspect"&&v!=="pick";
+  $("#controlHint").innerHTML=input?'<span class="danger-on">Control mode</span> — clicking the screenshot injects real mouse input at that desktop point.'
+    :v==="pick"?'<span style="color:var(--accent)">Pick mode</span> — clicking the screenshot resolves the UIA element under that pixel (works even when the tree is thin, e.g. Chromium/Electron).'
+    :"Reading mode — clicking only reports coordinates."; });
 
 $("#capBtn").onclick=capture;
 function saveImg(src, base){ if(!src){ toast("capture something first",true); return; } const a=document.createElement("a"); a.href=src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); a.download=`${base}-${ts}.${src.startsWith("data:image/jpeg")?"jpg":"png"}`; document.body.appendChild(a); a.click(); a.remove(); toast("saved"); }

@@ -77,6 +77,10 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_get_properties"), Description("Every UIA property of an element on a fleet PC.")]
     public static string AgentProps(AgentRegistry r, FleetAudit audit, string agentId, string reference) => Json(A(r, audit, agentId, "get_properties").GetAllProperties(reference));
 
+    [McpServerTool(Name = "deskhand_agent_element_from_point"), Description("Return the UIA element at a screen coordinate on a fleet PC (virtual-desktop pixels). The reliable 'find element' when a window's tree is thin or its refs go stale (Chromium/Electron): capture the PC, pick a pixel, get the element + fresh ref.")]
+    public static string AgentElementFromPoint(AgentRegistry r, FleetAudit audit, string agentId, int x, int y)
+        => Json(A(r, audit, agentId, $"element_from_point {x},{y}").GetElementFromPoint(x, y));
+
     [McpServerTool(Name = "deskhand_agent_capture_screen"), Description("Screenshot a fleet PC's monitor (or whole desktop). Returns an image.")]
     public static IEnumerable<ContentBlock> AgentCapture(AgentRegistry r, FleetAudit audit, string agentId, int? monitor = null, string? format = null)
         => AsImage(agentId, A(r, audit, agentId, "capture_screen").CaptureScreen(monitor, Fmt(format), 80));

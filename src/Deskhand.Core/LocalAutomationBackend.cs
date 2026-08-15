@@ -27,8 +27,33 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     public DesktopStateDto GetDesktopState() => DesktopInfo.GetDesktopState();
     public MachineInfoDto GetMachineInfo() => DesktopInfo.GetMachineInfo();
 
+    // Chromium-family executables that expose a usable UIA tree only when accessibility is forced on.
+    // Electron apps have arbitrary exe names, so they're covered via DESKHAND_FORCE_A11Y=always.
+    private static readonly string[] ChromiumExes =
+        { "chrome", "msedge", "brave", "opera", "vivaldi", "chromium", "thorium", "chrome_proxy" };
+
+    /// <summary>Dynamically append <c>--force-renderer-accessibility</c> when launching a Chromium/Electron
+    /// app, so its web contents show up in the UIA tree. Auto-fires for known browsers; force on for any
+    /// exe with <c>DESKHAND_FORCE_A11Y=always</c>; disable entirely with <c>DESKHAND_FORCE_A11Y=off</c>.
+    /// (No effect if the browser is already running with the same profile — Chromium hands off to the
+    /// existing instance. Launch with a fresh --user-data-dir, or the app not yet running, to take hold.)</summary>
+    internal static string? InjectAccessibilityFlag(string path, string? args)
+    {
+        const string flag = "--force-renderer-accessibility";
+        var mode = Environment.GetEnvironmentVariable("DESKHAND_FORCE_A11Y")?.Trim().ToLowerInvariant();
+        if (mode is "0" or "off" or "false" or "no") return args;
+        if (args?.Contains(flag, StringComparison.OrdinalIgnoreCase) == true) return args;
+
+        string exe = System.IO.Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+        bool force = mode is "1" or "on" or "true" or "always";
+        if (!force && !ChromiumExes.Contains(exe)) return args;
+
+        return string.IsNullOrEmpty(args) ? flag : $"{args} {flag}";
+    }
+
     public ProcessLaunchResultDto LaunchProcess(string path, string? args, string? workingDir, int waitForWindowMs)
     {
+        args = InjectAccessibilityFlag(path, args);
         var psi = new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true };
         if (!string.IsNullOrEmpty(args)) psi.Arguments = args;
         if (!string.IsNullOrEmpty(workingDir)) psi.WorkingDirectory = workingDir;
@@ -97,6 +122,9 @@ public sealed class LocalAutomationBackend : IAutomationBackend
 
     public IReadOnlyDictionary<string, string?> GetAllProperties(string reference)
         => _sta.Invoke(() => _uia.GetAllProperties(reference));
+
+    public ElementInfoDto GetElementFromPoint(int x, int y)
+        => _sta.Invoke(() => _uia.GetElementFromPoint(x, y));
 
     // ---- uia act ----
     public void Invoke(string reference) => _sta.Invoke(() => _uia.Invoke(reference));

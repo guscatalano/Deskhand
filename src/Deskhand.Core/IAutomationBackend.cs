@@ -30,6 +30,11 @@ public interface IAutomationBackend : IDisposable
     ElementInfoDto GetElement(string reference);
     IReadOnlyDictionary<string, string?> GetAllProperties(string reference);
 
+    /// <summary>Return the deepest UIA element at a screen coordinate (virtual-desktop pixels).
+    /// The reliable "find element" for apps with thin/unstable trees (Chromium/Electron): capture,
+    /// pick a pixel, resolve the element fresh — no walk, no stale ref.</summary>
+    ElementInfoDto GetElementFromPoint(int x, int y);
+
     // uia — act
     void Invoke(string reference);
     void SetValue(string reference, string text);

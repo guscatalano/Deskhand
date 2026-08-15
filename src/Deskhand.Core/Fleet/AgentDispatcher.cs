@@ -21,6 +21,7 @@ public static class AgentDispatcher
             FleetMethods.WaitForElement => b.WaitForElement(a.Str("rootRef"), a.Obj<FindQuery>("query")!, a.Int("timeoutMs", 5000)),
             FleetMethods.GetElement => b.GetElement(a.Str("reference")!),
             FleetMethods.GetAllProperties => b.GetAllProperties(a.Str("reference")!),
+            FleetMethods.ElementFromPoint => b.GetElementFromPoint(a.Int("x"), a.Int("y")),
             FleetMethods.Invoke => Void(() => b.Invoke(a.Str("reference")!)),
             FleetMethods.SetValue => Void(() => b.SetValue(a.Str("reference")!, a.Str("text") ?? "")),
             FleetMethods.Toggle => Void(() => b.Toggle(a.Str("reference")!)),

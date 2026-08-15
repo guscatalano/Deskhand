@@ -45,6 +45,7 @@ public static class FleetMethods
     public const string WaitForElement = "wait_for_element";
     public const string GetElement = "get_element";
     public const string GetAllProperties = "get_all_properties";
+    public const string ElementFromPoint = "element_from_point";
     public const string Invoke = "invoke";
     public const string SetValue = "set_value";
     public const string Toggle = "toggle";

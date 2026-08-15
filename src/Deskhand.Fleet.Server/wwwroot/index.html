@@ -168,7 +168,7 @@ const openAgent = guard(async(a)=>{
       <label>monitor</label>
       <select id="monSel"><option value="">all</option>${mons.map(m=>`<option value="${m.index}"${m.primary?" selected":""}>#${m.index}${m.primary?" (primary)":""} ${m.bounds.width}×${m.bounds.height}</option>`).join("")}</select>
       <label>on click</label>
-      <select id="clickAction"><option value="inspect">read coords</option><option value="left">left click</option><option value="right">right click</option><option value="double">double click</option><option value="move">move</option></select>
+      <select id="clickAction"><option value="inspect">read coords</option><option value="pick">🔍 pick element</option><option value="left">left click</option><option value="right">right click</option><option value="double">double click</option><option value="move">move</option></select>
       <span class="coord" id="coord">live view — click to control</span>
       <span class="spacer" style="flex:1"></span>
       <button class="btn" id="saveBtn" title="Save the current frame">⬇ Save</button>
@@ -206,7 +206,13 @@ async function onViewClick(ev){
   const mk=$("#marker"); mk.style.display="block"; mk.style.left=(fx*100)+"%"; mk.style.top=(fy*100)+"%";
   $("#coord").innerHTML=`desktop <b>${dx}, ${dy}</b>`;
   const a=$("#clickAction").value;
-  if(a==="move"){ await api(`/agents/${current.id}/mouse/move`,"POST",{x:dx,y:dy}); toast("moved"); }
+  if(a==="pick"){
+    const el=await api(`/agents/${current.id}/uia/element-from-point`,"POST",{x:dx,y:dy});
+    const nm=el.name?`"${el.name}"`:"(no name)";
+    $("#coord").innerHTML=`@ <b>${dx}, ${dy}</b> → <b>${el.controlType}</b> ${nm} <span style="opacity:.6">${el.className||""}</span> · ref <code>${el.ref}</code>`;
+    toast(`picked ${el.controlType}`);
+  }
+  else if(a==="move"){ await api(`/agents/${current.id}/mouse/move`,"POST",{x:dx,y:dy}); toast("moved"); }
   else if(a==="left"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:1}); toast("click"); await refreshView(); }
   else if(a==="right"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"right",x:dx,y:dy,count:1}); toast("right click"); await refreshView(); }
   else if(a==="double"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:2}); toast("double"); await refreshView(); }

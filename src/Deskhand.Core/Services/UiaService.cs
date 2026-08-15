@@ -86,10 +86,15 @@ public sealed class UiaService : IDisposable
             .ToList();
     }
 
+    // Total nodes any single get_tree may emit. Bushy trees (Chromium/Electron a11y) can be enormous;
+    // without a cap the walk + JSON blow up. When hit, the tree comes back partial rather than failing.
+    private const int TreeNodeBudget = 4000;
+
     public TreeNodeDto GetTree(string? rootRef, int depth, int maxChildren)
     {
         var root = rootRef is null ? Desktop : Resolve(rootRef);
-        return BuildTree(root, Math.Max(0, depth), Math.Max(1, maxChildren));
+        int budget = TreeNodeBudget;
+        return BuildTree(root, Math.Max(0, depth), Math.Clamp(maxChildren, 1, 500), ref budget);
     }
 
     public IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery q)
@@ -109,6 +114,11 @@ public sealed class UiaService : IDisposable
     }
 
     public ElementInfoDto GetElement(string reference) => BuildInfoOnly(reference, Resolve(reference));
+
+    /// <summary>Deepest element at a screen point. Resolves fresh via UIA FromPoint — the escape
+    /// hatch when a window's tree is thin or its refs go stale (Chromium/Electron).</summary>
+    public ElementInfoDto GetElementFromPoint(int x, int y)
+        => Register(_automation.FromPoint(new System.Drawing.Point(x, y)));
 
     /// <summary>Every UIA property the element supports, as name → string value (sorted).</summary>
     public IReadOnlyDictionary<string, string?> GetAllProperties(string reference)
@@ -280,18 +290,22 @@ public sealed class UiaService : IDisposable
 
     private static ConditionBase And(ConditionBase? a, ConditionBase b) => a is null ? b : a.And(b);
 
-    private TreeNodeDto BuildTree(AutomationElement el, int depth, int maxChildren)
+    private TreeNodeDto BuildTree(AutomationElement el, int depth, int maxChildren, ref int budget)
     {
         var info = Register(el);
-        if (depth == 0) return new TreeNodeDto(info, Array.Empty<TreeNodeDto>());
+        budget--;
+        if (depth == 0 || budget <= 0) return new TreeNodeDto(info, Array.Empty<TreeNodeDto>());
 
         var children = new List<TreeNodeDto>();
         try
         {
             foreach (var child in el.FindAllChildren().Take(maxChildren))
-                children.Add(BuildTree(child, depth - 1, maxChildren));
+            {
+                if (budget <= 0) break;
+                children.Add(BuildTree(child, depth - 1, maxChildren, ref budget));
+            }
         }
-        catch { /* element may vanish mid-walk; return what we have */ }
+        catch { /* element may vanish mid-walk, or a provider (Chromium) may fault; return what we have */ }
 
         return new TreeNodeDto(info, children);
     }

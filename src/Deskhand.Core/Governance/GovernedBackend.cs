@@ -80,6 +80,7 @@ public sealed class GovernedBackend(IAutomationBackend inner, ControlState state
     public ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs)
         => Audited("wait_for_element", $"timeout={timeoutMs}", () => inner.WaitForElement(rootRef, query, timeoutMs));
     public ElementInfoDto GetElement(string reference) => Audited("get_element", reference, () => inner.GetElement(reference));
+    public ElementInfoDto GetElementFromPoint(int x, int y) => Audited("element_from_point", $"{x},{y}", () => inner.GetElementFromPoint(x, y));
     public IReadOnlyDictionary<string, string?> GetAllProperties(string reference)
         => Audited("get_all_properties", reference, () => inner.GetAllProperties(reference));
 

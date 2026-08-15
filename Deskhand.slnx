@@ -11,5 +11,8 @@
     <Project Path="src/Deskhand.SecureHelper/Deskhand.SecureHelper.csproj">
       <Platform Project="x64" />
     </Project>
+    <Project Path="src/Deskhand.Ui/Deskhand.Ui.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
 </Solution>

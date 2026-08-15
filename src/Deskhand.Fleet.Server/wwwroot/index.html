@@ -91,6 +91,7 @@
   <span class="spacer"></span>
   <button class="ghost" id="backBtn" style="display:none">← All PCs</button>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8791/" target="_blank" title="This PC's dashboard">This PC →</a>
+  <button class="ghost" id="pauseBtn" title="Pause/resume the live screenshot polling">⏸ Pause live</button>
   <button class="ghost" id="auditBtn" title="Who connected & what they did">Audit</button>
   <button class="ghost" id="refreshBtn">Refresh</button>
   <button class="ghost" id="themeBtn">Theme</button>
@@ -143,8 +144,14 @@ function renderGrid(){
   });
 }
 
+// Live screenshot polling captures the remote screens; pause it manually, and automatically whenever
+// this page isn't visible, so we don't screenshot agents when nobody's looking.
+let paused=false;
+function liveOn(){ return !paused && !document.hidden; }
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden && liveOn()){ if(current) refreshView().catch(()=>{}); else thumbAll().catch(()=>{}); } });
+
 async function thumbAll(){
-  if(current) return;
+  if(current || !liveOn()) return;
   for(const a of agents){
     try{
       const c=await api(`/agents/${a.id}/capture/screen`,"POST",{format:"jpeg"});
@@ -189,7 +196,7 @@ const openAgent = guard(async(a)=>{
 });
 
 async function refreshView(){
-  if(!current) return;
+  if(!current || !liveOn()) return;
   const mon=$("#monSel")?.value;
   const body={format:"jpeg"}; if(mon!=="") body.monitor=Number(mon);
   const c=await api(`/agents/${current.id}/capture/screen`,"POST",body);
@@ -227,6 +234,8 @@ gridTimer=setInterval(()=>{ loadAgents().catch(()=>{}); if(!current) thumbAll();
 
 /* ---------- fleet audit ---------- */
 let auditSince=0;
+$("#pauseBtn").onclick=()=>{ paused=!paused; $("#pauseBtn").textContent=paused?"▶ Go live":"⏸ Pause live"; $("#pauseBtn").classList.toggle("danger-on",paused);
+  if(!paused){ if(current) refreshView().catch(()=>{}); else thumbAll().catch(()=>{}); } };
 $("#auditBtn").onclick=()=>$("#auditdrawer").classList.toggle("show");
 async function pollAudit(){
   try{

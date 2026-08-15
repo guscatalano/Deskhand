@@ -19,10 +19,21 @@ public sealed class GovernedBackend(IAutomationBackend inner, ControlState state
         try { return inner.GetElement(reference); } catch { return null; }
     }
 
+    private long _lastCaptureNotifyTick;
+    private readonly object _notifyGate = new();
+
     private void NotifyCapture(string action, string desktop, int w, int h)
     {
         if (!state.NotifyOnCapture || notifier is null) return;
-        try { notifier.Notify($"Deskhand took a screenshot  ·  {desktop}  ·  {w}×{h}"); audit.Record("screenshot_toast", action, "shown"); }
+        // A fleet dashboard streams captures every couple of seconds; a toast per frame would be a
+        // constant popup storm. Debounce to at most one "you're being watched" toast per 6s.
+        lock (_notifyGate)
+        {
+            long now = Environment.TickCount64;
+            if (now - _lastCaptureNotifyTick < 6000) return;
+            _lastCaptureNotifyTick = now;
+        }
+        try { notifier.Notify($"Deskhand captured this screen  ·  {desktop}  ·  {w}×{h}"); audit.Record("screenshot_toast", action, "shown"); }
         catch { /* a notifier failure must never break capture */ }
     }
 

@@ -10,6 +10,22 @@ internal static class Interop
     [DllImport("wtsapi32.dll", SetLastError = true)]
     public static extern bool WTSQueryUserToken(uint sessionId, out IntPtr token);
 
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    public static extern bool WTSEnumerateSessions(IntPtr hServer, uint reserved, uint version, out IntPtr ppSessionInfo, out int pCount);
+
+    [DllImport("wtsapi32.dll")]
+    public static extern void WTSFreeMemory(IntPtr memory);
+
+    public const int WTS_ACTIVE = 0; // WTSActive in WTS_CONNECTSTATE_CLASS
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WTS_SESSION_INFO
+    {
+        public uint SessionId;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pWinStationName;
+        public int State;
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr h);
 

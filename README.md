@@ -260,6 +260,26 @@ to the fleet server and served routed calls.
 > **Remaining hardening:** put **TLS** in front (reverse proxy or Kestrel HTTPS) for `wss://`, and
 > optionally mTLS client certs instead of the shared token.
 
+## RDP (Phase 5)
+
+There are two ways Deskhand reaches a **Remote Desktop** machine:
+
+1. **Agent in the RDP session (done, tested).** An RDP session is just another interactive session,
+   so an agent running inside it has the **full** capability — UIA, capture, and input. The Launcher
+   now enumerates **every active session** (`WTSEnumerateSessions`) — console *and* RDP — and spawns a
+   per-session agent (`<machine>-S<sessionId>`), each connecting to the fleet server independently.
+   Verified: run as SYSTEM, it discovered the session and registered `PORTARE-S1`; on a host with RDP
+   sessions you get `…-S2`, `…-S3`, etc., side by side.
+
+2. **Protocol-level, zero-install (design/seam).** The other model is a server that speaks the RDP
+   wire protocol to a host with **nothing installed on the target** — capture + input only, **no UIA**
+   (nothing runs in the session to read the tree). This needs a real RDP client (FreeRDP, or the MSTSC
+   ActiveX hosted headlessly), which is a substantial native integration; it plugs in as another
+   `IAutomationBackend` advertising only the transport-portable subset. Not built.
+
+For most uses, model 1 is what you want — full fidelity over RDP with an agent the Launcher already
+places in each session.
+
 ## Recreation docs
 
 `AI_Documentation/` contains a full, exact rebuild guide (architecture, dependencies with versions,

@@ -10,7 +10,9 @@ DpiHelper.EnablePerMonitorV2();
 string server = args.FirstOrDefault(a => a.StartsWith("ws", StringComparison.OrdinalIgnoreCase))
     ?? Environment.GetEnvironmentVariable("DESKHAND_FLEET_URL")
     ?? "ws://127.0.0.1:8799/agent/connect";
-string agentId = Environment.GetEnvironmentVariable("DESKHAND_AGENT_ID") ?? Environment.MachineName;
+// Agent id: a non-ws positional arg (used by the launcher for per-session ids), else env, else machine.
+string? argAgentId = args.FirstOrDefault(a => !a.StartsWith("ws", StringComparison.OrdinalIgnoreCase));
+string agentId = argAgentId ?? Environment.GetEnvironmentVariable("DESKHAND_AGENT_ID") ?? Environment.MachineName;
 string? token = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN");
 
 var backend = new GovernedBackend(new LocalAutomationBackend(), ControlState.FromEnvironment(), new AuditLog());

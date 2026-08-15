@@ -1,9 +1,11 @@
 using System.Drawing;
 using Deskhand.Core.Elements;
+using Deskhand.Core.Events;
 using Deskhand.Core.Interop;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Conditions;
 using FlaUI.Core.Definitions;
+using FlaUI.Core.EventHandlers;
 using FlaUI.UIA3;
 
 namespace Deskhand.Core.Services;
@@ -16,10 +18,37 @@ public sealed class UiaService : IDisposable
 {
     private readonly UIA3Automation _automation = new();
     private readonly ElementRegistry _registry = new();
+    private FocusChangedEventHandlerBase? _focusHandler;
+    private AutomationEventHandlerBase? _windowOpenHandler;
 
     private AutomationElement Desktop => _automation.GetDesktop();
 
-    public void Dispose() => _automation.Dispose();
+    public void Dispose()
+    {
+        try { _automation.UnregisterAllEvents(); } catch { }
+        _automation.Dispose();
+    }
+
+    /// <summary>Register UIA events (focus changes, window opens) and feed them into the hub.
+    /// Callbacks fire on UIA's own thread; the hub is thread-safe.</summary>
+    public void StartEvents(EventHub hub)
+    {
+        _focusHandler = _automation.RegisterFocusChangedEvent(el =>
+        {
+            try { hub.Publish("focus", Safe(() => el.Properties.Name.ValueOrDefault), SafeControlType(el).ToString(), SafeNullable(() => el.Properties.ProcessId.ValueOrDefault)); }
+            catch { }
+        });
+        try
+        {
+            _windowOpenHandler = Desktop.RegisterAutomationEvent(
+                _automation.EventLibrary.Window.WindowOpenedEvent, TreeScope.Descendants, (el, _) =>
+                {
+                    try { hub.Publish("window_opened", Safe(() => el.Properties.Name.ValueOrDefault), "Window", SafeNullable(() => el.Properties.ProcessId.ValueOrDefault)); }
+                    catch { }
+                });
+        }
+        catch { /* WindowOpened may be unavailable in some environments */ }
+    }
 
     // ---- entry points that return a fresh ref ----
 

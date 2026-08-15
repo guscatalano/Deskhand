@@ -19,6 +19,10 @@ public sealed class LocalAutomationBackend : IAutomationBackend
         _uia = _sta.Invoke(() => new UiaService());
     }
 
+    /// <summary>Begin publishing UIA events (focus, window-open) into the hub. Host-level setup,
+    /// not part of the per-call tool surface.</summary>
+    public void StartEvents(Events.EventHub hub) => _sta.Invoke(() => _uia.StartEvents(hub));
+
     // ---- orientation (pure P/Invoke; no STA needed) ----
     public DesktopStateDto GetDesktopState() => DesktopInfo.GetDesktopState();
     public MachineInfoDto GetMachineInfo() => DesktopInfo.GetMachineInfo();

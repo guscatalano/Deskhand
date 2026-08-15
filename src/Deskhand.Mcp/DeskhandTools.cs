@@ -97,6 +97,10 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_foreground_window"), Description("The current foreground window element.")]
     public static string ForegroundWindow(IAutomationBackend b) => Json(b.GetForegroundWindow());
 
+    [McpServerTool(Name = "deskhand_get_events"), Description("Poll buffered UIA events (focus changes, windows opening) newer than sinceId. Returns lastId to pass next time.")]
+    public static string GetEvents(Deskhand.Core.Events.EventHub hub, long sinceId = 0) =>
+        Json(new { lastId = hub.LastId, events = hub.Since(sinceId) });
+
     [McpServerTool(Name = "deskhand_focused_element"), Description("The element that currently has keyboard focus.")]
     public static string FocusedElement(IAutomationBackend b) => Json(b.GetFocusedElement());
 

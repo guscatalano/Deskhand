@@ -19,11 +19,15 @@ var controlState = ControlState.FromEnvironment();
 var auditLog = new AuditLog();
 var captureNotifier = new ToastNotifier();
 var macroRecorder = new Deskhand.Core.Macros.MacroRecorder();
+var eventHub = new Deskhand.Core.Events.EventHub();
+var localBackend = new LocalAutomationBackend();
+localBackend.StartEvents(eventHub);
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(macroRecorder);
+builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
-    new GovernedBackend(new LocalAutomationBackend(), controlState, auditLog, captureNotifier, macroRecorder));
+    new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
 builder.Services
     .AddMcpServer()

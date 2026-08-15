@@ -84,6 +84,8 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /desktop/state` | — | `default` / `secure` / `screensaver` + input availability |
 | `GET /control` | — | Kill-switch / capability state + audit directory |
 | `POST /control` | `{armed?, inputEnabled?, captureEnabled?}` | Arm/disarm; toggle input/capture |
+| `GET /events` | — | SSE stream of live UIA events (focus, window-open) |
+| `GET /events/poll` | `?since=N` | Buffered UIA events newer than id N |
 | `GET /foreground` | — | Foreground window element |
 | `GET /focused` | — | Focused element |
 | `GET /windows` | — | All top-level windows (the reliable way to enter a specific app) |

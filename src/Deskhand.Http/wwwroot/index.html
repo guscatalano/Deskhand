@@ -291,6 +291,11 @@
           <div class="hint">Playback is synchronized: UIA steps wait for their target element, and explicit expectations block until met. While recording, select an element in the Explorer and click its <b>Expect (macro)</b> action to add a "wait for Y" step.</div>
         </div>
       </section>
+      <section class="card">
+        <header><h2>UI Events <span style="font-family:var(--sans);text-transform:none;letter-spacing:0;color:var(--ink-3);font-weight:400">· live focus &amp; window-open</span></h2>
+          <div class="spacer"></div><button class="ghost" id="evClr">Clear</button></header>
+        <div class="body"><div id="events" style="font-family:var(--mono);font-size:11.5px;max-height:190px;overflow:auto;display:flex;flex-direction:column-reverse"></div></div>
+      </section>
     </div>
   </div>
 </div>
@@ -594,6 +599,21 @@ $("#clickAction").dispatchEvent(new Event("change"));
 refresh().then(loadWindows).catch(()=>{ $("#statMachine").textContent="server unreachable"; toast("cannot reach server",true); });
 refreshControl(); macStatus();
 setInterval(()=>{ refresh().catch(()=>{}); refreshControl(); macStatus(); },5000);
+
+/* ---------- live UI events (SSE) ---------- */
+$("#evClr").onclick=()=>$("#events").innerHTML="";
+(function startEvents(){
+  try{
+    const es=new EventSource("/events");
+    es.onmessage=(e)=>{ try{ const ev=JSON.parse(e.data);
+      const row=elm("div","logrow");
+      const t=elm("span","s "+(ev.type==="focus"?"ok":"")); t.textContent=ev.type; t.style.width="96px"; t.style.flex="none";
+      const p=elm("span","p"); p.textContent=`[${ev.controlType}] ${ev.name||""}`;
+      $("#events").append(row); row.append(t,p);
+      while($("#events").children.length>120) $("#events").firstChild.remove();
+    }catch{} };
+  }catch{}
+})();
 </script>
 </body>
 </html>

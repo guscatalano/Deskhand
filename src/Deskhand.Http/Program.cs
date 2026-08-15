@@ -37,12 +37,16 @@ var controlState = ControlState.FromEnvironment();
 var auditLog = new AuditLog();
 var captureNotifier = new ToastNotifier();
 var macroRecorder = new Deskhand.Core.Macros.MacroRecorder();
+var eventHub = new Deskhand.Core.Events.EventHub();
+var localBackend = new LocalAutomationBackend();
+localBackend.StartEvents(eventHub);
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(captureNotifier);
 builder.Services.AddSingleton(macroRecorder);
+builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
-    new GovernedBackend(new LocalAutomationBackend(), controlState, auditLog, captureNotifier, macroRecorder));
+    new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
 var app = builder.Build();
 
@@ -167,6 +171,27 @@ api.MapPost("/macro/play", (IAutomationBackend b, Deskhand.Core.Macros.MacroReco
     a.Record("macro_play", $"steps={macro.Steps.Count} speed={r?.Speed ?? 1}", "start");
     int played = Deskhand.Core.Macros.MacroPlayer.Play(macro, b, r?.Speed ?? 1.0, r?.MaxStepDelayMs ?? 3000);
     return Results.Ok(new { played });
+});
+
+// ---- UIA events (focus, window-open) ----
+api.MapGet("/events/poll", (Deskhand.Core.Events.EventHub hub, long since) =>
+    Results.Ok(new { lastId = hub.LastId, events = hub.Since(since) }));
+api.MapGet("/events", async (HttpContext ctx, Deskhand.Core.Events.EventHub hub) =>
+{
+    ctx.Response.Headers.ContentType = "text/event-stream";
+    ctx.Response.Headers.CacheControl = "no-cache";
+    ctx.Response.Headers["X-Accel-Buffering"] = "no";
+    var (reader, dispose) = hub.Subscribe();
+    try
+    {
+        await foreach (var ev in reader.ReadAllAsync(ctx.RequestAborted))
+        {
+            await ctx.Response.WriteAsync($"data: {Deskhand.Core.Fleet.FleetJson.Serialize(ev)}\n\n");
+            await ctx.Response.Body.FlushAsync();
+        }
+    }
+    catch (OperationCanceledException) { }
+    finally { dispose(); }
 });
 
 // ---- health & orientation ----

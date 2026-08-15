@@ -222,6 +222,7 @@
           <select id="monSel"></select>
           <select id="fmtSel"><option value="png">png</option><option value="jpeg">jpeg</option></select>
           <button class="btn p" id="capBtn">Capture</button>
+          <button class="btn" id="saveBtn" title="Download the current screenshot">⬇ Save</button>
         </header>
         <div class="body">
           <div class="viewer" id="viewer">
@@ -469,7 +470,9 @@ async function selectNode(info, selEl){
   svBtn.onclick=guard(async()=>{ await api("/uia/set-value","POST",{reference:info.ref,text:svIn.value}); toast("value set"); });
   svRow.append(svIn,svBtn); d.append(svRow);
 
-  const prev=elm("div","preview"); prev.id="detPrev"; const pimg=elm("img"); prev.append(pimg); d.append(prev);
+  const prev=elm("div","preview"); prev.id="detPrev"; const pimg=elm("img"); prev.append(pimg);
+  const psave=elm("button","btn sm"); psave.textContent="⬇ Save"; psave.style.marginTop="6px"; psave.onclick=()=>saveImg(pimg.src,"deskhand-element"); prev.append(psave);
+  d.append(prev);
 
   // patterns
   if(info.patterns&&info.patterns.length){
@@ -571,6 +574,8 @@ $("#clickAction").addEventListener("change",()=>{ const on=$("#clickAction").val
   $("#controlHint").innerHTML=on?'<span class="danger-on">Control mode</span> — clicking the screenshot injects real mouse input at that desktop point.':"Reading mode — clicking only reports coordinates."; });
 
 $("#capBtn").onclick=capture;
+function saveImg(src, base){ if(!src){ toast("capture something first",true); return; } const a=document.createElement("a"); a.href=src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); a.download=`${base}-${ts}.${src.startsWith("data:image/jpeg")?"jpg":"png"}`; document.body.appendChild(a); a.click(); a.remove(); toast("saved"); }
+$("#saveBtn").onclick=()=>{ const img=$("#viewer img"); saveImg(img&&img.src, "deskhand-screen"); };
 $("#secBtn").onclick=guard(async()=>{
   const res=await api("/capture/input-desktop","POST",{format:"png"});
   const kindColor = res.kind==="secure" ? "var(--crit)" : "var(--good)";

@@ -170,6 +170,8 @@ const openAgent = guard(async(a)=>{
       <label>on click</label>
       <select id="clickAction"><option value="inspect">read coords</option><option value="left">left click</option><option value="right">right click</option><option value="double">double click</option><option value="move">move</option></select>
       <span class="coord" id="coord">live view — click to control</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn" id="saveBtn" title="Save the current frame">⬇ Save</button>
     </div>
     <div class="viewer" id="viewer"><div class="marker" id="marker" style="display:none"></div></div>
     <div class="ctrls">
@@ -181,6 +183,7 @@ const openAgent = guard(async(a)=>{
   $("#viewer").addEventListener("click", guard(onViewClick));
   $("#typeBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/type`,"POST",{text:$("#typeTxt").value}); toast("typed"); });
   $("#keysBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/keys`,"POST",{chord:$("#keysTxt").value}); toast("sent"); });
+  $("#saveBtn").onclick=()=>{ const img=$("#viewer img"); if(!img){toast("no frame yet",true);return;} const dl=document.createElement("a"); dl.href=img.src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); dl.download=`${a.machine}-${ts}.jpg`; document.body.appendChild(dl); dl.click(); dl.remove(); toast("saved"); };
   await refreshView();
   clearInterval(detailTimer); detailTimer=setInterval(()=>refreshView().catch(()=>{}), 2200);
 });

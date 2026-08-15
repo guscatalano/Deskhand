@@ -252,9 +252,13 @@ sc create DeskhandLauncher binPath= "C:\path\deskhand-launcher.exe" start= auto 
 sc start DeskhandLauncher      # configure via machine env: DESKHAND_FLEET_URL / _TOKEN / DESKHAND_AGENT_EXE
 ```
 
+The Launcher mechanism is **verified**: run as SYSTEM (e.g. `PsExec64 -s -d deskhand-launcher.exe`
+with `DESKHAND_AGENT_EXE` / `DESKHAND_FLEET_URL` as machine env), it spawned the agent into the
+interactive console session **as the logged-in user** (session 1, non-elevated), which then connected
+to the fleet server and served routed calls.
+
 > **Remaining hardening:** put **TLS** in front (reverse proxy or Kestrel HTTPS) for `wss://`, and
-> optionally mTLS client certs instead of the shared token. The Launcher is built but was **not**
-> exercised in the sandbox (needs service install + SYSTEM).
+> optionally mTLS client certs instead of the shared token.
 
 ## Recreation docs
 

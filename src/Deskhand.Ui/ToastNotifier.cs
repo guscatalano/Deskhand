@@ -1,7 +1,7 @@
 using System.Drawing.Drawing2D;
 using Deskhand.Core.Governance;
 
-namespace Deskhand.Http;
+namespace Deskhand.Ui;
 
 /// <summary>
 /// Draws a brief, non-activating on-screen toast in the bottom-right corner whenever a screenshot

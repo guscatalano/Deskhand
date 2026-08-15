@@ -58,6 +58,8 @@ public sealed class GovernedBackend(IAutomationBackend inner, ControlState state
         => Audited("get_tree", $"root={rootRef ?? "desktop"} depth={depth}", () => inner.GetTree(rootRef, depth, maxChildren));
     public IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query)
         => Audited("find", $"root={rootRef ?? "desktop"}", () => inner.Find(rootRef, query));
+    public ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs)
+        => Audited("wait_for_element", $"timeout={timeoutMs}", () => inner.WaitForElement(rootRef, query, timeoutMs));
     public ElementInfoDto GetElement(string reference) => Audited("get_element", reference, () => inner.GetElement(reference));
     public IReadOnlyDictionary<string, string?> GetAllProperties(string reference)
         => Audited("get_all_properties", reference, () => inner.GetAllProperties(reference));

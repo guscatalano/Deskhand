@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Deskhand.Core;
 using Deskhand.Core.Governance;
-using Deskhand.Http;
+using Deskhand.Ui;
 
 // Per-Monitor-v2 DPI awareness MUST be set before anything touches windows or pixels.
 DpiHelper.EnablePerMonitorV2();
@@ -155,6 +155,15 @@ api.MapPost("/uia/tree", (IAutomationBackend b, TreeRequest r) =>
 api.MapPost("/uia/find", (IAutomationBackend b, FindRequest r) =>
     Results.Ok(b.Find(r.RootRef, new FindQuery(r.Name, r.AutomationId, r.ControlType, r.ClassName, r.Scope ?? "descendants", r.Max ?? 100))));
 
+api.MapPost("/uia/wait", (IAutomationBackend b, WaitRequest r) =>
+{
+    var q = new FindQuery(r.Name, r.AutomationId, r.ControlType, r.ClassName, r.Scope ?? "descendants", 1);
+    var found = b.WaitForElement(r.RootRef, q, r.TimeoutMs ?? 5000);
+    return found is null
+        ? Results.Json(new { error = "No matching element appeared within the timeout.", type = "wait_timeout" }, statusCode: 404)
+        : Results.Ok(found);
+});
+
 api.MapGet("/uia/element/{reference}", (IAutomationBackend b, string reference) =>
     Results.Ok(b.GetElement(reference)));
 
@@ -264,6 +273,7 @@ static bool FixedEquals(string a, string b)
 // ---- request/response DTOs ----
 record TreeRequest(string? RootRef, int? Depth, int? MaxChildren);
 record FindRequest(string? RootRef, string? Name, string? AutomationId, string? ControlType, string? ClassName, string? Scope, int? Max);
+record WaitRequest(string? RootRef, string? Name, string? AutomationId, string? ControlType, string? ClassName, string? Scope, int? TimeoutMs);
 record RefRequest(string Reference);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);

@@ -1,5 +1,6 @@
 using Deskhand.Core;
 using Deskhand.Core.Governance;
+using Deskhand.Ui;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,10 +17,11 @@ builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
 var controlState = ControlState.FromEnvironment();
 var auditLog = new AuditLog();
+var captureNotifier = new ToastNotifier();
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
-    new GovernedBackend(new LocalAutomationBackend(), controlState, auditLog));
+    new GovernedBackend(new LocalAutomationBackend(), controlState, auditLog, captureNotifier));
 
 builder.Services
     .AddMcpServer()
@@ -28,4 +30,5 @@ builder.Services
 
 var app = builder.Build();
 using var killSwitch = new KillSwitch(controlState, auditLog);
+using var _notifier = captureNotifier;
 await app.RunAsync();

@@ -8,11 +8,11 @@
     <AssemblyName>deskhand-http</AssemblyName>
     <Platforms>x64</Platforms>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Deskhand.Core\Deskhand.Core.csproj" />
+    <ProjectReference Include="..\Deskhand.Ui\Deskhand.Ui.csproj" />
   </ItemGroup>
 
 </Project>

@@ -89,6 +89,7 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /windows` | — | All top-level windows (the reliable way to enter a specific app) |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |
 | `POST /uia/find` | `{rootRef?, name?, automationId?, controlType?, className?, scope?, max?}` | Query elements |
+| `POST /uia/wait` | `{…conditions, timeoutMs?}` | Poll until a matching element appears (or `404 wait_timeout`) |
 | `GET /uia/element/{ref}` | — | Re-read one element |
 | `GET /uia/element/{ref}/properties` | — | **Every** UIA property of an element (name → value) |
 | `POST /uia/invoke` | `{reference}` | Invoke pattern (click a button, etc.) |

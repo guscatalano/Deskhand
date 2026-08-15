@@ -18,6 +18,11 @@ public interface IAutomationBackend : IDisposable
     // uia — read
     TreeNodeDto GetTree(string? rootRef, int depth, int maxChildren);
     IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query);
+
+    /// <summary>Poll for an element matching the query until it appears or the timeout elapses.
+    /// Returns the first match, or null on timeout.</summary>
+    ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs);
+
     ElementInfoDto GetElement(string reference);
     IReadOnlyDictionary<string, string?> GetAllProperties(string reference);
 

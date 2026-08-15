@@ -88,6 +88,16 @@ public static class DeskhandTools
         int max = 100)
         => Json(b.Find(rootRef, new FindQuery(name, automationId, controlType, className, scope, max)));
 
+    [McpServerTool(Name = "deskhand_wait_for_element"), Description("Poll until an element matching the conditions appears (or the timeout elapses). Returns the element, or a not-found message on timeout.")]
+    public static string WaitForElement(IAutomationBackend b,
+        string? rootRef = null, string? name = null, string? automationId = null, string? controlType = null, string? className = null,
+        [Description("Scope: children | descendants | subtree (default descendants).")] string scope = "descendants",
+        [Description("Timeout in milliseconds (default 5000).")] int timeoutMs = 5000)
+    {
+        var found = b.WaitForElement(rootRef, new FindQuery(name, automationId, controlType, className, scope, 1), timeoutMs);
+        return found is null ? "{\"error\":\"wait_timeout\"}" : Json(found);
+    }
+
     [McpServerTool(Name = "deskhand_get_element"), Description("Re-read a single element by ref (summary properties + supported patterns).")]
     public static string GetElement(IAutomationBackend b, string reference) => Json(b.GetElement(reference));
 

@@ -11,14 +11,14 @@ namespace Deskhand.Core.Fleet;
 public static class AgentConnection
 {
     public static async Task RunForeverAsync(string serverWsUrl, string agentId, IAutomationBackend backend,
-        Action<string>? log, CancellationToken ct)
+        Action<string>? log, CancellationToken ct, string? token = null)
     {
         int backoffMs = 1000;
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                await ConnectOnceAsync(serverWsUrl, agentId, backend, log, ct);
+                await ConnectOnceAsync(serverWsUrl, agentId, backend, log, ct, token);
                 backoffMs = 1000;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
@@ -32,9 +32,10 @@ public static class AgentConnection
     }
 
     private static async Task ConnectOnceAsync(string serverWsUrl, string agentId, IAutomationBackend backend,
-        Action<string>? log, CancellationToken ct)
+        Action<string>? log, CancellationToken ct, string? token)
     {
         using var ws = new ClientWebSocket();
+        if (!string.IsNullOrEmpty(token)) ws.Options.SetRequestHeader("Authorization", $"Bearer {token}");
         await ws.ConnectAsync(new Uri(serverWsUrl), ct);
         var gate = new SemaphoreSlim(1, 1);
 

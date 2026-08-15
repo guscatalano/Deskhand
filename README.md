@@ -218,28 +218,43 @@ HTTP: `POST /macro/start`, `POST /macro/stop` (returns the macro JSON), `GET /ma
 MCP: `deskhand_macro_start/stop/status/expect/play`. Dashboard: a **Macro** panel (Screen & Input)
 plus an **Expect (macro)** action on any Explorer element.
 
-## Fleet (Phase 4, preview)
+## Fleet (Phase 4)
 
 `Deskhand.Fleet.Server` + `Deskhand.Fleet.Agent` extend the single-machine backend to many machines.
 The **agent** dials *outbound* to the server over a WebSocket and serves commands against its local
 desktop (no inbound port on the agent). The **server** keeps a registry of connected agents and
-exposes the same automation surface routed to a selected agent — the server-side `RemoteAgentBackend`
-implements the full `IAutomationBackend`, so every capability works remotely (verified: routed
-machine info, tree, screen capture, and input).
+exposes the **full** automation surface routed to a selected agent — the server-side
+`RemoteAgentBackend` implements the entire `IAutomationBackend`, so every capability (UIA read/act,
+capture, input, launch) works remotely.
 
 ```powershell
-dotnet run --project src/Deskhand.Fleet.Server -c Release          # listens on 127.0.0.1:8799
-# on each target machine (here, same box for the demo):
-$env:DESKHAND_AGENT_ID="WKS-TEST"; dotnet run --project src/Deskhand.Fleet.Agent -c Release
+$env:DESKHAND_FLEET_TOKEN="s3cret"                  # shared agent+client token (optional)
+$env:DESKHAND_FLEET_BIND="any"                      # accept remote agents (default: loopback)
+dotnet run --project src/Deskhand.Fleet.Server -c Release          # 8799
+# on each target machine:
+$env:DESKHAND_FLEET_TOKEN="s3cret"; $env:DESKHAND_FLEET_URL="ws://server:8799/agent/connect"
+$env:DESKHAND_AGENT_ID="WKS-1"; dotnet run --project src/Deskhand.Fleet.Agent -c Release
 ```
 
-Then: `GET /agents`, `GET /agents/{id}/machine`, `POST /agents/{id}/capture/screen`,
-`POST /agents/{id}/mouse/move`, etc.
+Client API (bearer token when configured): `GET /agents`, then the same surface per agent —
+`GET /agents/{id}/machine|foreground|windows`, `POST /agents/{id}/uia/tree|find|wait|invoke|set-value`,
+`/capture/screen|region|window|element`, `/mouse/*`, `/keyboard/*`, `/process/launch`.
 
-> **Preview status:** this slice binds **loopback** and has **no transport auth**. Production Phase 4
-> needs TLS + mTLS/agent authentication, AnyIP binding, a launcher Windows service that spawns the
-> agent into each interactive session, and full endpoint parity. The transport, registry, routing,
-> and remote backend are done and tested.
+**Done & tested:** outbound WebSocket transport, agent registry + routing, the full remote backend,
+**shared-token auth** for agents and clients, and AnyIP binding — verified: no-token → 401,
+authenticated agent routing across the whole surface.
+
+**`Deskhand.Fleet.Launcher`** is a Windows Service (LocalSystem) that keeps an agent running in the
+active console session, launched as the logged-in user via `WTSQueryUserToken` + `CreateProcessAsUser`:
+
+```powershell
+sc create DeskhandLauncher binPath= "C:\path\deskhand-launcher.exe" start= auto obj= LocalSystem
+sc start DeskhandLauncher      # configure via machine env: DESKHAND_FLEET_URL / _TOKEN / DESKHAND_AGENT_EXE
+```
+
+> **Remaining hardening:** put **TLS** in front (reverse proxy or Kestrel HTTPS) for `wss://`, and
+> optionally mTLS client certs instead of the shared token. The Launcher is built but was **not**
+> exercised in the sandbox (needs service install + SYSTEM).
 
 ## Recreation docs
 

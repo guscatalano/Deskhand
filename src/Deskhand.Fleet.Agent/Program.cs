@@ -11,12 +11,13 @@ string server = args.FirstOrDefault(a => a.StartsWith("ws", StringComparison.Ord
     ?? Environment.GetEnvironmentVariable("DESKHAND_FLEET_URL")
     ?? "ws://127.0.0.1:8799/agent/connect";
 string agentId = Environment.GetEnvironmentVariable("DESKHAND_AGENT_ID") ?? Environment.MachineName;
+string? token = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN");
 
 var backend = new GovernedBackend(new LocalAutomationBackend(), ControlState.FromEnvironment(), new AuditLog());
 
-Console.WriteLine($"Deskhand agent '{agentId}'  ->  {server}");
+Console.WriteLine($"Deskhand agent '{agentId}'  ->  {server}{(token is null ? "" : "  (authenticated)")}");
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-await AgentConnection.RunForeverAsync(server, agentId, backend, m => Console.WriteLine("  " + m), cts.Token);
+await AgentConnection.RunForeverAsync(server, agentId, backend, m => Console.WriteLine("  " + m), cts.Token, token);

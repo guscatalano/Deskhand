@@ -7,6 +7,9 @@
     <Project Path="src/Deskhand.Fleet.Agent/Deskhand.Fleet.Agent.csproj">
       <Platform Project="x64" />
     </Project>
+    <Project Path="src/Deskhand.Fleet.Launcher/Deskhand.Fleet.Launcher.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Deskhand.Fleet.Server/Deskhand.Fleet.Server.csproj">
       <Platform Project="x64" />
     </Project>

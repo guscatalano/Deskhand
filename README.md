@@ -196,6 +196,35 @@ workstation while the SYSTEM helper runs.
 > console. Driving *input* on the secure desktop (clicking the UAC button) additionally requires a
 > signed `uiAccess` binary and admin policy, and is not enabled here — capture is the reliable part.
 
+## Fleet (Phase 4, preview)
+
+`Deskhand.Fleet.Server` + `Deskhand.Fleet.Agent` extend the single-machine backend to many machines.
+The **agent** dials *outbound* to the server over a WebSocket and serves commands against its local
+desktop (no inbound port on the agent). The **server** keeps a registry of connected agents and
+exposes the same automation surface routed to a selected agent — the server-side `RemoteAgentBackend`
+implements the full `IAutomationBackend`, so every capability works remotely (verified: routed
+machine info, tree, screen capture, and input).
+
+```powershell
+dotnet run --project src/Deskhand.Fleet.Server -c Release          # listens on 127.0.0.1:8799
+# on each target machine (here, same box for the demo):
+$env:DESKHAND_AGENT_ID="WKS-TEST"; dotnet run --project src/Deskhand.Fleet.Agent -c Release
+```
+
+Then: `GET /agents`, `GET /agents/{id}/machine`, `POST /agents/{id}/capture/screen`,
+`POST /agents/{id}/mouse/move`, etc.
+
+> **Preview status:** this slice binds **loopback** and has **no transport auth**. Production Phase 4
+> needs TLS + mTLS/agent authentication, AnyIP binding, a launcher Windows service that spawns the
+> agent into each interactive session, and full endpoint parity. The transport, registry, routing,
+> and remote backend are done and tested.
+
+## Recreation docs
+
+`AI_Documentation/` contains a full, exact rebuild guide (architecture, dependencies with versions,
+per-subsystem deep-dives, gotchas, and an ordered walkthrough) — enough for a human or an AI agent
+to recreate Deskhand from scratch.
+
 ## Notes & limits
 
 - **Coordinates** are physical pixels on the virtual desktop; the process is Per-Monitor-v2 DPI aware.

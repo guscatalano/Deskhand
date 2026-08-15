@@ -196,6 +196,25 @@ workstation while the SYSTEM helper runs.
 > console. Driving *input* on the secure desktop (clicking the UAC button) additionally requires a
 > signed `uiAccess` binary and admin policy, and is not enabled here — capture is the reliable part.
 
+## Record & playback
+
+Deskhand can record what you do and replay it — **synchronized, not blind**. Recording captures
+state-changing actions (mouse, keyboard, and UIA acts) at the governance seam. Playback is smart:
+
+- **UIA action steps re-resolve (wait for) their target element** before acting — so "click Save"
+  waits for the Save button to exist rather than firing at a stale ref or coordinate.
+- **Explicit expectations** — insert "wait for element Y (up to a timeout)" steps between actions,
+  giving *do X, expect Y, do Z*. Playback blocks until the expectation is met (or fails clearly).
+- Only raw coordinate/keyboard input honors the recorded timing (scaled by `speed`, each gap capped).
+
+UIA steps store a **re-resolvable selector** (name / automationId / controlType / className), so a
+macro replays across sessions even though element refs are per-session.
+
+HTTP: `POST /macro/start`, `POST /macro/stop` (returns the macro JSON), `GET /macro/status`,
+`POST /macro/expect {…conditions, timeoutMs}` (while recording), `POST /macro/play {speed?, macro?}`.
+MCP: `deskhand_macro_start/stop/status/expect/play`. Dashboard: a **Macro** panel (Screen & Input)
+plus an **Expect (macro)** action on any Explorer element.
+
 ## Fleet (Phase 4, preview)
 
 `Deskhand.Fleet.Server` + `Deskhand.Fleet.Agent` extend the single-machine backend to many machines.

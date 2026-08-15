@@ -30,11 +30,13 @@ public static class InputInjector
     {
         int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
         int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN) - 1);
-        int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN) - 1);
-        int nx = (int)Math.Round((x - vx) * 65535.0 / vw);
-        int ny = (int)Math.Round((y - vy) * 65535.0 / vh);
-        return (Math.Clamp(nx, 0, 65535), Math.Clamp(ny, 0, 65535));
+        int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+        int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+        // Windows maps the 0..65535 absolute space back to pixels via >>16 (divide by 65536), so
+        // invert with 65536/size (rounded) to land on the intended pixel instead of ~1% off.
+        long nx = ((long)(x - vx) * 65536 + vw / 2) / vw;
+        long ny = ((long)(y - vy) * 65536 + vh / 2) / vh;
+        return (Math.Clamp((int)nx, 0, 65535), Math.Clamp((int)ny, 0, 65535));
     }
 
     private static INPUT Mouse(uint flags, int nx = 0, int ny = 0, uint data = 0) => new()

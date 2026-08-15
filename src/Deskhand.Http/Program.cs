@@ -36,11 +36,13 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 var controlState = ControlState.FromEnvironment();
 var auditLog = new AuditLog();
 var captureNotifier = new ToastNotifier();
+var macroRecorder = new Deskhand.Core.Macros.MacroRecorder();
 builder.Services.AddSingleton(controlState);
 builder.Services.AddSingleton(auditLog);
 builder.Services.AddSingleton(captureNotifier);
+builder.Services.AddSingleton(macroRecorder);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
-    new GovernedBackend(new LocalAutomationBackend(), controlState, auditLog, captureNotifier));
+    new GovernedBackend(new LocalAutomationBackend(), controlState, auditLog, captureNotifier, macroRecorder));
 
 var app = builder.Build();
 
@@ -138,6 +140,33 @@ api.MapPost("/control", (ControlState s, AuditLog a, ControlRequest r) =>
     if (r.NotifyOnCapture.HasValue) s.NotifyOnCapture = r.NotifyOnCapture.Value;
     a.Record("control", $"armed={s.Armed} input={s.InputEnabled} capture={s.CaptureEnabled} notify={s.NotifyOnCapture}", "set");
     return Results.Ok(new { armed = s.Armed, inputEnabled = s.InputEnabled, captureEnabled = s.CaptureEnabled, notifyOnCapture = s.NotifyOnCapture });
+});
+
+// ---- record & playback ----
+api.MapPost("/macro/start", (Deskhand.Core.Macros.MacroRecorder rec, AuditLog a) =>
+{
+    rec.Start(); a.Record("macro_record", null, "start");
+    return Results.Ok(new { recording = true });
+});
+api.MapPost("/macro/stop", (Deskhand.Core.Macros.MacroRecorder rec, AuditLog a) =>
+{
+    var macro = rec.Stop(); a.Record("macro_record", $"steps={macro.Steps.Count}", "stop");
+    return Results.Ok(macro);
+});
+api.MapGet("/macro/status", (Deskhand.Core.Macros.MacroRecorder rec) =>
+    Results.Ok(new { recording = rec.IsRecording, count = rec.CurrentCount, elapsedMs = rec.ElapsedMs, hasLast = rec.LastMacro is not null, lastCount = rec.LastMacro?.Steps.Count ?? 0 }));
+api.MapPost("/macro/expect", (Deskhand.Core.Macros.MacroRecorder rec, MacroExpectRequest r) =>
+{
+    if (!rec.IsRecording) throw new ArgumentException("Not recording — start a recording before adding an expectation.");
+    rec.RecordWait(new Deskhand.Core.Macros.ElementSelectorDto(r.Name, r.AutomationId, r.ControlType, r.ClassName), r.TimeoutMs ?? 5000);
+    return Results.Ok(new { added = true, count = rec.CurrentCount });
+});
+api.MapPost("/macro/play", (IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder rec, AuditLog a, MacroPlayRequest? r) =>
+{
+    var macro = r?.Macro ?? rec.LastMacro ?? throw new ArgumentException("No macro to play — record one first or supply a macro.");
+    a.Record("macro_play", $"steps={macro.Steps.Count} speed={r?.Speed ?? 1}", "start");
+    int played = Deskhand.Core.Macros.MacroPlayer.Play(macro, b, r?.Speed ?? 1.0, r?.MaxStepDelayMs ?? 3000);
+    return Results.Ok(new { played });
 });
 
 // ---- health & orientation ----
@@ -283,6 +312,8 @@ record WindowCaptureRequest(long? Hwnd, string? Reference, string? Format, int? 
 record ElementCaptureRequest(string Reference, string? Format, int? Quality);
 record InputDesktopRequest(string? Format, int? Quality);
 record ControlRequest(bool? Armed, bool? InputEnabled, bool? CaptureEnabled, bool? NotifyOnCapture);
+record MacroPlayRequest(Deskhand.Core.Macros.Macro? Macro, double? Speed, int? MaxStepDelayMs);
+record MacroExpectRequest(string? Name, string? AutomationId, string? ControlType, string? ClassName, int? TimeoutMs);
 record MouseMoveRequest(int X, int Y);
 record MouseClickRequest(string? Button, int? X, int? Y, int? Count);
 record MouseButtonRequest(string? Button, int? X, int? Y);

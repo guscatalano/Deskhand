@@ -65,6 +65,35 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_arm"), Description("Release the kill switch: allow input and capture again.")]
     public static string Arm(ControlState s) { s.Armed = true; return "armed"; }
 
+    // ---------- record & playback ----------
+
+    [McpServerTool(Name = "deskhand_macro_start"), Description("Start recording actions (input + UIA acts) into a macro.")]
+    public static string MacroStart(Deskhand.Core.Macros.MacroRecorder r) { r.Start(); return "recording"; }
+
+    [McpServerTool(Name = "deskhand_macro_stop"), Description("Stop recording and return the recorded macro (also kept as the 'last' macro for playback).")]
+    public static string MacroStop(Deskhand.Core.Macros.MacroRecorder r) => Json(r.Stop());
+
+    [McpServerTool(Name = "deskhand_macro_status"), Description("Whether a recording is in progress, its step count, and whether a macro is available to play.")]
+    public static string MacroStatus(Deskhand.Core.Macros.MacroRecorder r) =>
+        Json(new { recording = r.IsRecording, count = r.CurrentCount, hasLast = r.LastMacro is not null, lastCount = r.LastMacro?.Steps.Count ?? 0 });
+
+    [McpServerTool(Name = "deskhand_macro_expect"), Description("While recording, insert an expectation: playback will WAIT for an element matching these conditions to appear before continuing (do X, expect Y, do Z).")]
+    public static string MacroExpect(Deskhand.Core.Macros.MacroRecorder r,
+        string? name = null, string? automationId = null, string? controlType = null, string? className = null, int timeoutMs = 5000)
+    {
+        if (!r.IsRecording) return "not recording";
+        r.RecordWait(new Deskhand.Core.Macros.ElementSelectorDto(name, automationId, controlType, className), timeoutMs);
+        return $"expectation added ({r.CurrentCount} steps)";
+    }
+
+    [McpServerTool(Name = "deskhand_macro_play"), Description("Replay the last recorded macro. UIA steps wait for their target element; explicit expectations block until met. speed>1 plays faster.")]
+    public static string MacroPlay(IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder r, double speed = 1.0)
+    {
+        var macro = r.LastMacro ?? throw new ArgumentException("No macro recorded yet.");
+        int played = Deskhand.Core.Macros.MacroPlayer.Play(macro, b, speed);
+        return $"played {played} steps";
+    }
+
     [McpServerTool(Name = "deskhand_foreground_window"), Description("The current foreground window element.")]
     public static string ForegroundWindow(IAutomationBackend b) => Json(b.GetForegroundWindow());
 

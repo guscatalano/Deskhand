@@ -2,7 +2,7 @@
 
 A console `Exe` (`AssemblyName=deskhand-mcp`) that exposes the **same `IAutomationBackend`** as **MCP tools
 over stdio**, using `ModelContextProtocol` 2.2.0 + `Microsoft.Extensions.Hosting` 9.0.0. Because it shares
-the governed backend, it has identical capabilities and safety to the HTTP host — 26 tools.
+the governed backend, it has identical capabilities and safety to the HTTP host (~34 tools, listed below).
 
 ## Host bootstrap (`Program.cs`)
 
@@ -64,9 +64,10 @@ public static string GetTree(IAutomationBackend b,
 Reads return **JSON text** (`System.Text.Json`, camelCase, indented, string enums, null-ignoring). Actions
 return the literal string `"ok"`.
 
-### The 26 tools
+### The tools
 
 Orientation: `deskhand_machine_info`, `deskhand_desktop_state`, `deskhand_list_windows`,
+`deskhand_list_processes` (every process + the windows it owns; see `03-core-backend.md`),
 `deskhand_foreground_window`, `deskhand_focused_element`.
 Governance: `deskhand_control_status`, `deskhand_disarm`, `deskhand_arm`.
 UIA read: `deskhand_get_tree`, `deskhand_find_elements`, `deskhand_wait_for_element`, `deskhand_get_element`,
@@ -78,6 +79,9 @@ Capture: `deskhand_capture_screen`, `deskhand_capture_region`, `deskhand_capture
 `deskhand_capture_element`, `deskhand_capture_input_desktop`.
 Input: `deskhand_mouse_move`, `deskhand_mouse_click`, `deskhand_mouse_scroll`, `deskhand_type_text`,
 `deskhand_send_keys`.
+Events & hooks (see `14-events-hooks-recording.md`): `deskhand_get_events`, `deskhand_wait_for_process`.
+Screen recording: `deskhand_record_start`, `deskhand_record_stop`, `deskhand_record_status`.
+User-input recording: `deskhand_user_input_start`, `deskhand_user_input_stop`, `deskhand_user_input_get`.
 
 (`deskhand_disarm`/`deskhand_arm` flip `ControlState.Armed`; `deskhand_control_status` reports it. These
 give the model a way to engage/release the kill switch itself.)

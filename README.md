@@ -142,11 +142,26 @@ tree and keeps your selection, for when the app under inspection changes.
 
 ## MCP server
 
-`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (26 tools:
-`deskhand_list_windows`, `deskhand_get_tree`, `deskhand_get_all_properties`,
+`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (~34 tools:
+`deskhand_list_windows`, `deskhand_list_processes`, `deskhand_get_tree`, `deskhand_get_all_properties`,
 `deskhand_element_from_point`, `deskhand_invoke`, `deskhand_capture_window`,
-`deskhand_mouse_click`, …). Screenshots are returned as real MCP image content, so a model
+`deskhand_mouse_click`, `deskhand_wait_for_process`, `deskhand_record_start`,
+`deskhand_user_input_start`, …). Screenshots are returned as real MCP image content, so a model
 sees them directly.
+
+**Observe, not just drive** (see `AI_Documentation/14-events-hooks-recording.md`):
+- **Process list + tree** — `deskhand_list_processes` returns every process with the top-level windows
+  it owns; each window ref expands straight into the UIA tree (process → windows → elements). The
+  dashboard has a matching **Processes** tab.
+- **Event feed & hooks** — `deskhand_get_events` streams `focus_changed`, `window_opened`,
+  `process_started`, `process_exited`; `deskhand_wait_for_process` blocks for a launch/exit by name/pid
+  (window-open blocking is `deskhand_wait_for_element`).
+- **Screen recording** — `deskhand_record_start` records a monitor (or all) to an animated **GIF** or
+  **MJPEG-AVI**, with fps/scale/quality and a hard `maxDurationMs` auto-stop. Files go to one dir
+  (`%LOCALAPPDATA%\Deskhand\recordings`), are audited, and auto-delete after 24h.
+- **User-input recording** — `deskhand_user_input_start` records the *user's* clicks (each annotated with
+  the UIA element it hit), scrolls, and typed text via global hooks. Off by default; `captureText=false`
+  for mouse-only (keystrokes may include passwords).
 
 `deskhand_element_from_point(x, y)` returns the deepest UIA element at a screen coordinate
 (virtual-desktop pixels), resolved fresh via UIA `FromPoint` — no tree walk, no stored ref. This

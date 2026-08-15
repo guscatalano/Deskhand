@@ -114,6 +114,14 @@ All bodies/responses JSON camelCase. `reference` values (`el_…`) come from any
 | `POST /mouse/scroll` | `{dx, dy}` | wheel notches |
 | `POST /keyboard/type` | `{text}` | type Unicode literal |
 | `POST /keyboard/keys` | `{chord}` | chord e.g. `"ctrl+shift+s"` |
+| `GET /processes` | — | every process + the windows it owns |
+| `GET /events/poll` · `/events` | `?since` / SSE | event feed (focus/window/process) |
+| `POST /process/wait` | `{event, name?, pid?, timeoutMs?}` | block for a process start/exit |
+| `POST /record/start` | `{monitor?, format, fps, scale, quality, maxDurationMs}` | start screen recording |
+| `POST /record/stop` | `{reference}` | finalize; `GET /record/status/{id}`, `/record/list`, `/recordings/{id}` |
+| `POST /input/record/start` · `/stop` | `{captureText?}` | record the user's own input (clicks+elements) |
+
+The events, hooks, recording, and user-input endpoints are documented in `14-events-hooks-recording.md`.
 
 Action endpoints that don't return data respond `{ ok: true }` via the local helper `Ok()`. `ParseFormat`
 maps `"jpeg"`/`"jpg"` → JPEG, everything else → PNG; default `quality` is `80`.

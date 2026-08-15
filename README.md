@@ -289,6 +289,11 @@ Client API (bearer token when configured): `GET /agents`, then the same surface 
 `GET /agents/{id}/machine|foreground|windows`, `POST /agents/{id}/uia/tree|find|wait|invoke|set-value`,
 `/capture/screen|region|window|element`, `/mouse/*`, `/keyboard/*`, `/process/launch`.
 
+The fleet server also serves a **web dashboard** at `http://127.0.0.1:8799` — a live grid of every
+connected PC (screenshot thumbnails, machine/desktop/monitor info); click a PC to open it, watch its
+screen live, and drive it (click-to-click, keyboard). This is where you *see other machines* (the
+single-machine dashboard on `:8791` only shows the local one).
+
 **Done & tested:** outbound WebSocket transport, agent registry + routing, the full remote backend,
 **shared-token auth** for agents and clients, and AnyIP binding — verified: no-token → 401,
 authenticated agent routing across the whole surface.

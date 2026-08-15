@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deskhand Fleet</title>
+<style>
+  :root {
+    --bg:#F1F4F7; --surface:#FFFFFF; --surface-2:#E7ECF1; --surface-3:#DCE3EA;
+    --ink:#10161D; --ink-2:#45515F; --ink-3:#6C7885; --line:#CFD8E0; --line-2:#E2E8EE;
+    --accent:#0C7F86; --accent-soft:#D6ECEC; --action:#B44311;
+    --good:#197C50; --good-soft:#D9EEE3; --crit:#AE2A1C; --crit-soft:#F6DAD5; --warn:#9A5A08; --warn-soft:#F6E7CF;
+    --mono:"Cascadia Code","Consolas",ui-monospace,monospace; --sans:"Segoe UI",system-ui,-apple-system,sans-serif;
+    --shadow:0 1px 2px rgba(16,22,29,.06),0 8px 24px rgba(16,22,29,.06);
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg:#0A0E12; --surface:#10161C; --surface-2:#171F27; --surface-3:#1E2831;
+    --ink:#E8EDF2; --ink-2:#A6B2BE; --ink-3:#76828F; --line:#232E38; --line-2:#1A232B;
+    --accent:#24BABF; --accent-soft:#12312F; --action:#EB824B;
+    --good:#37B87F; --good-soft:#123027; --crit:#EF7A6C; --crit-soft:#331916; --warn:#D79A3E; --warn-soft:#2E2413;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.45);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0A0E12; --surface:#10161C; --surface-2:#171F27; --surface-3:#1E2831;
+    --ink:#E8EDF2; --ink-2:#A6B2BE; --ink-3:#76828F; --line:#232E38; --line-2:#1A232B;
+    --accent:#24BABF; --accent-soft:#12312F; --action:#EB824B;
+    --good:#37B87F; --good-soft:#123027; --crit:#EF7A6C; --crit-soft:#331916; --warn:#D79A3E; --warn-soft:#2E2413;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased;}
+  .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:11px 18px;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);}
+  .brand{display:flex;align-items:center;gap:9px;font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase;font-size:12px;}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--ink-3);box-shadow:0 0 0 4px var(--surface-2);transition:.25s;}
+  .brand .dot.live{background:var(--good);box-shadow:0 0 0 4px var(--good-soft);}
+  .brand b{font-weight:700;letter-spacing:.2em;}
+  .spacer{flex:1;}
+  .stat{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);}
+  .ghost{color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:6px 11px;border-radius:7px;cursor:pointer;font-family:var(--mono);font-size:11.5px;}
+  .ghost:hover{border-color:var(--accent);color:var(--ink);}
+  .pill{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;padding:2px 9px;border-radius:20px;text-transform:uppercase;font-weight:600;}
+  .pill.default{color:var(--good);background:var(--good-soft);} .pill.secure,.pill.locked{color:var(--crit);background:var(--crit-soft);} .pill.unknown{color:var(--warn);background:var(--warn-soft);}
+
+  main{max-width:1400px;margin:0 auto;padding:18px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;cursor:pointer;transition:.15s;}
+  .card:hover{border-color:var(--accent);transform:translateY(-2px);}
+  .thumb{aspect-ratio:16/9;background:var(--surface-3);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .thumb .ph{color:var(--ink-3);font-family:var(--mono);font-size:11px;}
+  .card .meta{padding:11px 14px;display:flex;flex-direction:column;gap:5px;}
+  .card .name{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}
+  .card .sub{font-family:var(--mono);font-size:11px;color:var(--ink-3);display:flex;gap:10px;flex-wrap:wrap;}
+  .empty{color:var(--ink-3);font-family:var(--mono);font-size:13px;text-align:center;padding:80px 20px;}
+
+  /* detail */
+  #detail{display:none;}
+  #detail.show{display:block;}
+  .dhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .dhead h1{font-size:20px;margin:0;letter-spacing:-.01em;}
+  .viewer{position:relative;background:var(--surface-3);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:200px;box-shadow:var(--shadow);}
+  .viewer img{max-width:100%;height:auto;display:block;cursor:crosshair;}
+  .viewer .marker{position:absolute;width:14px;height:14px;border:2px solid var(--action);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--action) 30%,transparent);}
+  .ctrls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0;}
+  .ctrls label{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+  input[type=text],select{background:var(--surface-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);padding:6px 9px;font-family:var(--sans);font-size:13px;}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+  .btn{border:1px solid var(--line);background:var(--surface-2);color:var(--ink);padding:6px 12px;border-radius:7px;cursor:pointer;font-weight:600;font-size:13px;}
+  .btn:hover{border-color:var(--accent);}
+  .btn.a{background:var(--action);border-color:var(--action);color:#fff;}
+  .coord{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);} .coord b{color:var(--accent);}
+  .hint{font-size:11.5px;color:var(--ink-3);margin-top:6px;}
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;transition:.25s;background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-family:var(--mono);font-size:12px;z-index:50;box-shadow:var(--shadow);}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  #toast.err{background:var(--crit);color:#fff;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand"><span class="dot" id="dot"></span><b>Deskhand</b> Fleet</span>
+  <span class="stat" id="count"></span>
+  <span class="spacer"></span>
+  <button class="ghost" id="backBtn" style="display:none">← All PCs</button>
+  <button class="ghost" id="refreshBtn">Refresh</button>
+  <button class="ghost" id="themeBtn">Theme</button>
+</div>
+
+<main>
+  <div id="grid" class="grid"></div>
+  <div id="detail"></div>
+</main>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $=s=>document.querySelector(s), elm=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
+let toastT; function toast(m,err){const t=$("#toast");t.textContent=m;t.className="show"+(err?" err":"");clearTimeout(toastT);toastT=setTimeout(()=>t.className="",2200);}
+function guard(fn){return async(...a)=>{try{await fn(...a)}catch(e){toast(e.message||"error",true)}};}
+async function api(path,method="GET",body){
+  const r=await fetch(path,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined});
+  const txt=await r.text(); let d; try{d=txt?JSON.parse(txt):null}catch{d=txt}
+  if(!r.ok) throw new Error((d&&d.error)||r.statusText);
+  return d;
+}
+
+let agents=[]; let detailTimer=null; let gridTimer=null; let current=null; let lastCap=null;
+
+async function loadAgents(){
+  agents = await api("/agents");
+  $("#dot").classList.add("live");
+  $("#count").textContent = `${agents.length} PC${agents.length===1?"":"s"} connected`;
+  if(!current) renderGrid();
+}
+
+function renderGrid(){
+  $("#detail").classList.remove("show"); $("#backBtn").style.display="none";
+  const g=$("#grid"); g.style.display="grid";
+  if(!agents.length){ g.innerHTML='<div class="empty">No PCs connected. Start <b>deskhand-agent</b> on a machine pointing at this server.</div>'; return; }
+  // keep existing cards where possible to avoid thumbnail flicker
+  const have=new Set([...g.querySelectorAll('.card')].map(c=>c.dataset.id));
+  const want=new Set(agents.map(a=>a.id));
+  [...g.querySelectorAll('.card')].forEach(c=>{ if(!want.has(c.dataset.id)) c.remove(); });
+  agents.forEach(a=>{
+    if(have.has(a.id)) return;
+    const card=elm("div","card"); card.dataset.id=a.id;
+    card.innerHTML=`<div class="thumb"><div class="ph">loading…</div></div>
+      <div class="meta"><div class="name">${a.machine} <span class="pill ${a.desktop}">${a.desktop}</span></div>
+      <div class="sub"><span>id: ${a.id}</span><span>${a.monitors} monitor${a.monitors===1?"":"s"}</span>${a.elevated?"<span>elevated</span>":""}</div></div>`;
+    card.onclick=()=>openAgent(a);
+    g.appendChild(card);
+  });
+}
+
+async function thumbAll(){
+  if(current) return;
+  for(const a of agents){
+    try{
+      const c=await api(`/agents/${a.id}/capture/screen`,"POST",{format:"jpeg"});
+      const card=document.querySelector(`.card[data-id="${a.id}"] .thumb`);
+      if(card){ card.innerHTML=""; const img=new Image(); img.src=`data:image/jpeg;base64,${c.imageBase64}`; card.appendChild(img); }
+    }catch{}
+  }
+}
+
+const openAgent = guard(async(a)=>{
+  current=a;
+  $("#grid").style.display="none";
+  $("#backBtn").style.display="";
+  const info=await api(`/agents/${a.id}/machine`);
+  const d=$("#detail"); d.classList.add("show");
+  const mons=info.monitors||[];
+  d.innerHTML=`
+    <div class="dhead"><h1>${a.machine}</h1><span class="pill ${a.desktop}">${a.desktop}</span>
+      <span class="stat">${info.userName||""} · ${mons.length} monitor${mons.length===1?"":"s"}</span></div>
+    <div class="ctrls">
+      <label>monitor</label>
+      <select id="monSel"><option value="">all</option>${mons.map(m=>`<option value="${m.index}"${m.primary?" selected":""}>#${m.index}${m.primary?" (primary)":""} ${m.bounds.width}×${m.bounds.height}</option>`).join("")}</select>
+      <label>on click</label>
+      <select id="clickAction"><option value="inspect">read coords</option><option value="left">left click</option><option value="right">right click</option><option value="double">double click</option><option value="move">move</option></select>
+      <span class="coord" id="coord">live view — click to control</span>
+    </div>
+    <div class="viewer" id="viewer"><div class="marker" id="marker" style="display:none"></div></div>
+    <div class="ctrls">
+      <input type="text" id="typeTxt" placeholder="type text on this PC…" style="flex:1;min-width:160px"><button class="btn a" id="typeBtn">Type</button>
+      <input type="text" id="keysTxt" placeholder="ctrl+a · enter · alt+F4" style="width:180px"><button class="btn a" id="keysBtn">Send keys</button>
+    </div>
+    <div class="hint">Live view refreshes ~2s. Coordinates map to the captured monitor; input is injected on the remote PC (governed on the agent).</div>`;
+  $("#monSel").onchange=()=>refreshView();
+  $("#viewer").addEventListener("click", guard(onViewClick));
+  $("#typeBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/type`,"POST",{text:$("#typeTxt").value}); toast("typed"); });
+  $("#keysBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/keys`,"POST",{chord:$("#keysTxt").value}); toast("sent"); });
+  await refreshView();
+  clearInterval(detailTimer); detailTimer=setInterval(()=>refreshView().catch(()=>{}), 2200);
+});
+
+async function refreshView(){
+  if(!current) return;
+  const mon=$("#monSel")?.value;
+  const body={format:"jpeg"}; if(mon!=="") body.monitor=Number(mon);
+  const c=await api(`/agents/${current.id}/capture/screen`,"POST",body);
+  lastCap={rect:c.rect};
+  const v=$("#viewer"); let img=v.querySelector("img");
+  if(!img){ img=new Image(); v.insertBefore(img,$("#marker")); }
+  img.src=`data:image/jpeg;base64,${c.imageBase64}`;
+}
+
+async function onViewClick(ev){
+  const img=$("#viewer img"); if(!img||!lastCap) return;
+  const r=img.getBoundingClientRect(); const fx=(ev.clientX-r.left)/r.width, fy=(ev.clientY-r.top)/r.height;
+  const dx=Math.round(lastCap.rect.x+fx*lastCap.rect.width), dy=Math.round(lastCap.rect.y+fy*lastCap.rect.height);
+  const mk=$("#marker"); mk.style.display="block"; mk.style.left=(fx*100)+"%"; mk.style.top=(fy*100)+"%";
+  $("#coord").innerHTML=`desktop <b>${dx}, ${dy}</b>`;
+  const a=$("#clickAction").value;
+  if(a==="move"){ await api(`/agents/${current.id}/mouse/move`,"POST",{x:dx,y:dy}); toast("moved"); }
+  else if(a==="left"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:1}); toast("click"); await refreshView(); }
+  else if(a==="right"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"right",x:dx,y:dy,count:1}); toast("right click"); await refreshView(); }
+  else if(a==="double"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:2}); toast("double"); await refreshView(); }
+}
+
+$("#backBtn").onclick=()=>{ current=null; clearInterval(detailTimer); renderGrid(); thumbAll(); };
+$("#refreshBtn").onclick=guard(async()=>{ await loadAgents(); if(!current) await thumbAll(); });
+$("#themeBtn").onclick=()=>{ const r=document.documentElement; const dark=r.getAttribute("data-theme")?r.getAttribute("data-theme")==="dark":matchMedia("(prefers-color-scheme: dark)").matches; r.setAttribute("data-theme",dark?"light":"dark"); };
+
+loadAgents().then(thumbAll).catch(()=>{ $("#count").textContent="server unreachable"; });
+gridTimer=setInterval(()=>{ loadAgents().catch(()=>{}); if(!current) thumbAll(); }, 5000);
+</script>
+</body>
+</html>

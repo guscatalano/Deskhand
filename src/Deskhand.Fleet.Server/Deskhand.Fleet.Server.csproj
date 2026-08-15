@@ -7,9 +7,11 @@
     <AssemblyName>deskhand-fleet</AssemblyName>
     <Platforms>x64</Platforms>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\Deskhand.Core\Deskhand.Core.csproj" />
   </ItemGroup>
 

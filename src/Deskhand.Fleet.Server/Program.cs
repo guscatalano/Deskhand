@@ -6,7 +6,7 @@ using Deskhand.Core.Fleet;
 // same token gates the client API. Bind loopback by default, or DESKHAND_FLEET_BIND=any for remote
 // agents (put TLS in front / behind a reverse proxy for production).
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
 int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_FLEET_PORT"), out var p) ? p : 8799;
 bool bindAny = string.Equals(Environment.GetEnvironmentVariable("DESKHAND_FLEET_BIND"), "any", StringComparison.OrdinalIgnoreCase);
 string? token = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN");
@@ -17,6 +17,8 @@ builder.Services.AddSingleton<AgentRegistry>();
 
 var app = builder.Build();
 app.UseWebSockets();
+app.UseDefaultFiles();   // the fleet dashboard (wwwroot/index.html) — served before auth
+app.UseStaticFiles();
 var registry = app.Services.GetRequiredService<AgentRegistry>();
 
 static string Bearer(HttpContext ctx)

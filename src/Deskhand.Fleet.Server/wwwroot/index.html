@@ -91,7 +91,7 @@
   <span class="spacer"></span>
   <button class="ghost" id="backBtn" style="display:none">← All PCs</button>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8791/" target="_blank" title="This PC's dashboard">This PC →</a>
-  <button class="ghost" id="pauseBtn" title="Pause/resume the live screenshot polling">⏸ Pause live</button>
+  <button class="ghost danger-on" id="pauseBtn" title="Live screenshots are OFF by default — click to start polling agent screens">▶ Go live</button>
   <button class="ghost" id="auditBtn" title="Who connected & what they did">Audit</button>
   <button class="ghost" id="refreshBtn">Refresh</button>
   <button class="ghost" id="themeBtn">Theme</button>
@@ -144,9 +144,10 @@ function renderGrid(){
   });
 }
 
-// Live screenshot polling captures the remote screens; pause it manually, and automatically whenever
-// this page isn't visible, so we don't screenshot agents when nobody's looking.
-let paused=false;
+// Live screenshot polling captures the remote screens. OFF by default: nothing is screenshotted until
+// the operator clicks "Go live". Also auto-pauses whenever this page isn't visible. Opening a single
+// agent still fetches one frame (explicit intent), but continuous polling stays off until Go live.
+let paused=true;
 function liveOn(){ return !paused && !document.hidden; }
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden && liveOn()){ if(current) refreshView().catch(()=>{}); else thumbAll().catch(()=>{}); } });
 
@@ -186,17 +187,17 @@ const openAgent = guard(async(a)=>{
       <input type="text" id="keysTxt" placeholder="ctrl+a · enter · alt+F4" style="width:180px"><button class="btn a" id="keysBtn">Send keys</button>
     </div>
     <div class="hint">Live view refreshes ~2s. Coordinates map to the captured monitor; input is injected on the remote PC (governed on the agent).</div>`;
-  $("#monSel").onchange=()=>refreshView();
+  $("#monSel").onchange=()=>refreshView(true);
   $("#viewer").addEventListener("click", guard(onViewClick));
   $("#typeBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/type`,"POST",{text:$("#typeTxt").value}); toast("typed"); });
   $("#keysBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/keys`,"POST",{chord:$("#keysTxt").value}); toast("sent"); });
   $("#saveBtn").onclick=()=>{ const img=$("#viewer img"); if(!img){toast("no frame yet",true);return;} const dl=document.createElement("a"); dl.href=img.src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); dl.download=`${a.machine}-${ts}.jpg`; document.body.appendChild(dl); dl.click(); dl.remove(); toast("saved"); };
-  await refreshView();
+  await refreshView(true);   // one frame on open (explicit intent); continuous polling stays off until Go live
   clearInterval(detailTimer); detailTimer=setInterval(()=>refreshView().catch(()=>{}), 2200);
 });
 
-async function refreshView(){
-  if(!current || !liveOn()) return;
+async function refreshView(force){
+  if(!current || (!liveOn() && !force)) return;
   const mon=$("#monSel")?.value;
   const body={format:"jpeg"}; if(mon!=="") body.monitor=Number(mon);
   const c=await api(`/agents/${current.id}/capture/screen`,"POST",body);
@@ -219,10 +220,10 @@ async function onViewClick(ev){
     $("#coord").innerHTML=`@ <b>${dx}, ${dy}</b> → <b>${el.controlType}</b> ${nm} <span style="opacity:.6">${el.className||""}</span> · ref <code>${el.ref}</code>`;
     toast(`picked ${el.controlType}`);
   }
-  else if(a==="move"){ await api(`/agents/${current.id}/mouse/move`,"POST",{x:dx,y:dy}); toast("moved"); }
-  else if(a==="left"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:1}); toast("click"); await refreshView(); }
-  else if(a==="right"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"right",x:dx,y:dy,count:1}); toast("right click"); await refreshView(); }
-  else if(a==="double"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:2}); toast("double"); await refreshView(); }
+  else if(a==="move"){ await api(`/agents/${current.id}/mouse/move`,"POST",{x:dx,y:dy}); toast("moved"); await refreshView(true); }
+  else if(a==="left"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:1}); toast("click"); await refreshView(true); }
+  else if(a==="right"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"right",x:dx,y:dy,count:1}); toast("right click"); await refreshView(true); }
+  else if(a==="double"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:2}); toast("double"); await refreshView(true); }
 }
 
 $("#backBtn").onclick=()=>{ current=null; clearInterval(detailTimer); renderGrid(); thumbAll(); };

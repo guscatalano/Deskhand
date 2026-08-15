@@ -165,6 +165,43 @@ Register it with an MCP client (e.g. Claude Desktop / Claude Code) — `mcp.json
 
 The MCP server runs in your user session and covers the Default desktop, exactly like the HTTP one.
 
+### Configure your MCP client
+
+The server is one stdio executable. After building (`dotnet build src/Deskhand.Mcp -c Release`) or
+installing the MSI, point your client at it. The examples use the MSI path
+`C:\Program Files\Deskhand\mcp\deskhand-mcp.exe` — swap in your build path if running from source.
+
+Most clients share the **`mcpServers`** shape:
+
+```json
+{
+  "mcpServers": {
+    "deskhand": { "command": "C:\\Program Files\\Deskhand\\mcp\\deskhand-mcp.exe" }
+  }
+}
+```
+
+| Client | Where | Notes |
+|---|---|---|
+| **Claude Code** | `claude mcp add deskhand -s user "C:\Program Files\Deskhand\mcp\deskhand-mcp.exe"` | Or the `mcpServers` block in a project `.mcp.json`. Restart the session. |
+| **Claude Desktop** | `%APPDATA%\Claude\claude_desktop_config.json` | `mcpServers` block above. Restart the app. |
+| **Cursor** | `.cursor/mcp.json` (project) or `%USERPROFILE%\.cursor\mcp.json` (global) | `mcpServers` block above. |
+| **Windsurf** | `%USERPROFILE%\.codeium\windsurf\mcp_config.json` | `mcpServers` block above. |
+| **Cline** (VS Code) | MCP Servers panel → *Configure* → `cline_mcp_settings.json` | `mcpServers` block above (add `"args": []`). |
+| **VS Code** (Copilot agent) | `.vscode/mcp.json` | Uses **`servers`** + **`type`**: `{ "servers": { "deskhand": { "type": "stdio", "command": "…deskhand-mcp.exe" } } }` |
+| **Zed** | `settings.json` → `context_servers` | `{ "context_servers": { "deskhand": { "command": { "path": "…deskhand-mcp.exe", "args": [] } } } }` |
+| **Continue** | `~/.continue/config.yaml` | `mcpServers:` list — `- name: deskhand` / `command: …deskhand-mcp.exe` |
+
+**Try it without a client** with the MCP Inspector:
+
+```powershell
+npx @modelcontextprotocol/inspector "C:\Program Files\Deskhand\mcp\deskhand-mcp.exe"
+```
+
+**Safety when testing:** the tools drive your real desktop. It starts **armed**; safe first calls are
+`deskhand_machine_info`, `deskhand_list_windows`, `deskhand_capture_screen`. Call `deskhand_disarm`
+(or set `DESKHAND_DISABLE_INPUT=1`) for read-only, and **Ctrl+Alt+Pause** is the global kill switch.
+
 ## Phase 2 — secure desktop (UAC / lock / logon)
 
 The HTTP server runs in your user session and covers the **Default** desktop. The **secure

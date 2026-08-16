@@ -34,7 +34,8 @@ an RDP-protocol backend able to implement the same contract without touching the
 | `11-secure-desktop.md` | Phase 2: session/desktop model, `SecureCapture`, the Secure Helper, the Broker. |
 | `12-recreation-walkthrough.md` | Ordered, step-by-step recipe to rebuild the whole thing. **The most important file.** |
 | `13-roadmap.md` | The five phases: what is done and what remains. |
-| `14-events-hooks-recording.md` | The event feed, process/window hooks, screen recording (GIF/AVI + retention), and user-input recording. |
+| `14-events-hooks-recording.md` | The event feed, process/window hooks, screen recording (GIF/AVI + retention), user-input recording, and RDP-over-fleet. |
+| `15-test-plan.md` | Acceptance checklist: per-subsystem test cases + PASS criteria — how an AI knows it built Deskhand correctly. |
 
 ## Tech stack (exact)
 

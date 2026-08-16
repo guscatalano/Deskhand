@@ -110,6 +110,24 @@ All four capabilities are routed per-agent, not just on the local host:
   `deskhand_agent_user_input_*`.
 - **Consent still holds remotely:** recording a fleet PC's user shows the banner + toast on *that* PC.
 
+## Adding a machine over RDP (no agent on the target)
+
+`Deskhand.Rdp/RdpBackend` implements the same `IAutomationBackend` seam over the RDP wire, so a machine can
+join the fleet with nothing installed on it. `deskhand-rdp <host> <user> <pass> --fleet <ws-url> [--id NAME]`
+opens the RDP session, wraps it as `AgentServices { Backend = RdpBackend }` (observation services null),
+and calls `AgentConnection.RunForeverAsync` — the target appears as a normal agent.
+
+- **From the web:** the fleet dashboard's **＋ RDP** button posts to `POST /fleet/rdp/connect`
+  `{host,user,password,domain?,size?,id?}`; `RdpConnectorManager` spawns `deskhand-rdp --fleet` (password via
+  the `DESKHAND_RDP_PASSWORD` env, not the command line). `GET /fleet/rdp/list` tracks connectors;
+  `POST /fleet/rdp/disconnect {id}` (the **✕ Disconnect RDP** button) kills one. Both are audited.
+- **What works:** screen capture + coordinate mouse/keyboard over the fleet. **What doesn't:** UIA
+  (tree/find/invoke/element-from-point), process list, and the observation services — pure RDP exposes no
+  accessibility tree, and those services are local-machine features; the calls return a clean
+  "not available over RDP" error.
+- **Naming:** the agent registers under the remote target's host (`AgentConnection` uses the backend's
+  `GetMachineInfo().MachineName`), not the connector box. RDP agents are tagged with an `RDP` pill.
+
 ## Reproduce quickly
 
 1. Start `deskhand-http`. Open the dashboard.

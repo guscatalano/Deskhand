@@ -470,7 +470,8 @@ async function selectNode(info, selEl){
   selected=info;
   // derive the detail + tree containers from whichever tab the row lives in (Explorer or Processes)
   const tab=(selEl&&selEl.closest(".tab"))||document.querySelector(".tab.active");
-  if(tab && tab.id==="tab-explorer") updateExplorerHash();   // deep-link window + selected element
+  if(tab && tab.id==="tab-explorer") updateExplorerHash();        // deep-link window + selected element
+  else if(tab && tab.id==="tab-processes") updateProcHash();      // deep-link process + selected element
   const treeEl=tab.querySelector(".tree");
   const d=tab.querySelector(".detailcol"); d.innerHTML="";
 
@@ -682,7 +683,7 @@ $("#keysTxt").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#keysBtn").
 let procData=[], procLoaded=false;
 function fmtMem(b){ return b>=1048576 ? Math.round(b/1048576)+" MB" : Math.round(b/1024)+" KB"; }
 function renderProcRow(p, container){
-  const node=elm("div","node"); node._plabel=(p.name+" "+p.processId+" "+(p.mainWindowTitle||"")).toLowerCase();
+  const node=elm("div","node"); node.dataset.pid=p.processId; node._plabel=(p.name+" "+p.processId+" "+(p.mainWindowTitle||"")).toLowerCase();
   const self=elm("div","self");
   const caret=elm("span","caret"); caret.textContent="▸"; if(!p.windows.length) caret.style.visibility="hidden";
   const nm=elm("span","nname"); nm.innerHTML=`<b>${p.name}</b> <span style="color:var(--ink-3)">· ${p.processId}</span>`;
@@ -700,7 +701,17 @@ function renderProcRow(p, container){
   container.append(node);
 }
 function openInExplorer(info){ document.querySelector('.tabbtn[data-tab="explorer"]').click(); loadRoot(info).catch(e=>toast(e.message,true)); }
+// URL = #processes/<pid>[/<selectedRef>] — the selected process (and element), so a refresh returns here.
+let procCurrent=null;
+function updateProcHash(){
+  const active=document.querySelector(".tab.active");
+  if(!active||active.id!=="tab-processes"||!procCurrent) return;
+  let h="#processes/"+procCurrent.processId;
+  if(selected&&selected.ref&&selected.processId===procCurrent.processId) h+="/"+selected.ref;
+  history.replaceState(null,"",h);
+}
 function showProcDetail(p){
+  procCurrent=p; updateProcHash();
   const d=$("#pdetail"); d.innerHTML="";
   const head=elm("div","dhead"); const ct=elm("span","ct"); ct.textContent="Process"; const h1=elm("h1"); h1.textContent=`${p.name} · ${p.processId}`; head.append(ct,h1); d.append(head);
   const s=elm("div","sect");
@@ -758,6 +769,20 @@ function explorerError(msg){
   const parts=(location.hash||"").replace(/^#/,"").split("/");
   const t=parts[0], rootRef=parts[1], selRef=parts[2];
   const btn=document.querySelector('.tabbtn[data-tab="'+t+'"]'); if(btn) btn.click();
+  if(t==="processes" && rootRef){   // rootRef holds the pid here
+    if(!procLoaded) await loadProcesses();
+    const p=procData.find(x=>String(x.processId)===rootRef);
+    if(!p){ toast("That process ("+rootRef+") is no longer running.",true); history.replaceState(null,"","#processes"); return; }
+    const row=document.querySelector('#ptree .node[data-pid="'+rootRef+'"] > .self');
+    if(row){ row.click(); row.scrollIntoView({block:"nearest"}); }
+    if(selRef){   // best-effort: select the element if it's among the (now-expanded) rows
+      try{ const s=await api("/uia/element/"+encodeURIComponent(selRef));
+        const m=[...$("#ptree").querySelectorAll(".self")].find(x=>x._info&&x._info.controlType===s.controlType&&x._info.name===s.name&&x._info.automationId===s.automationId);
+        if(m){ m.click(); m.scrollIntoView({block:"nearest"}); }
+      }catch(e){ /* element gone; the process is still restored */ }
+    }
+    return;
+  }
   if(t!=="explorer"||!rootRef) return;
   let root;
   try{ root=await api("/uia/element/"+encodeURIComponent(rootRef)); }

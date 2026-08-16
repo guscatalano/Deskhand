@@ -719,6 +719,21 @@ function showProcDetail(p){
     `<div class="prow"><div class="k">memory</div><div class="v">${fmtMem(p.workingSet)}</div></div>`+
     `<div class="prow"><div class="k">main title</div><div class="v${p.mainWindowTitle?"":" null"}">${p.mainWindowTitle||"null"}</div></div>`;
   d.append(s);
+  // full-memory dump
+  const dumpRow=elm("div","acts");
+  const dumpBtn=elm("button","btn sm"); dumpBtn.textContent="⤓ Full memory dump";
+  dumpBtn.title="Write a full-memory .dmp of this process (MiniDumpWriteDump). Can be large; contains process memory.";
+  const dumpMsg=elm("span"); dumpMsg.style.cssText="font-size:11px;color:var(--ink-3)";
+  dumpBtn.onclick=guard(async()=>{
+    if(!confirm(`Write a FULL-MEMORY dump of ${p.name} (${p.processId})?\nThe .dmp can be large and contains the process's memory (may include secrets). It auto-deletes after 24h.`)) return;
+    dumpBtn.disabled=true; const t0=Date.now(); dumpMsg.textContent="dumping… (large processes take a while)";
+    try{ const r=await api("/process/dump","POST",{pid:p.processId});
+      dumpMsg.innerHTML=`✓ ${Math.round(r.sizeBytes/1048576)} MB in ${(r.durationMs/1000).toFixed(1)}s · <a href="/dumps/${encodeURIComponent(r.fileName)}" download>⬇ download</a>`;
+      toast("dump written"); }
+    catch(e){ dumpMsg.innerHTML=`<span style="color:var(--crit)">${e.status===403?"arm the kill switch first":e.message}</span>`; }
+    finally{ dumpBtn.disabled=false; }
+  });
+  dumpRow.append(dumpBtn,dumpMsg); d.append(dumpRow);
   // Its windows, each openable in the full Explorer (this is the "go from process to Explorer" path).
   const ws=elm("div","sect"); const h=elm("div","h"); h.innerHTML=`windows <span class="count">${p.windows.length}</span>`; ws.append(h);
   if(!p.windows.length){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:12px;padding:4px 2px"; e.textContent="No top-level windows (background process)."; ws.append(e); }

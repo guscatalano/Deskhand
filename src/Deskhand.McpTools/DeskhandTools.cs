@@ -57,6 +57,14 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_list_processes"), Description("List every running process, each with the top-level windows it owns (windowed apps first; background processes have an empty windows list). Each window carries a live ref you can pass straight to deskhand_get_tree to expand its UIA tree — process → windows → elements.")]
     public static string ListProcesses(IAutomationBackend b) => Json(b.GetProcesses());
 
+    [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
+    public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
+        [Description("Process id to dump.")] int pid)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\"}";
+        return Json(d.Dump(pid));
+    }
+
     [McpServerTool(Name = "deskhand_launch_process"), Description("Launch a program by path or shell name/URL (e.g. \"notepad\", \"C:\\\\app.exe\", \"https://...\"). Waits up to waitForWindowMs for its main window and returns it if it appears.")]
     public static string LaunchProcess(IAutomationBackend b, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 4000)
         => Json(b.LaunchProcess(path, args, workingDir, waitForWindowMs));

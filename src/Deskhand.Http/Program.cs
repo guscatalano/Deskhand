@@ -48,6 +48,7 @@ var localBackend = new LocalAutomationBackend();
 localBackend.StartEvents(eventHub);                          // UIA events: focus_changed, window_opened
 var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);  // process_started / process_exited
 var screenRecorder = new Deskhand.Core.Services.ScreenRecorder(auditLog);
+var processDumper = new Deskhand.Core.Services.ProcessDumper(auditLog);
 // Records the USER's physical input; resolves each click's element via the raw backend (unaudited,
 // so per-click resolution doesn't flood the audit log). While it runs, a persistent on-screen banner
 // (recordingIndicator) + a toast make sure the user knows they're being observed.
@@ -62,6 +63,7 @@ builder.Services.AddSingleton(macroRecorder);
 builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton(processWatcher);
 builder.Services.AddSingleton(screenRecorder);
+builder.Services.AddSingleton(processDumper);
 builder.Services.AddSingleton(inputRecorder);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
@@ -272,6 +274,16 @@ api.MapGet("/foreground", (IAutomationBackend b) => Results.Ok(b.GetForegroundWi
 api.MapGet("/focused", (IAutomationBackend b) => Results.Ok(b.GetFocusedElement()));
 api.MapGet("/windows", (IAutomationBackend b) => Results.Ok(b.GetTopLevelWindows()));
 api.MapGet("/processes", (IAutomationBackend b) => Results.Ok(b.GetProcesses()));
+
+// Full-memory process dump (MiniDumpWriteDump). Gated on the kill switch; audited; auto-deleted after 24h.
+api.MapPost("/process/dump", (Deskhand.Core.Services.ProcessDumper d, ControlState st, PidRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    return Results.Ok(d.Dump(r.Pid));
+});
+api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.List()));
+api.MapGet("/dumps/{name}", (Deskhand.Core.Services.ProcessDumper d, string name) =>
+    Results.File(d.PathFor(name), "application/octet-stream", name));
 api.MapPost("/process/launch", (IAutomationBackend b, LaunchRequest r) =>
     Results.Ok(b.LaunchProcess(r.Path, r.Args, r.WorkingDir, r.WaitForWindowMs ?? 4000)));
 
@@ -412,6 +424,7 @@ record LaunchRequest(string Path, string? Args, string? WorkingDir, int? WaitFor
 record RefRequest(string Reference);
 record PointRequest(int X, int Y);
 record ProcessWaitRequest(string? Event, string? Name, int? Pid, int? TimeoutMs);
+record PidRequest(int Pid);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);

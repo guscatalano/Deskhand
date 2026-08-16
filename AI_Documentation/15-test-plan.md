@@ -122,9 +122,15 @@ Start `deskhand-fleet` (:8799) and one `deskhand-agent` pointing at `ws://127.0.
 4. **Remove:** **✕ Disconnect RDP** (or `POST /fleet/rdp/disconnect {id}`) → **PASS:** connector process
    killed, entry gone from `/fleet/rdp/list`, tile drops off, `rdp_disconnect` audited.
 
-Without a real target you can still verify steps 3–4 structurally: connect spawns a real process and
-tracks it; a bogus/unreachable host makes the connector exit after its RDP timeout, but the
-spawn/list/disconnect plumbing all works.
+5. **Install native agent over RDP** (needs a reachable target): the RDP tile's **Install native agent**
+   button (`POST /fleet/rdp/install {id}`) opens the remote Run dialog and launches the self-contained
+   `deskhand-agent.exe` from `\\tsclient`, pointed at the fleet → **PASS:** the machine reappears as a
+   **native** agent (full console). Prereq: run `installer/publish-agent.ps1` first.
+
+Without a real target you can still verify steps 3–5 structurally: connect spawns a real process and
+tracks it; a bogus/unreachable host makes the connector exit after its RDP timeout; and
+`POST /fleet/rdp/install` on a **native** agent returns a clean "not an RDP connector" error — proving the
+endpoint → observer → fleet RPC → agent-dispatch → install-delegate chain is wired.
 
 ## 11. Regression traps (things that previously looked broken but weren't)
 

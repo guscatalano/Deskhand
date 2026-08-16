@@ -128,6 +128,23 @@ and calls `AgentConnection.RunForeverAsync` — the target appears as a normal a
 - **Naming:** the agent registers under the remote target's host (`AgentConnection` uses the backend's
   `GetMachineInfo().MachineName`), not the connector box. RDP agents are tagged with an `RDP` pill.
 
+### Upgrading an RDP target to a full native agent
+
+An RDP tile has an **Install native agent** button (`POST /fleet/rdp/install {id}`) that bootstraps a
+real agent onto the remote using only the RDP channel:
+
+1. The connector enables **drive redirection** on connect, so the remote sees the connector's folder as
+   `\\tsclient\...`, and **`KeyboardHookMode=2`** so `Win+R` routes to the remote.
+2. `RdpHost.RunCommand` opens the remote **Run** dialog (a real Win+R modifier chord), types
+   `"\\tsclient\C\...\deskhand-agent.exe" ws://<fleet>/agent/connect`, and runs it.
+3. The self-contained agent launches on the remote and **reconnects as a native agent** (full console:
+   Explorer, processes, recording, hooks). Then remove the RDP connector.
+
+**Prerequisite:** a self-contained, single-file `deskhand-agent.exe` next to `deskhand-rdp.exe` (or
+`DESKHAND_AGENT_PATH`) — publish it with `installer/publish-agent.ps1` (so the target needs no .NET runtime).
+**Caveats:** it's screen-automation, so it's fragile — a UAC prompt, the login screen (not the desktop),
+AV, or focus timing can break it; and drive redirection must be permitted by the target's policy.
+
 ## Reproduce quickly
 
 1. Start `deskhand-http`. Open the dashboard.

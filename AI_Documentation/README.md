@@ -36,6 +36,7 @@ an RDP-protocol backend able to implement the same contract without touching the
 | `13-roadmap.md` | The five phases: what is done and what remains. |
 | `14-events-hooks-recording.md` | The event feed, process/window hooks, screen recording (GIF/AVI + retention), user-input recording, and RDP-over-fleet. |
 | `15-test-plan.md` | Acceptance checklist: per-subsystem test cases + PASS criteria — how an AI knows it built Deskhand correctly. |
+| `16-implementation-reference.md` | **Current-state ground truth**: repo map, backend seam + decorators, all services, DI wiring, full MCP/HTTP surface, dashboards, RDP internals, build/run, open items, gotchas. Start here to continue the project. |
 
 ## Tech stack (exact)
 

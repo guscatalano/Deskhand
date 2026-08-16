@@ -125,6 +125,11 @@ and calls `AgentConnection.RunForeverAsync` — the target appears as a normal a
   (tree/find/invoke/element-from-point), process list, and the observation services — pure RDP exposes no
   accessibility tree, and those services are local-machine features; the calls return a clean
   "not available over RDP" error.
+- **Input internals:** `mstscax` is hosted off-screen; synthetic input is posted to its render surface
+  (window class `IHWindowClass`, focused first), and click coords are mapped from capture-space (the
+  control client) into the render-child's client space (a small offset). `--diag` dumps the child windows
+  if the surface class differs on your RDP client version. `--no-nla` disables CredSSP for mock/legacy
+  RDP servers. Headless synthetic input is version-sensitive — verify against a real target.
 - **Naming:** the agent registers under the remote target's host (`AgentConnection` uses the backend's
   `GetMachineInfo().MachineName`), not the connector box. RDP agents are tagged with an `RDP` pill.
 

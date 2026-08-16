@@ -7,12 +7,32 @@ sends a token (the server trusts same-origin browsers — see `07-http-server.md
 
 Keep this file conceptual — it is UI glue over the endpoints in `07`.
 
+The host serves the dashboard with **`Cache-Control: no-cache`** (see `07`), so an ordinary refresh always
+gets the latest UI — no forced Ctrl+F5 after an update.
+
+## URL deep-linking (refresh returns to the same spot)
+
+Dashboard state is mirrored into the URL hash via `history.replaceState`, and restored on load:
+
+- **Tab:** `#explorer` / `#processes` / `#screen`.
+- **Explorer element:** `#explorer/<windowRef>/<selectedRef>` — the tree root (window) *and* the selected
+  element. On load it reloads the whole window hierarchy (deeper depth so nested elements are included),
+  then re-selects the element by identity (controlType+name+automationId). If the window/element is gone
+  (stale ref, server restarted), it shows a clear error and clears the dead ref.
+- **Process:** `#processes/<pid>[/<selectedRef>]` — reopens that process (detail + expanded windows) and
+  best-effort re-selects the element; a "process no longer running" error if the pid is gone.
+
+Refs stay valid only within a running server session (in-memory registry), which is why the restore paths
+surface a proper error rather than silently failing.
+
 ## Layout
 
 - **Top bar:** brand + a "live" dot; machine/user status; a desktop-state **pill**
-  (`default`/`secure`/`locked`/`unknown`, colored); monitor count; two tab buttons
-  (**Explorer**, **Screen & Input**); an **arm/disarm** ghost button; a **Log** toggle; a **Theme** toggle.
-- **Two tabs**, swapped by toggling an `active` class.
+  (`default`/`secure`/`locked`/`unknown`, colored); monitor count; three tab buttons
+  (**Explorer**, **Processes**, **Screen & Input**); an **arm/disarm** ghost button; a **Log** toggle; a
+  **Theme** toggle.
+- **Three tabs**, swapped by toggling an `active` class. Explorer and Processes share the two-pane
+  tree|detail grid layout.
 
 ## Explorer tab (default)
 
@@ -41,6 +61,19 @@ A two-pane grid (collapses to stacked rows under 900px):
   - **All properties** — fetched from `GET /uia/element/{ref}/properties`, rendered as a filterable
     key→value table.
 
+## Processes tab
+
+Same two-pane tree|detail layout as Explorer, backed by `GET /processes` (see `03`/`05`).
+
+- **Left — process tree.** Every process (windowed first), each row `name · pid` + `N win` + memory. A
+  **windowed-only** toggle and a name/pid/title filter. Expanding a process (▸) renders its top-level
+  **windows** as element nodes, which then lazy-expand into the UIA tree via the shared `renderNode` —
+  so the whole tree is **process → windows → elements**.
+- **Right — detail.** Clicking a process shows pid/memory/title and a **windows** list, each with an
+  **"Open in Explorer →"** button that switches to the Explorer tab and loads that window as the root.
+  Selecting any window/element shows the normal element detail (with an **Open in Explorer** action —
+  gated to this tab so it doesn't clutter Explorer).
+
 ## Screen & Input tab
 
 A responsive card grid:
@@ -53,6 +86,8 @@ A responsive card grid:
   performs **move / left / right / double** via the mouse endpoints ("control mode" warning shown for the
   input actions; "pick mode" hint for the picker). The read coordinates auto-fill the Input card's x/y.
   The picker is the reliable way to target elements in Chromium/Electron apps, whose tree is thin/unstable.
+  The screen card also has a **🎥 Record** row (format GIF/AVI, fps, scale, max-seconds) that drives
+  `POST /record/start|stop` with live `frames · elapsed/max` status and a download link — see `14`.
 - **Secure desktop card (Phase 2).** A **Capture input desktop** button → `POST /capture/input-desktop`;
   shows the returned `desktopName (kind)` + note and the image if `success`. As a normal user this captures
   Default; only the SYSTEM Secure Helper captures the secure desktop.

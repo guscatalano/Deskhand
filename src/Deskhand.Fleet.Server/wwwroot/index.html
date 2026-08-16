@@ -201,6 +201,7 @@ async function thumbAll(){
 
 const openAgent = guard(async(a)=>{
   current=a;
+  history.replaceState(null,"","#agent="+encodeURIComponent(a.id));   // deep-link the machine
   $("#grid").style.display="none";
   $("#backBtn").style.display="";
   const info=await api(`/agents/${a.id}/machine`);
@@ -268,11 +269,17 @@ async function onViewClick(ev){
   else if(a==="double"){ await api(`/agents/${current.id}/mouse/click`,"POST",{button:"left",x:dx,y:dy,count:2}); toast("double"); await refreshView(true); }
 }
 
-$("#backBtn").onclick=()=>{ current=null; clearInterval(detailTimer); renderGrid(); thumbAll(); };
+$("#backBtn").onclick=()=>{ current=null; clearInterval(detailTimer); history.replaceState(null,"","#"); renderGrid(); thumbAll(); };
 $("#refreshBtn").onclick=guard(async()=>{ await loadAgents(); if(!current) await thumbAll(); });
 $("#themeBtn").onclick=()=>{ const r=document.documentElement; const dark=r.getAttribute("data-theme")?r.getAttribute("data-theme")==="dark":matchMedia("(prefers-color-scheme: dark)").matches; r.setAttribute("data-theme",dark?"light":"dark"); };
 
-loadAgents().then(thumbAll).catch(()=>{ $("#count").textContent="server unreachable"; });
+// On load, reopen the machine named in the URL hash (#agent=<id>) so a refresh returns to it.
+function restoreFromHash(){
+  const m=(location.hash||"").match(/^#agent=(.+)$/);
+  if(m){ const id=decodeURIComponent(m[1]); const a=agents.find(x=>x.id===id); if(a){ openAgent(a); return; } }
+  if(!current) thumbAll();
+}
+loadAgents().then(restoreFromHash).catch(()=>{ $("#count").textContent="server unreachable"; });
 gridTimer=setInterval(()=>{ loadAgents().catch(()=>{}); if(!current) thumbAll(); }, 5000);
 
 /* ---------- fleet audit ---------- */

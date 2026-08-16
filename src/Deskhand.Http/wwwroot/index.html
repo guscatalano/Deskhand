@@ -734,7 +734,11 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   b.classList.add("active"); $("#tab-"+b.dataset.tab).classList.add("active");
   if(b.dataset.tab==="processes"&&!procLoaded) loadProcesses();
+  history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
+// Restore the tab from the URL hash on load (e.g. #processes).
+(function restoreTab(){ const t=(location.hash||"").replace(/^#/,"");
+  const btn=document.querySelector('.tabbtn[data-tab="'+t+'"]'); if(btn) btn.click(); })();
 $("#logBtn").onclick=()=>$("#logdrawer").classList.toggle("show");
 $("#clrLog").onclick=()=>$("#log").innerHTML="";
 $("#themeBtn").onclick=()=>{ const r=document.documentElement; const dark=r.getAttribute("data-theme")?r.getAttribute("data-theme")==="dark":matchMedia("(prefers-color-scheme: dark)").matches; r.setAttribute("data-theme",dark?"light":"dark"); };

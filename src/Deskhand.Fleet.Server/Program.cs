@@ -15,6 +15,8 @@ string? token = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN");
 builder.WebHost.ConfigureKestrel(k => { if (bindAny) k.ListenAnyIP(port); else k.ListenLocalhost(port); });
 builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
 builder.Services.AddSingleton<AgentRegistry>();
+var rdpManager = new RdpConnectorManager(port, token);
+builder.Services.AddSingleton(rdpManager);
 
 // Fleet-aware MCP over Streamable HTTP at /mcp: list + drive any connected PC by agentId.
 builder.Services.AddMcpServer()
@@ -120,6 +122,22 @@ app.MapGet("/agents", () => Results.Ok(registry.All.Select(a => new
 })));
 app.MapGet("/fleet/audit", (FleetAudit a, long since) => Results.Ok(new { lastId = a.LastId, dir = a.Directory, entries = a.Since(since) }));
 
+// ---- add a machine to the fleet over RDP, straight from the web (spawns deskhand-rdp --fleet) ----
+app.MapPost("/fleet/rdp/connect", (RdpConnectorManager m, FleetAudit fa, RdpConnectReq r) =>
+{
+    var c = m.Connect(r.Host, r.User, r.Password, r.Domain, r.Size, r.Id);
+    fa.Record("rdp_connect", "web", c.Id, $"{r.User}@{r.Host} pid={c.Pid}");
+    return Results.Ok(c);
+});
+app.MapGet("/fleet/rdp/list", (RdpConnectorManager m) => Results.Ok(m.List()));
+app.MapPost("/fleet/rdp/disconnect", (RdpConnectorManager m, FleetAudit fa, IdReq r) =>
+{
+    var ok = m.Disconnect(r.Id);
+    fa.Record("rdp_disconnect", "web", r.Id, ok ? "killed" : "not found");
+    return Results.Ok(new { ok });
+});
+app.Lifetime.ApplicationStopping.Register(rdpManager.DisposeAll);
+
 // ---- orientation ----
 app.MapGet("/agents/{id}/machine", (string id) => Results.Ok(A(id).GetMachineInfo()));
 app.MapGet("/agents/{id}/desktop-state", (string id) => Results.Ok(A(id).GetDesktopState()));
@@ -221,5 +239,7 @@ record KeysReq(string Chord);
 record LaunchReq(string Path, string? Args, string? WorkingDir, int? WaitForWindowMs);
 record PointReq(int X, int Y);
 record ProcWaitReq(string? Event, string? Name, int? Pid, int? TimeoutMs);
+record RdpConnectReq(string Host, string User, string Password, string? Domain, string? Size, string? Id);
+record IdReq(string Id);
 record RecReq(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecReq(bool? CaptureText);

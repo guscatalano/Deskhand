@@ -91,6 +91,7 @@
   <span class="spacer"></span>
   <button class="ghost" id="backBtn" style="display:none">← All PCs</button>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8791/" target="_blank" title="This PC's dashboard">This PC →</a>
+  <button class="ghost" id="rdpBtn" title="Add a machine to the fleet over RDP (no agent installed on the target)">＋ RDP</button>
   <button class="ghost danger-on" id="pauseBtn" title="Live screenshots are OFF by default — click to start polling agent screens">▶ Go live</button>
   <button class="ghost" id="auditBtn" title="Who connected & what they did">Audit</button>
   <button class="ghost" id="refreshBtn">Refresh</button>
@@ -103,6 +104,28 @@
 </main>
 <div id="toast"></div>
 <div id="auditdrawer"><header>Fleet audit — who connected &amp; what they did<span style="flex:1"></span><span id="auditdir" style="font-family:var(--mono);font-size:9px;color:var(--ink-3)"></span></header><div id="auditlist"></div></div>
+
+<div id="rdpModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;align-items:center;justify-content:center">
+  <div style="background:var(--surface,#151b22);border:1px solid var(--line,#2a3440);border-radius:12px;padding:18px 20px;width:340px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="font-weight:600;margin-bottom:4px">Add a machine over RDP</div>
+    <div style="font-size:11px;color:var(--ink-3,#8a97a5);margin-bottom:12px">Connects over RDP and joins the fleet — nothing installed on the target. Capture + input only (no UIA).</div>
+    <div style="display:grid;gap:8px">
+      <input id="rdpHost" placeholder="host / IP (e.g. 10.0.0.5)">
+      <input id="rdpUser" placeholder="username">
+      <input id="rdpPass" type="password" placeholder="password">
+      <div style="display:flex;gap:8px">
+        <input id="rdpDomain" placeholder="domain (optional)" style="flex:1">
+        <input id="rdpSize" placeholder="1920x1080" style="width:110px">
+      </div>
+      <input id="rdpId" placeholder="fleet name (optional, defaults to host)">
+    </div>
+    <div id="rdpMsg" style="font-size:11px;color:var(--ink-3,#8a97a5);margin:10px 0 4px;min-height:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button class="ghost" id="rdpCancel">Cancel</button>
+      <button class="btn" id="rdpConnect">Connect</button>
+    </div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -237,6 +260,22 @@ gridTimer=setInterval(()=>{ loadAgents().catch(()=>{}); if(!current) thumbAll();
 let auditSince=0;
 $("#pauseBtn").onclick=()=>{ paused=!paused; $("#pauseBtn").textContent=paused?"▶ Go live":"⏸ Pause live"; $("#pauseBtn").classList.toggle("danger-on",paused);
   if(!paused){ if(current) refreshView().catch(()=>{}); else thumbAll().catch(()=>{}); } };
+// ---- add a machine over RDP (spawns the connector on the server) ----
+$("#rdpBtn").onclick=()=>{ $("#rdpModal").style.display="flex"; $("#rdpMsg").textContent=""; $("#rdpHost").focus(); };
+$("#rdpCancel").onclick=()=>{ $("#rdpModal").style.display="none"; };
+$("#rdpModal").addEventListener("click",e=>{ if(e.target.id==="rdpModal") $("#rdpModal").style.display="none"; });
+$("#rdpConnect").onclick=guard(async()=>{
+  const host=$("#rdpHost").value.trim(), user=$("#rdpUser").value.trim(), password=$("#rdpPass").value;
+  if(!host||!user){ $("#rdpMsg").textContent="host and username are required."; return; }
+  $("#rdpMsg").textContent="starting RDP connector…";
+  try{
+    const c=await api("/fleet/rdp/connect","POST",{host,user,password,domain:$("#rdpDomain").value.trim()||null,size:$("#rdpSize").value.trim()||null,id:$("#rdpId").value.trim()||null});
+    $("#rdpMsg").innerHTML=`connector <b>${c.id}</b> started (pid ${c.pid}). It will appear as a tile once RDP connects…`;
+    $("#rdpPass").value="";
+    toast("RDP connector started");
+    setTimeout(()=>{ $("#rdpModal").style.display="none"; loadAgents().catch(()=>{}); },2500);
+  }catch(e){ $("#rdpMsg").textContent="failed: "+e.message; }
+});
 $("#auditBtn").onclick=()=>$("#auditdrawer").classList.toggle("show");
 async function pollAudit(){
   try{

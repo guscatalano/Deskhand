@@ -14,7 +14,10 @@ if (args.Length < 3)
     return;
 }
 
-string host = args[0], user = args[1], password = args[2];
+string host = args[0], user = args[1];
+// Password may come from the env (used by the fleet server's web "add over RDP", so it isn't on the
+// command line / process list); the positional arg is the fallback for manual CLI use.
+string password = Environment.GetEnvironmentVariable("DESKHAND_RDP_PASSWORD") ?? args[2];
 string? Opt(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
 
 string? domain = Opt("--domain");

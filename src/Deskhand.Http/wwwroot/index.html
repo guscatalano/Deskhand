@@ -72,8 +72,8 @@
   .tab.active { display:block; }
 
   /* explorer */
-  #tab-explorer.active { display:grid; grid-template-columns:minmax(340px,40%) 1fr; }
-  @media (max-width:900px){ #tab-explorer.active { grid-template-columns:1fr; grid-template-rows:44% 1fr; } .treecol { border-right:none!important; border-bottom:1px solid var(--line); } }
+  #tab-explorer.active, #tab-processes.active { display:grid; grid-template-columns:minmax(340px,40%) 1fr; }
+  @media (max-width:900px){ #tab-explorer.active, #tab-processes.active { grid-template-columns:1fr; grid-template-rows:44% 1fr; } .treecol { border-right:none!important; border-bottom:1px solid var(--line); } }
   .treecol { min-height:0; display:flex; flex-direction:column; border-right:1px solid var(--line); background:var(--surface); }
   .treetools { flex:none; padding:10px 12px; border-bottom:1px solid var(--line-2); display:flex; flex-direction:column; gap:8px; }
   .row { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }

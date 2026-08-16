@@ -27,9 +27,10 @@ string? capture = Opt("--capture");
 string? fleet = Opt("--fleet");
 int timeout = int.TryParse(Opt("--timeout"), out var t) ? t : 15000;
 
+bool nla = !args.Contains("--no-nla");   // disable CredSSP/NLA for mock/legacy RDP servers (e.g. rdpy)
 using var rdp = new RdpHost(width, height);
-Console.WriteLine($"connecting to {host} as {user} ({width}x{height})...");
-bool ok = await rdp.ConnectAsync(host, user, domain, password, timeout);
+Console.WriteLine($"connecting to {host} as {user} ({width}x{height}){(nla ? "" : " [no-NLA]")}...");
+bool ok = await rdp.ConnectAsync(host, user, domain, password, timeout, nla);
 Console.WriteLine(ok ? "CONNECTED" : $"not connected: {rdp.LastReason}");
 
 if (fleet is not null)

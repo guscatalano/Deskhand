@@ -64,7 +64,7 @@ public sealed class RdpHost : IDisposable
     private void OnUi(Action a) => _form!.Invoke(a);
 
     /// <summary>Connect to a host. Returns true on connect, false on disconnect/failure (see LastReason).</summary>
-    public async Task<bool> ConnectAsync(string host, string user, string? domain, string password, int timeoutMs = 15000)
+    public async Task<bool> ConnectAsync(string host, string user, string? domain, string password, int timeoutMs = 15000, bool nla = true)
     {
         _connected = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         OnUi(() =>
@@ -76,7 +76,7 @@ public sealed class RdpHost : IDisposable
             _rdp.DesktopHeight = Height;
             var secured = (MSTSCLib.IMsTscNonScriptable)_rdp.GetOcx();
             secured.ClearTextPassword = password;
-            _rdp.AdvancedSettings9.EnableCredSspSupport = true;   // NLA
+            _rdp.AdvancedSettings9.EnableCredSspSupport = nla;    // NLA/CredSSP; disable for mock/legacy servers
             _rdp.AdvancedSettings9.AuthenticationLevel = 0;        // connect even if server auth can't be verified
             // For the "install native agent over RDP" bootstrap: expose the connector's drives to the
             // remote (\\tsclient\...) and send Windows-key combos to the remote session (KeyboardHookMode=2).

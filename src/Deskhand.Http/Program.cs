@@ -282,6 +282,9 @@ api.MapPost("/process/dump", (Deskhand.Core.Services.ProcessDumper d, ControlSta
     return Results.Ok(d.Dump(r.Pid));
 });
 api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.List()));
+
+// Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
+api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 api.MapGet("/dumps/{name}", (Deskhand.Core.Services.ProcessDumper d, string name) =>
     Results.File(d.PathFor(name), "application/octet-stream", name));
 api.MapPost("/process/launch", (IAutomationBackend b, LaunchRequest r) =>

@@ -133,7 +133,13 @@
   .pfilter { margin-bottom:8px; width:100%; }
 
   /* screen tab */
-  #tab-screen { overflow:auto; }
+  #tab-screen, #tab-registry { overflow:auto; }
+  .regkey { display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:6px; cursor:pointer; font-family:var(--mono); font-size:12px; }
+  .regkey:hover { background:var(--surface-2); }
+  .regval { display:grid; grid-template-columns:minmax(140px,240px) 90px 1fr; gap:8px; padding:5px 7px; border-bottom:1px solid var(--line-2); font-family:var(--mono); font-size:11.5px; align-items:start; }
+  .regval .rk { color:var(--accent); word-break:break-all; }
+  .regval .rt { color:var(--ink-3); }
+  .regval .rv { word-break:break-all; white-space:pre-wrap; }
   #tab-screen .inner { padding:16px; display:grid; grid-template-columns:1.4fr 1fr; gap:16px; align-items:start; }
   @media (max-width:900px){ #tab-screen .inner { grid-template-columns:1fr; } }
   .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); overflow:hidden; }
@@ -178,6 +184,7 @@
   <div class="tabs">
     <button class="tabbtn active" data-tab="explorer">Explorer</button>
     <button class="tabbtn" data-tab="processes">Processes</button>
+    <button class="tabbtn" data-tab="registry">Registry</button>
     <button class="tabbtn" data-tab="screen">Screen &amp; Input</button>
   </div>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8799/" target="_blank" title="Fleet dashboard — other PCs">⛶ Fleet</a>
@@ -229,6 +236,19 @@
       <div class="tree" id="ptree"><div style="color:var(--ink-3);padding:8px">Loading processes…</div></div>
     </div>
     <div class="detailcol" id="pdetail"><div class="empty">Expand a process → its windows → the UIA tree. Select any element to see its properties.</div></div>
+  </div>
+
+  <!-- REGISTRY -->
+  <div class="tab" id="tab-registry">
+    <div style="padding:14px 16px 60px;max-width:1100px;width:100%">
+      <div class="row">
+        <input type="text" id="regPath" placeholder="HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion" style="flex:1;font-family:var(--mono);font-size:12px">
+        <button class="btn p" id="regGo">Go</button>
+        <button class="btn" id="regUp" title="Parent key">↑ up</button>
+      </div>
+      <div class="coordbar" id="regCrumb" style="margin:10px 0"></div>
+      <div id="regBody"></div>
+    </div>
   </div>
 
   <!-- SCREEN + INPUT -->
@@ -765,12 +785,42 @@ $("#procRefresh").onclick=loadProcesses;
 $("#procWinOnly").addEventListener("change",()=>{ if(procLoaded) renderProcList(); });
 $("#procFilter").addEventListener("input",()=>{ if(procLoaded) renderProcList(); });
 
+/* ---------- registry (read-only browser) ---------- */
+let regCurrent="", regLoaded=false;
+const loadRegistry=guard(async(path)=>{
+  const d=await api("/registry?path="+encodeURIComponent(path||""));
+  regCurrent=d.path||""; regLoaded=true;
+  $("#regPath").value=regCurrent;
+  history.replaceState(null,"","#registry"+(regCurrent?"/"+regCurrent:""));
+  // breadcrumb
+  const crumb=$("#regCrumb"); crumb.innerHTML="";
+  const mk=(label,target)=>{ const a=elm("a"); a.textContent=label; a.style.cursor="pointer"; a.onclick=()=>loadRegistry(target); return a; };
+  crumb.append(mk("Computer",""));
+  if(regCurrent){ let acc=""; regCurrent.split("\\").forEach(seg=>{ acc=acc?acc+"\\"+seg:seg; const sep=elm("span"); sep.textContent=" \\ "; sep.style.color="var(--ink-3)"; crumb.append(sep, mk(seg,acc)); }); }
+  const body=$("#regBody"); body.innerHTML="";
+  if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; return; }
+  // subkeys
+  const ks=elm("div","sect"); const kh=elm("div","h"); kh.innerHTML=`keys <span class="count">${d.subKeys.length}</span>`; ks.append(kh);
+  d.subKeys.forEach(k=>{ const row=elm("div","regkey"); row.innerHTML=`<span style="color:var(--ink-3)">▸</span> ${k}`; row.onclick=()=>loadRegistry(regCurrent?regCurrent+"\\"+k:k); ks.append(row); });
+  if(!d.subKeys.length){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:12px;padding:4px 7px"; e.textContent="(no subkeys)"; ks.append(e); }
+  body.append(ks);
+  // values
+  const vs=elm("div","sect"); vs.style.marginTop="14px"; const vh=elm("div","h"); vh.innerHTML=`values <span class="count">${d.values.length}</span>`; vs.append(vh);
+  d.values.forEach(v=>{ const row=elm("div","regval"); const nm=elm("div","rk"); nm.textContent=v.name; const tp=elm("div","rt"); tp.textContent=v.kind; const vv=elm("div","rv"); vv.textContent=v.value==null?"(null)":v.value; row.append(nm,tp,vv); vs.append(row); });
+  if(!d.values.length){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:12px;padding:4px 7px"; e.textContent="(no values)"; vs.append(e); }
+  body.append(vs);
+});
+$("#regGo").onclick=()=>loadRegistry($("#regPath").value.trim());
+$("#regPath").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#regGo").click(); });
+$("#regUp").onclick=()=>{ const p=regCurrent.split("\\"); p.pop(); loadRegistry(p.join("\\")); };
+
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   b.classList.add("active"); $("#tab-"+b.dataset.tab).classList.add("active");
   if(b.dataset.tab==="processes"&&!procLoaded) loadProcesses();
+  if(b.dataset.tab==="registry"&&!regLoaded&&!location.hash.startsWith("#registry/")) loadRegistry("");
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){
@@ -784,6 +834,7 @@ function explorerError(msg){
   const parts=(location.hash||"").replace(/^#/,"").split("/");
   const t=parts[0], rootRef=parts[1], selRef=parts[2];
   const btn=document.querySelector('.tabbtn[data-tab="'+t+'"]'); if(btn) btn.click();
+  if(t==="registry"){ loadRegistry(decodeURIComponent(parts.slice(1).join("/"))); return; }
   if(t==="processes" && rootRef){   // rootRef holds the pid here
     if(!procLoaded) await loadProcesses();
     const p=procData.find(x=>String(x.processId)===rootRef);

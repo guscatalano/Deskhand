@@ -460,6 +460,8 @@ async function selectNode(info, selEl){
   selected=info;
   // derive the detail + tree containers from whichever tab the row lives in (Explorer or Processes)
   const tab=(selEl&&selEl.closest(".tab"))||document.querySelector(".tab.active");
+  // Deep-link the selected element in the Explorer tab, so a refresh returns to it.
+  if(tab && tab.id==="tab-explorer" && info.ref) history.replaceState(null,"","#explorer/"+info.ref);
   const treeEl=tab.querySelector(".tree");
   const d=tab.querySelector(".detailcol"); d.innerHTML="";
 
@@ -736,9 +738,24 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="processes"&&!procLoaded) loadProcesses();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
-// Restore the tab from the URL hash on load (e.g. #processes).
-(function restoreTab(){ const t=(location.hash||"").replace(/^#/,"");
-  const btn=document.querySelector('.tabbtn[data-tab="'+t+'"]'); if(btn) btn.click(); })();
+// Restore from the URL hash on load: the tab (e.g. #processes) and, for Explorer, the exact
+// element (#explorer/<ref>). If that element is gone (stale ref / server restarted), say so clearly.
+(async function restoreFromHash(){
+  const parts=(location.hash||"").replace(/^#/,"").split("/");
+  const t=parts[0], ref=parts[1];
+  const btn=document.querySelector('.tabbtn[data-tab="'+t+'"]'); if(btn) btn.click();
+  if(t==="explorer" && ref){
+    try{
+      const info=await api("/uia/element/"+encodeURIComponent(ref));
+      await loadRoot(info);
+    }catch(e){
+      const msg=(e.status===404) ? "That element is no longer available — it was closed or the app changed since the link was made." : ("Couldn't restore that element: "+e.message);
+      const tree=$("#tree"); if(tree) tree.innerHTML='<div style="color:var(--crit);padding:10px;line-height:1.5">'+msg+'<br><span style="color:var(--ink-3)">Pick a window above to start again.</span></div>';
+      toast(msg,true);
+      history.replaceState(null,"","#explorer");   // drop the dead ref from the URL
+    }
+  }
+})();
 $("#logBtn").onclick=()=>$("#logdrawer").classList.toggle("show");
 $("#clrLog").onclick=()=>$("#log").innerHTML="";
 $("#themeBtn").onclick=()=>{ const r=document.documentElement; const dark=r.getAttribute("data-theme")?r.getAttribute("data-theme")==="dark":matchMedia("(prefers-color-scheme: dark)").matches; r.setAttribute("data-theme",dark?"light":"dark"); };

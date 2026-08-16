@@ -128,6 +128,7 @@ public sealed class RdpHost : IDisposable
     // The mstscax control renders into a nested child of class "IHWindowClass"; synthetic WM_ input has to
     // go there (posting to the AxHost/OCX container is ignored). Fall back to the largest descendant.
     private IntPtr _inputTarget;
+    private int _offX, _offY;   // render-child client origin relative to the control's client (capture space)
     private IntPtr InputTarget()
     {
         if (_inputTarget != IntPtr.Zero && NativeMethods.IsWindow(_inputTarget)) return _inputTarget;
@@ -146,8 +147,24 @@ public sealed class RdpHost : IDisposable
             return true;
         }, IntPtr.Zero);
         _inputTarget = byClass != IntPtr.Zero ? byClass : byArea;
+
+        // Capture is PrintWindow of the CONTROL's client area, but input is posted to this render child,
+        // which may sit at a small offset inside the control. Translate capture coords into child coords.
+        try
+        {
+            var childOrigin = new NativeMethods.POINT();
+            NativeMethods.ClientToScreen(_inputTarget, ref childOrigin);
+            var ctrlOrigin = new NativeMethods.POINT();
+            NativeMethods.ClientToScreen(host, ref ctrlOrigin);
+            _offX = childOrigin.X - ctrlOrigin.X;
+            _offY = childOrigin.Y - ctrlOrigin.Y;
+        }
+        catch { _offX = _offY = 0; }
         return _inputTarget;
     }
+
+    // Map a capture-space (control-client) coordinate to the render child's client space.
+    private (int x, int y) Map(int x, int y) { InputTarget(); return (x - _offX, y - _offY); }
 
     // The control forwards input to the session only once it has focus; give the render window focus first.
     private void FocusInput(IntPtr t)
@@ -158,25 +175,25 @@ public sealed class RdpHost : IDisposable
 
     public void MouseMove(int x, int y) => OnUi(() =>
     {
-        var t = InputTarget();
-        NativeMethods.PostMessage(t, NativeMethods.WM_MOUSEMOVE, (IntPtr)0, Lp(x, y));
+        var t = InputTarget(); var (mx, my) = Map(x, y);
+        NativeMethods.PostMessage(t, NativeMethods.WM_MOUSEMOVE, (IntPtr)0, Lp(mx, my));
     });
 
     public void MouseClick(string button, int x, int y)
     {
         OnUi(() =>
         {
-            var t = InputTarget();
-            FocusInput(t);
+            var t = InputTarget(); FocusInput(t);
+            var (mx, my) = Map(x, y);
             (uint down, uint up, IntPtr mk) = button.ToLowerInvariant() switch
             {
                 "right" => (NativeMethods.WM_RBUTTONDOWN, NativeMethods.WM_RBUTTONUP, (IntPtr)0x2),
                 "middle" => (NativeMethods.WM_MBUTTONDOWN, NativeMethods.WM_MBUTTONUP, (IntPtr)0x10),
                 _ => (NativeMethods.WM_LBUTTONDOWN, NativeMethods.WM_LBUTTONUP, (IntPtr)0x1),
             };
-            NativeMethods.PostMessage(t, NativeMethods.WM_MOUSEMOVE, (IntPtr)0, Lp(x, y));
-            NativeMethods.PostMessage(t, down, mk, Lp(x, y));
-            NativeMethods.PostMessage(t, up, (IntPtr)0, Lp(x, y));
+            NativeMethods.PostMessage(t, NativeMethods.WM_MOUSEMOVE, (IntPtr)0, Lp(mx, my));
+            NativeMethods.PostMessage(t, down, mk, Lp(mx, my));
+            NativeMethods.PostMessage(t, up, (IntPtr)0, Lp(mx, my));
         });
     }
 
@@ -218,6 +235,9 @@ internal static class NativeMethods
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
     public delegate bool EnumWindowProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
@@ -228,4 +248,5 @@ internal static class NativeMethods
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint uCode, uint uMapType);
+    [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT pt);
 }

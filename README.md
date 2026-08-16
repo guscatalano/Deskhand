@@ -169,6 +169,11 @@ returned as real MCP image content, so a model sees them directly.
   switch. Dashboard **Processes** tab has a **⤓ Full memory dump** button.
 - **Registry browsing** — `deskhand_registry_browse(path)` lists a key's subkeys + values (read-only;
   HKLM/HKCU/HKCR/HKU/HKCC). Dashboard **Registry** tab with breadcrumb navigation.
+- **Start Menu apps** — `deskhand_list_apps` lists the Start Menu shortcuts (launch one via
+  `deskhand_launch_process` with its path).
+- **Virtual desktops** — `deskhand_list_desktops` groups windows by the Windows virtual desktop they're
+  on; `deskhand_move_window_to_desktop` moves a window to the current (or a given) desktop. (Documented
+  `IVirtualDesktopManager` only — listing/switching/creating desktops needs undocumented per-build COM.)
 
 All four observation capabilities are also **routed over the fleet** — drive any agent's events,
 `wait_for_process`, screen recording (downloadable through the server), and user-input recording by

@@ -39,7 +39,11 @@ public static class AgentConnection
         await ws.ConnectAsync(new Uri(serverWsUrl), ct);
         var gate = new SemaphoreSlim(1, 1);
 
-        var hello = new AgentHello(agentId, Environment.MachineName, services.Backend.GetMachineInfo());
+        // Use the BACKEND's machine name, not Environment.MachineName: for an RDP connector the backend
+        // reports the remote target's host, whereas Environment.MachineName would be the connector's box.
+        var info = services.Backend.GetMachineInfo();
+        var machineName = string.IsNullOrWhiteSpace(info.MachineName) ? Environment.MachineName : info.MachineName;
+        var hello = new AgentHello(agentId, machineName, info);
         await WsUtil.SendTextAsync(ws, FleetJson.Serialize(hello), gate, ct);
         log?.Invoke($"connected to {serverWsUrl} as '{agentId}'");
 

@@ -90,7 +90,7 @@
   <span class="stat" id="count"></span>
   <span class="spacer"></span>
   <button class="ghost" id="backBtn" style="display:none">← All PCs</button>
-  <a class="ghost" style="text-decoration:none" href="http://localhost:8791/" target="_blank" title="This PC's dashboard">This PC →</a>
+  <a class="ghost" style="text-decoration:none" href="http://localhost:8791/" target="_blank" title="Full local dashboard of the machine running THIS fleet server (not the selected agent — remote agents have no web UI of their own)">⌂ This server's console →</a>
   <button class="ghost" id="rdpBtn" title="Add a machine to the fleet over RDP (no agent installed on the target)">＋ RDP</button>
   <button class="ghost danger-on" id="pauseBtn" title="Live screenshots are OFF by default — click to start polling agent screens">▶ Go live</button>
   <button class="ghost" id="auditBtn" title="Who connected & what they did">Audit</button>
@@ -139,14 +139,24 @@ async function api(path,method="GET",body){
   return d;
 }
 
-let agents=[]; let detailTimer=null; let gridTimer=null; let current=null; let lastCap=null;
+let agents=[]; let detailTimer=null; let gridTimer=null; let current=null; let lastCap=null; let rdpIds=new Set();
 
 async function loadAgents(){
   agents = await api("/agents");
+  try{ const rl=await api("/fleet/rdp/list"); rdpIds=new Set(rl.map(x=>x.id)); }catch{ /* keep last known */ }
   $("#dot").classList.add("live");
   $("#count").textContent = `${agents.length} PC${agents.length===1?"":"s"} connected`;
   if(!current) renderGrid();
 }
+
+// Disconnect an RDP-added machine (kills its connector; it drops off on the next /agents poll).
+const removeRdp=guard(async(id)=>{
+  if(!confirm(`Disconnect RDP machine "${id}"?\nThis stops its RDP connector and removes it from the fleet.`)) return;
+  await api("/fleet/rdp/disconnect","POST",{id});
+  toast("RDP machine disconnected");
+  if(current&&current.id===id){ current=null; clearInterval(detailTimer); }
+  await loadAgents(); renderGrid();
+});
 
 function renderGrid(){
   $("#detail").classList.remove("show"); $("#backBtn").style.display="none";
@@ -158,11 +168,15 @@ function renderGrid(){
   [...g.querySelectorAll('.card')].forEach(c=>{ if(!want.has(c.dataset.id)) c.remove(); });
   agents.forEach(a=>{
     if(have.has(a.id)) return;
-    const card=elm("div","card"); card.dataset.id=a.id;
+    const card=elm("div","card"); card.dataset.id=a.id; card.style.position="relative";
+    const rdpBadge = rdpIds.has(a.id) ? ' <span class="pill" style="background:#3a6ea5">RDP</span>' : '';
     card.innerHTML=`<div class="thumb"><div class="ph">loading…</div></div>
-      <div class="meta"><div class="name">${a.machine} <span class="pill ${a.desktop}">${a.desktop}</span></div>
+      <div class="meta"><div class="name">${a.machine} <span class="pill ${a.desktop}">${a.desktop}</span>${rdpBadge}</div>
       <div class="sub"><span>id: ${a.id}</span><span>${a.monitors} monitor${a.monitors===1?"":"s"}</span>${a.elevated?"<span>elevated</span>":""}</div></div>`;
     card.onclick=()=>openAgent(a);
+    if(rdpIds.has(a.id)){ const rm=elm("button"); rm.textContent="✕"; rm.title="Disconnect this RDP machine";
+      rm.style.cssText="position:absolute;top:6px;right:6px;z-index:2;width:22px;height:22px;border-radius:6px;border:none;background:rgba(160,40,40,.85);color:#fff;cursor:pointer;font-size:12px;line-height:1";
+      rm.onclick=(e)=>{ e.stopPropagation(); removeRdp(a.id); }; card.appendChild(rm); }
     g.appendChild(card);
   });
 }
@@ -194,7 +208,10 @@ const openAgent = guard(async(a)=>{
   const mons=info.monitors||[];
   d.innerHTML=`
     <div class="dhead"><h1>${a.machine}</h1><span class="pill ${a.desktop}">${a.desktop}</span>
-      <span class="stat">${info.userName||""} · ${mons.length} monitor${mons.length===1?"":"s"}</span></div>
+      ${rdpIds.has(a.id)?'<span class="pill" style="background:#3a6ea5">RDP</span>':''}
+      <span class="stat">${info.userName||""} · ${mons.length} monitor${mons.length===1?"":"s"}</span>
+      <span class="spacer" style="flex:1"></span>
+      ${rdpIds.has(a.id)?'<button class="btn" id="rmRdpBtn" style="background:rgba(160,40,40,.9)">✕ Disconnect RDP</button>':''}</div>
     <div class="ctrls">
       <label>monitor</label>
       <select id="monSel"><option value="">all</option>${mons.map(m=>`<option value="${m.index}"${m.primary?" selected":""}>#${m.index}${m.primary?" (primary)":""} ${m.bounds.width}×${m.bounds.height}</option>`).join("")}</select>
@@ -210,6 +227,7 @@ const openAgent = guard(async(a)=>{
       <input type="text" id="keysTxt" placeholder="ctrl+a · enter · alt+F4" style="width:180px"><button class="btn a" id="keysBtn">Send keys</button>
     </div>
     <div class="hint">Live view refreshes ~2s. Coordinates map to the captured monitor; input is injected on the remote PC (governed on the agent).</div>`;
+  { const rb=$("#rmRdpBtn"); if(rb) rb.onclick=()=>removeRdp(a.id); }
   $("#monSel").onchange=()=>refreshView(true);
   $("#viewer").addEventListener("click", guard(onViewClick));
   $("#typeBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/type`,"POST",{text:$("#typeTxt").value}); toast("typed"); });

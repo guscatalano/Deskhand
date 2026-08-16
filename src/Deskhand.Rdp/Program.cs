@@ -49,6 +49,15 @@ if (fleet is not null)
     return;
 }
 
+if (args.Contains("--diag"))
+{
+    if (ok) await Task.Delay(1500);
+    var (chosen, all) = rdp.DumpChildren();
+    Console.WriteLine($"input target: {chosen}");
+    Console.WriteLine($"child windows ({all.Count}):");
+    foreach (var line in all) Console.WriteLine("  " + line);
+}
+
 if (capture is not null)
 {
     if (ok) await Task.Delay(1500); // let the first frame render

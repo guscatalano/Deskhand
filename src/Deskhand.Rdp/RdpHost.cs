@@ -88,6 +88,24 @@ public sealed class RdpHost : IDisposable
 
     public void Disconnect() { try { OnUi(() => { if (_rdp!.Connected != 0) _rdp.Disconnect(); }); } catch { } }
 
+    /// <summary>Diagnostic: every descendant window of the RDP control (class + size), plus which one input
+    /// is posted to. RDP client versions name their render surface differently; this reveals it.</summary>
+    public (string chosen, IReadOnlyList<string> all) DumpChildren() => OnUi(() =>
+    {
+        var list = new List<string>();
+        var sb = new System.Text.StringBuilder(64);
+        NativeMethods.EnumChildWindows(_rdp!.Handle, (child, _) =>
+        {
+            sb.Clear(); NativeMethods.GetClassName(child, sb, sb.Capacity);
+            NativeMethods.GetClientRect(child, out var r);
+            list.Add($"{sb} [{r.Right - r.Left}x{r.Bottom - r.Top}] hwnd=0x{child:X}");
+            return true;
+        }, IntPtr.Zero);
+        var t = InputTarget();
+        var cb = new System.Text.StringBuilder(64); NativeMethods.GetClassName(t, cb, cb.Capacity);
+        return ($"{cb} (0x{t:X})", (IReadOnlyList<string>)list);
+    });
+
     /// <summary>Capture the remote desktop surface as PNG bytes.</summary>
     public byte[] Capture() => OnUi(() =>
     {
@@ -106,29 +124,50 @@ public sealed class RdpHost : IDisposable
         return ms.ToArray();
     });
 
-    // ---- input: posted to the control's deepest render child (headless-friendly) ----
+    // ---- input: posted to the RDP control's actual render/input surface ----
+    // The mstscax control renders into a nested child of class "IHWindowClass"; synthetic WM_ input has to
+    // go there (posting to the AxHost/OCX container is ignored). Fall back to the largest descendant.
+    private IntPtr _inputTarget;
     private IntPtr InputTarget()
     {
-        IntPtr host = _rdp!.Handle, best = host; int bestArea = 0;
+        if (_inputTarget != IntPtr.Zero && NativeMethods.IsWindow(_inputTarget)) return _inputTarget;
+        IntPtr host = _rdp!.Handle, byClass = IntPtr.Zero, byArea = host; int bestArea = 0;
+        var sb = new System.Text.StringBuilder(64);
         NativeMethods.EnumChildWindows(host, (child, _) =>
         {
+            sb.Clear();
+            NativeMethods.GetClassName(child, sb, sb.Capacity);
+            if (sb.ToString() == "IHWindowClass") byClass = child;
             if (NativeMethods.GetClientRect(child, out var r))
             {
                 int area = (r.Right - r.Left) * (r.Bottom - r.Top);
-                if (area > bestArea) { bestArea = area; best = child; }
+                if (area > bestArea) { bestArea = area; byArea = child; }
             }
             return true;
         }, IntPtr.Zero);
-        return best;
+        _inputTarget = byClass != IntPtr.Zero ? byClass : byArea;
+        return _inputTarget;
     }
 
-    public void MouseMove(int x, int y) => OnUi(() => NativeMethods.PostMessage(InputTarget(), NativeMethods.WM_MOUSEMOVE, (IntPtr)0, Lp(x, y)));
+    // The control forwards input to the session only once it has focus; give the render window focus first.
+    private void FocusInput(IntPtr t)
+    {
+        try { _rdp!.Focus(); } catch { }
+        NativeMethods.SetFocus(t);
+    }
+
+    public void MouseMove(int x, int y) => OnUi(() =>
+    {
+        var t = InputTarget();
+        NativeMethods.PostMessage(t, NativeMethods.WM_MOUSEMOVE, (IntPtr)0, Lp(x, y));
+    });
 
     public void MouseClick(string button, int x, int y)
     {
         OnUi(() =>
         {
             var t = InputTarget();
+            FocusInput(t);
             (uint down, uint up, IntPtr mk) = button.ToLowerInvariant() switch
             {
                 "right" => (NativeMethods.WM_RBUTTONDOWN, NativeMethods.WM_RBUTTONUP, (IntPtr)0x2),
@@ -144,14 +183,19 @@ public sealed class RdpHost : IDisposable
     public void TypeText(string text) => OnUi(() =>
     {
         var t = InputTarget();
+        FocusInput(t);
         foreach (char c in text) NativeMethods.PostMessage(t, NativeMethods.WM_CHAR, (IntPtr)c, (IntPtr)0);
     });
 
     public void SendKey(ushort vk) => OnUi(() =>
     {
         var t = InputTarget();
-        NativeMethods.PostMessage(t, NativeMethods.WM_KEYDOWN, (IntPtr)vk, (IntPtr)0);
-        NativeMethods.PostMessage(t, NativeMethods.WM_KEYUP, (IntPtr)vk, (IntPtr)0);
+        FocusInput(t);
+        uint scan = NativeMethods.MapVirtualKey(vk, 0);
+        IntPtr downLp = (IntPtr)(1 | (scan << 16));
+        IntPtr upLp = (IntPtr)(1 | (scan << 16) | (1u << 30) | (1u << 31));
+        NativeMethods.PostMessage(t, NativeMethods.WM_KEYDOWN, (IntPtr)vk, downLp);
+        NativeMethods.PostMessage(t, NativeMethods.WM_KEYUP, (IntPtr)vk, upLp);
     });
 
     private static IntPtr Lp(int x, int y) => (IntPtr)((y << 16) | (x & 0xFFFF));
@@ -180,4 +224,8 @@ internal static class NativeMethods
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent, EnumWindowProc cb, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder buf, int max);
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint uCode, uint uMapType);
 }

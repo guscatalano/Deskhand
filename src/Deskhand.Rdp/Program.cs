@@ -40,7 +40,24 @@ if (fleet is not null)
     // The RDP session becomes a fleet agent whose backend is the RDP wire. No observation services:
     // events/hooks/recording/user-input are local-machine features and don't apply to a pure-RDP target,
     // so those fleet calls return a clean "not available" error. Capture + coordinate input work.
-    var services = new AgentServices { Backend = new RdpBackend(rdp, host) };
+    var services = new AgentServices
+    {
+        Backend = new RdpBackend(rdp, host),
+        // Bootstrap-install the native agent ON the remote over this RDP session: drive redirection
+        // exposes this connector's folder as \\tsclient, and Run (Win+R) launches the self-contained
+        // agent there, pointed back at the fleet. It then reconnects as a full native agent.
+        RdpInstallAgent = agentPath =>
+        {
+            string local = !string.IsNullOrWhiteSpace(agentPath) ? agentPath!
+                : (Environment.GetEnvironmentVariable("DESKHAND_AGENT_PATH")
+                   ?? System.IO.Path.Combine(AppContext.BaseDirectory, "deskhand-agent.exe"));
+            if (!System.IO.File.Exists(local))
+                throw new FileNotFoundException($"Self-contained deskhand-agent.exe not found at '{local}'. Publish it next to deskhand-rdp.exe (see installer/publish-agent.ps1) or set DESKHAND_AGENT_PATH.");
+            string cmd = $"\"{RdpHost.ToTsClient(local)}\" {fleet}";
+            rdp.RunCommand(cmd);
+            return new { ok = true, launched = cmd, note = "Sent to the remote via Run. If it reconnects as a native agent, remove this RDP connector." };
+        }
+    };
     Console.WriteLine($"joining fleet {fleet} as '{agentId}'  (RDP -> {host})  — capture + input only, no UIA");
     using var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };

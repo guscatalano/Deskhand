@@ -78,6 +78,10 @@ public sealed class RdpHost : IDisposable
             secured.ClearTextPassword = password;
             _rdp.AdvancedSettings9.EnableCredSspSupport = true;   // NLA
             _rdp.AdvancedSettings9.AuthenticationLevel = 0;        // connect even if server auth can't be verified
+            // For the "install native agent over RDP" bootstrap: expose the connector's drives to the
+            // remote (\\tsclient\...) and send Windows-key combos to the remote session (KeyboardHookMode=2).
+            try { _rdp.AdvancedSettings9.RedirectDrives = true; } catch { }
+            try { _rdp.SecuredSettings3.KeyboardHookMode = 2; } catch { }
             _rdp.Connect();
         });
 
@@ -214,6 +218,44 @@ public sealed class RdpHost : IDisposable
         NativeMethods.PostMessage(t, NativeMethods.WM_KEYDOWN, (IntPtr)vk, downLp);
         NativeMethods.PostMessage(t, NativeMethods.WM_KEYUP, (IntPtr)vk, upLp);
     });
+
+    // ---- "install native agent over RDP" bootstrap ----
+    private const ushort VK_LWIN = 0x5B, VK_R = 0x52, VK_RETURN = 0x0D;
+
+    /// <summary>Open the remote Run dialog (Win+R — KeyboardHookMode=2 routes Win to the remote), type a
+    /// command, and run it. Call off the UI thread; the inter-step sleeps must not block the message loop.</summary>
+    public void RunCommand(string command)
+    {
+        Chord(VK_LWIN, VK_R);
+        Thread.Sleep(1200);
+        TypeText(command);
+        Thread.Sleep(400);
+        SendKey(VK_RETURN);
+    }
+
+    private void Chord(ushort mod, ushort key) => OnUi(() =>
+    {
+        var t = InputTarget(); FocusInput(t);
+        PostKey(t, mod, true); PostKey(t, key, true); PostKey(t, key, false); PostKey(t, mod, false);
+    });
+
+    private static void PostKey(IntPtr t, ushort vk, bool down)
+    {
+        uint scan = NativeMethods.MapVirtualKey(vk, 0);
+        uint lp = 1u | (scan << 16);
+        if (!down) lp |= (1u << 30) | (1u << 31);
+        NativeMethods.PostMessage(t, down ? NativeMethods.WM_KEYDOWN : NativeMethods.WM_KEYUP, (IntPtr)vk, (IntPtr)lp);
+    }
+
+    /// <summary>Translate a local path (C:\dir\app.exe) to its RDP drive-redirection UNC on the remote
+    /// (\\tsclient\C\dir\app.exe), so the remote can run the connector's files.</summary>
+    public static string ToTsClient(string localPath)
+    {
+        var root = System.IO.Path.GetPathRoot(localPath) ?? "";
+        var drive = root.TrimEnd('\\', ':');
+        var rest = localPath.Substring(root.Length);
+        return $@"\\tsclient\{drive}\{rest}";
+    }
 
     private static IntPtr Lp(int x, int y) => (IntPtr)((y << 16) | (x & 0xFFFF));
 

@@ -143,6 +143,13 @@ app.MapPost("/fleet/rdp/disconnect", (RdpConnectorManager m, FleetAudit fa, IdRe
     fa.Record("rdp_disconnect", "web", r.Id, ok ? "killed" : "not found");
     return Results.Ok(new { ok });
 });
+// Bootstrap-install the native agent on an RDP target (over its RDP session). See RdpInstallAgent.
+app.MapPost("/fleet/rdp/install", (FleetAudit fa, RdpInstallReq r) =>
+{
+    var j = O(r.Id).InstallAgent(r.AgentPath);
+    fa.Record("rdp_install_agent", "web", r.Id, "bootstrap native agent over RDP");
+    return Results.Ok(j);
+});
 app.Lifetime.ApplicationStopping.Register(rdpManager.DisposeAll);
 
 // ---- orientation ----
@@ -250,3 +257,4 @@ record RdpConnectReq(string Host, string User, string Password, string? Domain, 
 record IdReq(string Id);
 record RecReq(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecReq(bool? CaptureText);
+record RdpInstallReq(string Id, string? AgentPath);

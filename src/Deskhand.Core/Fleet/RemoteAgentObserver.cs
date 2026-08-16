@@ -30,4 +30,6 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement InputStart(bool captureText) => Call(FleetMethods.InputStart, new { captureText });
     public JsonElement InputStop() => Call(FleetMethods.InputStop, null);
     public JsonElement InputGet(long since) => Call(FleetMethods.InputGet, new { sinceId = since });
+
+    public JsonElement InstallAgent(string? agentPath) => Call(FleetMethods.RdpInstallAgent, new { agentPath });
 }

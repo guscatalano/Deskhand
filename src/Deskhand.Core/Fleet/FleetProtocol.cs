@@ -77,4 +77,5 @@ public static class FleetMethods
     public const string InputStart = "input_start";
     public const string InputStop = "input_stop";
     public const string InputGet = "input_get";
+    public const string RdpInstallAgent = "rdp_install_agent";
 }

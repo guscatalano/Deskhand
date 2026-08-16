@@ -222,7 +222,7 @@ const openAgent = guard(async(a)=>{
       <span class="spacer" style="flex:1"></span>
       <button class="btn" id="saveBtn" title="Save the current frame">⬇ Save</button>
     </div>
-    ${rdpIds.has(a.id)?'<div style="font-size:11px;color:var(--ink-3);background:rgba(58,110,165,.12);border:1px solid rgba(58,110,165,.35);border-radius:7px;padding:6px 10px;margin:0 0 8px">🖧 <b>RDP</b> — capture + coordinate input only (no accessibility tree). The picker/Explorer/processes/recording aren’t available here. Install the <b>native agent</b> on this machine for the full console.</div>':''}
+    ${rdpIds.has(a.id)?'<div style="font-size:11px;color:var(--ink-3);background:rgba(58,110,165,.12);border:1px solid rgba(58,110,165,.35);border-radius:7px;padding:6px 10px;margin:0 0 8px;display:flex;align-items:center;gap:10px"><span style="flex:1">🖧 <b>RDP</b> — capture + coordinate input only (no accessibility tree). Install the <b>native agent</b> on this machine for the full console (Explorer, processes, recording, hooks).</span><button class="btn" id="rdpInstallBtn" title="Bootstrap the native agent onto the remote over this RDP session">⬇ Install native agent</button></div>':''}
     <div class="viewer" id="viewer"><div class="marker" id="marker" style="display:none"></div></div>
     <div class="ctrls">
       <input type="text" id="typeTxt" placeholder="type text on this PC…" style="flex:1;min-width:160px"><button class="btn a" id="typeBtn">Type</button>
@@ -230,6 +230,12 @@ const openAgent = guard(async(a)=>{
     </div>
     <div class="hint">Live view refreshes ~2s. Coordinates map to the captured monitor; input is injected on the remote PC (governed on the agent).</div>`;
   { const rb=$("#rmRdpBtn"); if(rb) rb.onclick=()=>removeRdp(a.id); }
+  { const ib=$("#rdpInstallBtn"); if(ib) ib.onclick=guard(async()=>{
+      if(!confirm("Install the native agent on "+a.machine+" over RDP?\nThis drives the remote Run dialog to launch the agent from \\\\tsclient. It reconnects as a full native agent.")) return;
+      ib.disabled=true; ib.textContent="installing…";
+      try{ const r=await api("/fleet/rdp/install","POST",{id:a.id}); toast("bootstrap sent — watch for a native agent to appear"); $("#coord").innerHTML=`sent to remote: <code>${r.launched||"ok"}</code>`; }
+      finally{ ib.disabled=false; ib.textContent="⬇ Install native agent"; }
+    }); }
   $("#monSel").onchange=()=>refreshView(true);
   $("#viewer").addEventListener("click", guard(onViewClick));
   $("#typeBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/type`,"POST",{text:$("#typeTxt").value}); toast("typed"); });

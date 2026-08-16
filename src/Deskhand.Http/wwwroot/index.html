@@ -444,6 +444,16 @@ async function loadRoot(info, preserve=false){
   if(!picked) selectNode(t.element, rootNode.querySelector(".self"));
   if(!preserve) $("#treeFilter").value="";
 }
+// URL = #explorer/<windowRef>[/<selectedRef>] — the window (left-tree root) plus the selected element,
+// so a refresh reloads the whole hierarchy and re-selects the element inside it.
+function updateExplorerHash(){
+  const active=document.querySelector(".tab.active");
+  if(!active||active.id!=="tab-explorer"||!currentRootInfo) return;
+  let h="#explorer/"+currentRootInfo.ref;
+  const sameAsRoot=selected&&selected.controlType===currentRootInfo.controlType&&selected.name===currentRootInfo.name&&selected.automationId===currentRootInfo.automationId;
+  if(selected&&selected.ref&&!sameAsRoot) h+="/"+selected.ref;
+  history.replaceState(null,"",h);
+}
 $("#treeFilter").addEventListener("input", ()=>{
   const q=$("#treeFilter").value.trim().toLowerCase();
   const nodes=[...$("#tree").querySelectorAll(".node")];
@@ -460,8 +470,7 @@ async function selectNode(info, selEl){
   selected=info;
   // derive the detail + tree containers from whichever tab the row lives in (Explorer or Processes)
   const tab=(selEl&&selEl.closest(".tab"))||document.querySelector(".tab.active");
-  // Deep-link the selected element in the Explorer tab, so a refresh returns to it.
-  if(tab && tab.id==="tab-explorer" && info.ref) history.replaceState(null,"","#explorer/"+info.ref);
+  if(tab && tab.id==="tab-explorer") updateExplorerHash();   // deep-link window + selected element
   const treeEl=tab.querySelector(".tree");
   const d=tab.querySelector(".detailcol"); d.innerHTML="";
 
@@ -738,22 +747,33 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="processes"&&!procLoaded) loadProcesses();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
-// Restore from the URL hash on load: the tab (e.g. #processes) and, for Explorer, the exact
-// element (#explorer/<ref>). If that element is gone (stale ref / server restarted), say so clearly.
+function explorerError(msg){
+  const tree=$("#tree"); if(tree) tree.innerHTML='<div style="color:var(--crit);padding:10px;line-height:1.5">'+msg+'<br><span style="color:var(--ink-3)">Pick a window above to start again.</span></div>';
+  toast(msg,true); history.replaceState(null,"","#explorer");
+}
+// Restore from the URL hash on load: the tab, and for Explorer the WINDOW (#explorer/<winRef>) plus the
+// selected element (#explorer/<winRef>/<selRef>). Loads the whole window hierarchy, then re-selects the
+// element inside it. If the window/element is gone (stale ref), show a proper error.
 (async function restoreFromHash(){
   const parts=(location.hash||"").replace(/^#/,"").split("/");
-  const t=parts[0], ref=parts[1];
+  const t=parts[0], rootRef=parts[1], selRef=parts[2];
   const btn=document.querySelector('.tabbtn[data-tab="'+t+'"]'); if(btn) btn.click();
-  if(t==="explorer" && ref){
-    try{
-      const info=await api("/uia/element/"+encodeURIComponent(ref));
-      await loadRoot(info);
-    }catch(e){
-      const msg=(e.status===404) ? "That element is no longer available — it was closed or the app changed since the link was made." : ("Couldn't restore that element: "+e.message);
-      const tree=$("#tree"); if(tree) tree.innerHTML='<div style="color:var(--crit);padding:10px;line-height:1.5">'+msg+'<br><span style="color:var(--ink-3)">Pick a window above to start again.</span></div>';
-      toast(msg,true);
-      history.replaceState(null,"","#explorer");   // drop the dead ref from the URL
-    }
+  if(t!=="explorer"||!rootRef) return;
+  let root;
+  try{ root=await api("/uia/element/"+encodeURIComponent(rootRef)); }
+  catch(e){ explorerError(e.status===404?"That window is no longer open — it was closed or the app changed since the link was made.":("Couldn't restore the window: "+e.message)); return; }
+  // Fetch the selected element's identity (still resolvable in-session) so we can re-select it after load.
+  let selId=null;
+  if(selRef && selRef!==rootRef){
+    try{ const s=await api("/uia/element/"+encodeURIComponent(selRef)); selId={ct:s.controlType,name:s.name,aid:s.automationId}; }
+    catch(e){ toast("The selected element is gone — showing its window.",true); }
+  }
+  if(selId){ const ds=$("#depthSel"); if(+ds.value<4) ds.value="4"; }   // load deeper so a nested element is included
+  await loadRoot(root);   // rebuilds the full hierarchy on the left, selects the window
+  if(selId){
+    const match=[...$("#tree").querySelectorAll(".self")].find(s=>s._info&&s._info.controlType===selId.ct&&s._info.name===selId.name&&s._info.automationId===selId.aid);
+    if(match){ match.click(); match.scrollIntoView({block:"nearest"}); }
+    else toast("Restored the window — the selected element is deeper; raise depth and expand to it.");
   }
 })();
 $("#logBtn").onclick=()=>$("#logdrawer").classList.toggle("show");

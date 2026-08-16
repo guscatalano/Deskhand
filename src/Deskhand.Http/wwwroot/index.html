@@ -688,15 +688,25 @@ function renderProcRow(p, container){
   self.addEventListener("click",()=>{ showProcDetail(p); toggle(); });
   container.append(node);
 }
+function openInExplorer(info){ document.querySelector('.tabbtn[data-tab="explorer"]').click(); loadRoot(info).catch(e=>toast(e.message,true)); }
 function showProcDetail(p){
   const d=$("#pdetail"); d.innerHTML="";
   const head=elm("div","dhead"); const ct=elm("span","ct"); ct.textContent="Process"; const h1=elm("h1"); h1.textContent=`${p.name} · ${p.processId}`; head.append(ct,h1); d.append(head);
   const s=elm("div","sect");
   s.innerHTML=`<div class="prow"><div class="k">pid</div><div class="v">${p.processId}</div></div>`+
     `<div class="prow"><div class="k">memory</div><div class="v">${fmtMem(p.workingSet)}</div></div>`+
-    `<div class="prow"><div class="k">windows</div><div class="v">${p.windows.length}</div></div>`+
     `<div class="prow"><div class="k">main title</div><div class="v${p.mainWindowTitle?"":" null"}">${p.mainWindowTitle||"null"}</div></div>`;
   d.append(s);
+  // Its windows, each openable in the full Explorer (this is the "go from process to Explorer" path).
+  const ws=elm("div","sect"); const h=elm("div","h"); h.innerHTML=`windows <span class="count">${p.windows.length}</span>`; ws.append(h);
+  if(!p.windows.length){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:12px;padding:4px 2px"; e.textContent="No top-level windows (background process)."; ws.append(e); }
+  p.windows.forEach(w=>{
+    const row=elm("div"); row.style.cssText="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line)";
+    const nm=elm("span"); nm.style.cssText="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"; nm.innerHTML=`<span style="color:var(--ink-3)">[${w.controlType}]</span> ${w.name||"(no name)"}`;
+    const btn=elm("button","btn sm a"); btn.textContent="Open in Explorer →"; btn.onclick=()=>openInExplorer(w);
+    row.append(nm,btn); ws.append(row);
+  });
+  d.append(ws);
 }
 function renderProcList(){
   const ptree=$("#ptree"); ptree.innerHTML="";

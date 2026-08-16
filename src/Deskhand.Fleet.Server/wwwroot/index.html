@@ -216,11 +216,12 @@ const openAgent = guard(async(a)=>{
       <label>monitor</label>
       <select id="monSel"><option value="">all</option>${mons.map(m=>`<option value="${m.index}"${m.primary?" selected":""}>#${m.index}${m.primary?" (primary)":""} ${m.bounds.width}×${m.bounds.height}</option>`).join("")}</select>
       <label>on click</label>
-      <select id="clickAction"><option value="inspect">read coords</option><option value="pick">🔍 pick element</option><option value="left">left click</option><option value="right">right click</option><option value="double">double click</option><option value="move">move</option></select>
+      <select id="clickAction"><option value="inspect">read coords</option>${rdpIds.has(a.id)?"":'<option value="pick">🔍 pick element</option>'}<option value="left">left click</option><option value="right">right click</option><option value="double">double click</option><option value="move">move</option></select>
       <span class="coord" id="coord">live view — click to control</span>
       <span class="spacer" style="flex:1"></span>
       <button class="btn" id="saveBtn" title="Save the current frame">⬇ Save</button>
     </div>
+    ${rdpIds.has(a.id)?'<div style="font-size:11px;color:var(--ink-3);background:rgba(58,110,165,.12);border:1px solid rgba(58,110,165,.35);border-radius:7px;padding:6px 10px;margin:0 0 8px">🖧 <b>RDP</b> — capture + coordinate input only (no accessibility tree). The picker/Explorer/processes/recording aren’t available here. Install the <b>native agent</b> on this machine for the full console.</div>':''}
     <div class="viewer" id="viewer"><div class="marker" id="marker" style="display:none"></div></div>
     <div class="ctrls">
       <input type="text" id="typeTxt" placeholder="type text on this PC…" style="flex:1;min-width:160px"><button class="btn a" id="typeBtn">Type</button>

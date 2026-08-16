@@ -27,10 +27,11 @@ var hub = new Deskhand.Core.Events.EventHub();
 local.StartEvents(hub);                                   // focus_changed, window_opened
 var processes = new Deskhand.Core.Events.ProcessWatcher(hub);        // process_started/exited
 var recorder = new Deskhand.Core.Services.ScreenRecorder(audit);
+var dumper = new Deskhand.Core.Services.ProcessDumper(audit);
 var input = new Deskhand.Core.Services.InputRecorder(
     (x, y) => { try { return local.GetElementFromPoint(x, y); } catch { return null; } },
     notifier, indicator);                                // banner + toast on THIS PC when the fleet records its user
-var services = new AgentServices { Backend = backend, Events = hub, Processes = processes, Recorder = recorder, Input = input };
+var services = new AgentServices { Backend = backend, Events = hub, Processes = processes, Recorder = recorder, Input = input, Dumper = dumper };
 
 Console.WriteLine($"Deskhand agent '{agentId}'  ->  {server}{(token is null ? "" : "  (authenticated)")}");
 

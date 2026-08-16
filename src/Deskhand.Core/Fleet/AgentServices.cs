@@ -12,6 +12,7 @@ public sealed class AgentServices
     public Events.ProcessWatcher? Processes { get; init; }
     public Services.ScreenRecorder? Recorder { get; init; }
     public Services.InputRecorder? Input { get; init; }
+    public Services.ProcessDumper? Dumper { get; init; }
 
     /// <summary>RDP-only: bootstrap-install the native agent on the remote target over the RDP session
     /// (arg = optional agent exe path). Set by the RDP connector; null for normal agents.</summary>

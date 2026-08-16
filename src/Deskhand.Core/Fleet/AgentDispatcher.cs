@@ -48,6 +48,11 @@ public static class AgentDispatcher
             }
             case FleetMethods.RdpInstallAgent:
                 return (svc.RdpInstallAgent ?? throw new InvalidOperationException("This agent isn't an RDP connector, so it can't install the native agent over RDP."))(a.Str("agentPath"));
+            case FleetMethods.DumpProcess:
+                return Req(svc.Dumper, "process dumper").Dump(a.Int("pid"));
+            case FleetMethods.RegistryBrowse:
+                if (svc.Dumper is null) throw new InvalidOperationException("Registry browsing isn't available on an RDP agent (it would read the connector's machine, not the target).");
+                return Services.RegistryService.Browse(a.Str("path"));
         }
         return cmd.Method switch
         {

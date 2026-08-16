@@ -188,6 +188,8 @@ app.MapGet("/agents/{id}/recordings/{recId}", (string id, string recId) =>
 app.MapPost("/agents/{id}/input/record/start", (string id, InputRecReq r) => Results.Ok(O(id).InputStart(r.CaptureText ?? true)));
 app.MapPost("/agents/{id}/input/record/stop", (string id) => Results.Ok(O(id).InputStop()));
 app.MapGet("/agents/{id}/input/record/events", (string id, long since) => Results.Ok(O(id).InputGet(since)));
+app.MapGet("/agents/{id}/registry", (string id, string? path) => Results.Ok(O(id).RegistryBrowse(path)));
+app.MapPost("/agents/{id}/process/dump", (string id, PidReq r) => Results.Ok(O(id).DumpProcess(r.Pid)));   // .dmp stays on the agent
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -257,4 +259,5 @@ record RdpConnectReq(string Host, string User, string Password, string? Domain, 
 record IdReq(string Id);
 record RecReq(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecReq(bool? CaptureText);
+record PidReq(int Pid);
 record RdpInstallReq(string Id, string? AgentPath);

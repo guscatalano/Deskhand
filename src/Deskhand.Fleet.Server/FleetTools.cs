@@ -158,4 +158,12 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_user_input_get"), Description("Get user-input events newer than sinceId from a fleet PC while recording is in progress.")]
     public static string AgentInputGet(AgentRegistry r, FleetAudit audit, string agentId, long sinceId = 0)
         => Raw(O(r, audit, agentId, "input_record_get").InputGet(sinceId));
+
+    [McpServerTool(Name = "deskhand_agent_registry_browse"), Description("Browse a fleet PC's registry (read-only): subkeys + values of a key. path empty = hive roots, or e.g. \"HKLM\\SOFTWARE\\Microsoft\". Not available on RDP agents.")]
+    public static string AgentRegistryBrowse(AgentRegistry r, FleetAudit audit, string agentId, string? path = null)
+        => Raw(O(r, audit, agentId, "registry_browse").RegistryBrowse(path));
+
+    [McpServerTool(Name = "deskhand_agent_dump_process"), Description("Write a full-memory .dmp of a process (by pid) on a fleet PC. The dump is saved ON THAT PC (large + sensitive); returns its path/size. Not available on RDP agents.")]
+    public static string AgentDumpProcess(AgentRegistry r, FleetAudit audit, string agentId, int pid)
+        => Raw(O(r, audit, agentId, $"dump_process {pid}").DumpProcess(pid));
 }

@@ -72,7 +72,13 @@ Same two-pane tree|detail layout as Explorer, backed by `GET /processes` (see `0
 - **Right — detail.** Clicking a process shows pid/memory/title and a **windows** list, each with an
   **"Open in Explorer →"** button that switches to the Explorer tab and loads that window as the root.
   Selecting any window/element shows the normal element detail (with an **Open in Explorer** action —
-  gated to this tab so it doesn't clutter Explorer).
+  gated to this tab so it doesn't clutter Explorer). The process detail also has a **⤓ Full memory dump**
+  button (`POST /process/dump`, confirm + size warning, download link).
+
+## Registry tab
+
+Read-only registry browser (`GET /registry?path=`, see `03`): a path box + breadcrumb, a clickable
+**keys** list (navigate deeper), and a **values** table (name/kind/value). URL deep-links `#registry/<path>`.
 
 ## Screen & Input tab
 

@@ -142,12 +142,12 @@ tree and keeps your selection, for when the app under inspection changes.
 
 ## MCP server
 
-`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (~34 tools:
+`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (~47 tools:
 `deskhand_list_windows`, `deskhand_list_processes`, `deskhand_get_tree`, `deskhand_get_all_properties`,
 `deskhand_element_from_point`, `deskhand_invoke`, `deskhand_capture_window`,
 `deskhand_mouse_click`, `deskhand_wait_for_process`, `deskhand_record_start`,
-`deskhand_user_input_start`, …). Screenshots are returned as real MCP image content, so a model
-sees them directly.
+`deskhand_user_input_start`, `deskhand_dump_process`, `deskhand_registry_browse`, …). Screenshots are
+returned as real MCP image content, so a model sees them directly.
 
 **Observe, not just drive** (see `AI_Documentation/14-events-hooks-recording.md`):
 - **Process list + tree** — `deskhand_list_processes` returns every process with the top-level windows
@@ -163,6 +163,12 @@ sees them directly.
   the UIA element it hit), scrolls, and typed text via global hooks. Off by default; `captureText=false`
   for mouse-only (keystrokes may include passwords). While it runs, the user sees a **persistent
   always-on-top banner + toast**, so no one is observed silently.
+- **Process list + full-memory dumps** — `deskhand_list_processes` (process → windows → UIA tree) and
+  `deskhand_dump_process(pid)` writes a full-memory `.dmp` (MiniDumpWriteDump, like Task Manager's *Create
+  dump file*) to `%LOCALAPPDATA%\Deskhand\dumps`, audited, auto-deleted after 24h, gated on the kill
+  switch. Dashboard **Processes** tab has a **⤓ Full memory dump** button.
+- **Registry browsing** — `deskhand_registry_browse(path)` lists a key's subkeys + values (read-only;
+  HKLM/HKCU/HKCR/HKU/HKCC). Dashboard **Registry** tab with breadcrumb navigation.
 
 All four observation capabilities are also **routed over the fleet** — drive any agent's events,
 `wait_for_process`, screen recording (downloadable through the server), and user-input recording by

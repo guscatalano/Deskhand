@@ -66,6 +66,17 @@ Chromium top-level window refs go stale within ms — `get_tree` on them may **4
 3. Dashboard **Processes** tab → expand a process → a window → its elements; select one → **Open in
    Explorer** loads it as the Explorer root. **PASS:** all three levels navigate.
 
+## 5b. Process dumps & registry
+
+1. **Dump** (armed): `POST /process/dump {pid:<notepad>}` → **PASS:** returns `{sizeBytes>0, fileName, durationMs}`;
+   `GET /dumps/{name}` downloads a file whose first 4 bytes are **`MDMP`** (valid minidump). Disarm →
+   `POST /process/dump` returns **403**. Dumps land in `%LOCALAPPDATA%\Deskhand\dumps`, audited, auto-delete 24h.
+   (Full-memory dumps are large — Notepad ≈ 387 MB — and contain process memory.)
+2. **Registry:** `GET /registry` → **PASS:** `subKeys = [HKLM,HKCU,HKCR,HKU,HKCC]`.
+   `GET /registry?path=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion` → subkeys + values incl. `ProductName`.
+   A protected key (e.g. `HKLM\SECURITY\SAM\SAM`) → an `error` field, **not** a crash.
+   Dashboard **Registry** tab navigates via breadcrumb + clickable subkeys.
+
 ## 6. Events & hooks
 
 1. `GET /events/poll?since=0` → `{lastId, events}`; change focus / open a window → new `focus_changed` /

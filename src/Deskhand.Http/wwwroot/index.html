@@ -494,7 +494,7 @@ async function selectNode(info, selEl){
   mk("Capture element","",async()=>{ await capElement(info.ref); });
   mk("Capture window (no raise)","",async()=>{ await capWindowRef(info.ref); });
   mk("Copy ref","",async()=>{ await navigator.clipboard.writeText(info.ref); toast("ref copied"); });
-  mk("Open in Explorer","a",async()=>{ document.querySelector('.tabbtn[data-tab="explorer"]').click(); await loadRoot(info); toast("opened in Explorer"); });
+  if(tab && tab.id==="tab-processes") mk("Open in Explorer","a",async()=>{ document.querySelector('.tabbtn[data-tab="explorer"]').click(); await loadRoot(info); toast("opened in Explorer"); });
   mk("Expect (macro)","",async()=>{ await api("/macro/expect","POST",{name:info.name,automationId:info.automationId,controlType:info.controlType,className:info.className}); toast("expectation added to macro"); });
   d.append(acts);
   // set-value inline

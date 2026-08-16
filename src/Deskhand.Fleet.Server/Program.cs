@@ -29,7 +29,14 @@ builder.Services.AddHttpContextAccessor();
 var app = builder.Build();
 app.UseWebSockets();
 app.UseDefaultFiles();   // the fleet dashboard (wwwroot/index.html) — served before auth
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+            ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+    }
+});
 var registry = app.Services.GetRequiredService<AgentRegistry>();
 var audit = app.Services.GetRequiredService<FleetAudit>();
 app.Logger.LogInformation("Fleet audit -> {dir}", audit.Directory);

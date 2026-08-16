@@ -76,7 +76,17 @@ var app = builder.Build();
 
 // The dashboard: static files (index.html at "/") are served before auth runs.
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// The dashboard is a single-file app updated in place; tell browsers not to cache it, so a plain
+// refresh always shows the latest UI (no more stale-dashboard confusion / forced Ctrl+F5).
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var p = ctx.File.Name;
+        if (p.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+            ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+    }
+});
 
 // ---- security middleware: loopback Host + cross-site Origin block + optional token ----
 app.Use(async (ctx, next) =>

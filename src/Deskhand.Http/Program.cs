@@ -285,6 +285,20 @@ api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.Li
 
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
+
+// Start Menu apps (launch one via /process/launch with its path).
+api.MapGet("/apps", () => Results.Ok(Deskhand.Core.Services.StartMenuService.List()));
+
+// Virtual desktops: windows grouped by desktop; move a window to the current (or a given) desktop.
+api.MapGet("/desktops", () => Results.Ok(Deskhand.Core.Services.VirtualDesktopService.ListByWindow()));
+api.MapPost("/desktops/move-window", (ControlState st, MoveWindowRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    bool ok = r.DesktopId is null
+        ? Deskhand.Core.Services.VirtualDesktopService.MoveWindowToCurrent((IntPtr)r.Hwnd)
+        : Deskhand.Core.Services.VirtualDesktopService.MoveWindowToDesktop((IntPtr)r.Hwnd, r.DesktopId);
+    return ok ? Ok() : Results.Json(new { error = "move_failed", type = "move_failed" }, statusCode: 400);
+});
 api.MapGet("/dumps/{name}", (Deskhand.Core.Services.ProcessDumper d, string name) =>
     Results.File(d.PathFor(name), "application/octet-stream", name));
 api.MapPost("/process/launch", (IAutomationBackend b, LaunchRequest r) =>
@@ -428,6 +442,7 @@ record RefRequest(string Reference);
 record PointRequest(int X, int Y);
 record ProcessWaitRequest(string? Event, string? Name, int? Pid, int? TimeoutMs);
 record PidRequest(int Pid);
+record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);

@@ -53,6 +53,21 @@ public static class AgentDispatcher
             case FleetMethods.RegistryBrowse:
                 if (svc.Dumper is null) throw new InvalidOperationException("Registry browsing isn't available on an RDP agent (it would read the connector's machine, not the target).");
                 return Services.RegistryService.Browse(a.Str("path"));
+            case FleetMethods.ListApps:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would read the connector's machine).");
+                return Services.StartMenuService.List();
+            case FleetMethods.ListDesktops:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would read the connector's machine).");
+                return Services.VirtualDesktopService.ListByWindow();
+            case FleetMethods.MoveWindowToDesktop:
+            {
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                var did = a.Str("desktopId");
+                bool ok = did is null
+                    ? Services.VirtualDesktopService.MoveWindowToCurrent((IntPtr)a.Long("hwnd"))
+                    : Services.VirtualDesktopService.MoveWindowToDesktop((IntPtr)a.Long("hwnd"), did);
+                return new { ok };
+            }
         }
         return cmd.Method switch
         {

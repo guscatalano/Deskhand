@@ -166,4 +166,16 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_dump_process"), Description("Write a full-memory .dmp of a process (by pid) on a fleet PC. The dump is saved ON THAT PC (large + sensitive); returns its path/size. Not available on RDP agents.")]
     public static string AgentDumpProcess(AgentRegistry r, FleetAudit audit, string agentId, int pid)
         => Raw(O(r, audit, agentId, $"dump_process {pid}").DumpProcess(pid));
+
+    [McpServerTool(Name = "deskhand_agent_list_apps"), Description("List Start Menu apps on a fleet PC (launch one via deskhand_agent_launch with its path). Not available on RDP agents.")]
+    public static string AgentListApps(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "list_apps").ListApps());
+
+    [McpServerTool(Name = "deskhand_agent_list_desktops"), Description("Virtual desktops on a fleet PC: windows grouped by desktop (current flagged). Not available on RDP agents.")]
+    public static string AgentListDesktops(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "list_desktops").ListDesktops());
+
+    [McpServerTool(Name = "deskhand_agent_move_window_to_desktop"), Description("Move a window (hwnd) to a virtual desktop on a fleet PC. Omit desktopId for the current desktop, or pass a GUID from deskhand_agent_list_desktops.")]
+    public static string AgentMoveWindow(AgentRegistry r, FleetAudit audit, string agentId, long hwnd, string? desktopId = null)
+        => Raw(O(r, audit, agentId, "move_window_to_desktop").MoveWindowToDesktop(hwnd, desktopId));
 }

@@ -190,6 +190,9 @@ app.MapPost("/agents/{id}/input/record/stop", (string id) => Results.Ok(O(id).In
 app.MapGet("/agents/{id}/input/record/events", (string id, long since) => Results.Ok(O(id).InputGet(since)));
 app.MapGet("/agents/{id}/registry", (string id, string? path) => Results.Ok(O(id).RegistryBrowse(path)));
 app.MapPost("/agents/{id}/process/dump", (string id, PidReq r) => Results.Ok(O(id).DumpProcess(r.Pid)));   // .dmp stays on the agent
+app.MapGet("/agents/{id}/apps", (string id) => Results.Ok(O(id).ListApps()));
+app.MapGet("/agents/{id}/desktops", (string id) => Results.Ok(O(id).ListDesktops()));
+app.MapPost("/agents/{id}/desktops/move-window", (string id, MoveWinReq r) => Results.Ok(O(id).MoveWindowToDesktop(r.Hwnd, r.DesktopId)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -260,4 +263,5 @@ record IdReq(string Id);
 record RecReq(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecReq(bool? CaptureText);
 record PidReq(int Pid);
+record MoveWinReq(long Hwnd, string? DesktopId);
 record RdpInstallReq(string Id, string? AgentPath);

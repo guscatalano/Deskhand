@@ -34,4 +34,7 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement InstallAgent(string? agentPath) => Call(FleetMethods.RdpInstallAgent, new { agentPath });
     public JsonElement RegistryBrowse(string? path) => Call(FleetMethods.RegistryBrowse, new { path });
     public JsonElement DumpProcess(int pid) => Call(FleetMethods.DumpProcess, new { pid });
+    public JsonElement ListApps() => Call(FleetMethods.ListApps, null);
+    public JsonElement ListDesktops() => Call(FleetMethods.ListDesktops, null);
+    public JsonElement MoveWindowToDesktop(long hwnd, string? desktopId) => Call(FleetMethods.MoveWindowToDesktop, new { hwnd, desktopId });
 }

@@ -80,4 +80,7 @@ public static class FleetMethods
     public const string RdpInstallAgent = "rdp_install_agent";
     public const string RegistryBrowse = "registry_browse";
     public const string DumpProcess = "dump_process";
+    public const string ListApps = "list_apps";
+    public const string ListDesktops = "list_desktops";
+    public const string MoveWindowToDesktop = "move_window_to_desktop";
 }

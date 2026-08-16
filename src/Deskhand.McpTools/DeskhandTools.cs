@@ -57,6 +57,22 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_list_processes"), Description("List every running process, each with the top-level windows it owns (windowed apps first; background processes have an empty windows list). Each window carries a live ref you can pass straight to deskhand_get_tree to expand its UIA tree — process → windows → elements.")]
     public static string ListProcesses(IAutomationBackend b) => Json(b.GetProcesses());
 
+    [McpServerTool(Name = "deskhand_list_apps"), Description("List Start Menu apps (the .lnk/.url shortcuts under the all-users and per-user Start Menu). Each has name, folder, and path — launch one by passing its path to deskhand_launch_process. (UWP/Store apps aren't shortcuts and aren't listed.)")]
+    public static string ListApps() => Json(Deskhand.Core.Services.StartMenuService.List());
+
+    [McpServerTool(Name = "deskhand_list_desktops"), Description("Virtual desktops: the visible top-level windows grouped by the Windows virtual desktop they're on (the current desktop is flagged). NOTE: Windows only documents reading a window's desktop + moving windows — listing/switching/creating desktops is not available (undocumented, breaks across builds).")]
+    public static string ListDesktops() => Json(Deskhand.Core.Services.VirtualDesktopService.ListByWindow());
+
+    [McpServerTool(Name = "deskhand_move_window_to_desktop"), Description("Move a top-level window (by hwnd) to a virtual desktop. Omit desktopId to bring it to the CURRENT desktop; or pass a desktop GUID from deskhand_list_desktops. Requires the kill switch armed.")]
+    public static string MoveWindowToDesktop(ControlState state, long hwnd, string? desktopId = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\"}";
+        bool ok = desktopId is null
+            ? Deskhand.Core.Services.VirtualDesktopService.MoveWindowToCurrent((IntPtr)hwnd)
+            : Deskhand.Core.Services.VirtualDesktopService.MoveWindowToDesktop((IntPtr)hwnd, desktopId);
+        return ok ? "ok" : "{\"error\":\"move_failed\"}";
+    }
+
     [McpServerTool(Name = "deskhand_registry_browse"), Description("Browse the Windows Registry (read-only): list a key's subkeys and values. path is empty for the hive roots, or \"HKLM\" / \"HKCU\\SOFTWARE\\Microsoft\" etc. (hives: HKLM, HKCU, HKCR, HKU, HKCC). Returns { path, subKeys[], values[{name,kind,value}], error? }. Keys needing elevation return an access error, not a crash.")]
     public static string RegistryBrowse([Description("Registry key path, e.g. \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\". Empty lists the hives.")] string? path = null)
         => Json(Deskhand.Core.Services.RegistryService.Browse(path));

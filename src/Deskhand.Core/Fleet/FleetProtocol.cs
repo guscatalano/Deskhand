@@ -83,4 +83,14 @@ public static class FleetMethods
     public const string ListApps = "list_apps";
     public const string ListDesktops = "list_desktops";
     public const string MoveWindowToDesktop = "move_window_to_desktop";
+    public const string BrowseFiles = "browse_files";
+    public const string ReadFile = "read_file";
+    public const string WriteFile = "write_file";
+    public const string DeletePath = "delete_path";
+    public const string RenamePath = "rename_path";
+    public const string MovePath = "move_path";
+    public const string CopyPath = "copy_path";
+    public const string ZipPaths = "zip";
+    public const string UnzipPath = "unzip";
+    public const string RunCommand = "run_command";
 }

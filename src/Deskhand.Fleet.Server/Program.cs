@@ -216,6 +216,26 @@ app.MapGet("/agents/{id}/apps", (string id) => Results.Ok(O(id).ListApps()));
 app.MapGet("/agents/{id}/desktops", (string id) => Results.Ok(O(id).ListDesktops()));
 app.MapPost("/agents/{id}/desktops/move-window", (string id, MoveWinReq r) => Results.Ok(O(id).MoveWindowToDesktop(r.Hwnd, r.DesktopId)));
 
+// ---- files + shell on a fleet PC (native agents only; RDP agents return a clean error) ----
+app.MapGet("/agents/{id}/fs", (string id, string? path) => Results.Ok(O(id).BrowseFiles(path)));
+app.MapGet("/agents/{id}/fs/download", (string id, string path) =>
+{
+    var j = O(id).ReadFile(path);
+    if (!j.TryGetProperty("base64", out var b64) || b64.ValueKind != System.Text.Json.JsonValueKind.String)
+        return Results.Json(j, statusCode: 400);   // error/not-a-file — pass the agent's JSON through
+    var bytes = Convert.FromBase64String(b64.GetString()!);
+    var name = System.IO.Path.GetFileName(j.GetProperty("path").GetString() ?? "download");
+    return Results.File(bytes, "application/octet-stream", name);
+});
+app.MapPost("/agents/{id}/fs/write", (string id, AgentWriteReq r) => Results.Ok(O(id).WriteFile(r.Path, r.ContentBase64, r.Overwrite ?? false)));
+app.MapPost("/agents/{id}/fs/delete", (string id, AgentDeleteReq r) => Results.Ok(O(id).DeletePath(r.Path, r.Permanent ?? false)));
+app.MapPost("/agents/{id}/fs/rename", (string id, AgentRenameReq r) => Results.Ok(O(id).RenamePath(r.Path, r.NewName)));
+app.MapPost("/agents/{id}/fs/move", (string id, AgentMoveReq r) => Results.Ok(O(id).MovePath(r.Source, r.Dest, r.Overwrite ?? false)));
+app.MapPost("/agents/{id}/fs/copy", (string id, AgentCopyReq r) => Results.Ok(O(id).CopyPath(r.Source, r.Dest, r.Overwrite ?? false)));
+app.MapPost("/agents/{id}/fs/zip", (string id, AgentZipReq r) => Results.Ok(O(id).Zip(r.Sources, r.Dest, r.Overwrite ?? false)));
+app.MapPost("/agents/{id}/fs/unzip", (string id, AgentUnzipReq r) => Results.Ok(O(id).Unzip(r.ZipPath, r.Dest, r.Overwrite ?? false)));
+app.MapPost("/agents/{id}/shell/run", (string id, AgentShellReq r) => Results.Ok(O(id).RunCommand(r.Shell, r.Command, r.Cwd, r.TimeoutMs)));
+
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
 app.MapPost("/agents/{id}/uia/set-value", (string id, SetValueReq r) => { A(id).SetValue(r.Reference, r.Text); return Results.Ok(new { ok = true }); });
@@ -287,3 +307,11 @@ record InputRecReq(bool? CaptureText);
 record PidReq(int Pid);
 record MoveWinReq(long Hwnd, string? DesktopId);
 record RdpInstallReq(string Id, string? AgentPath);
+record AgentWriteReq(string Path, string ContentBase64, bool? Overwrite);
+record AgentDeleteReq(string Path, bool? Permanent);
+record AgentRenameReq(string Path, string NewName);
+record AgentMoveReq(string Source, string Dest, bool? Overwrite);
+record AgentCopyReq(string Source, string Dest, bool? Overwrite);
+record AgentZipReq(string[]? Sources, string Dest, bool? Overwrite);
+record AgentUnzipReq(string ZipPath, string? Dest, bool? Overwrite);
+record AgentShellReq(string? Shell, string Command, string? Cwd, int? TimeoutMs);

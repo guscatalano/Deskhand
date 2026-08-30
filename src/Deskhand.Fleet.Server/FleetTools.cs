@@ -178,4 +178,46 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_move_window_to_desktop"), Description("Move a window (hwnd) to a virtual desktop on a fleet PC. Omit desktopId for the current desktop, or pass a GUID from deskhand_agent_list_desktops.")]
     public static string AgentMoveWindow(AgentRegistry r, FleetAudit audit, string agentId, long hwnd, string? desktopId = null)
         => Raw(O(r, audit, agentId, "move_window_to_desktop").MoveWindowToDesktop(hwnd, desktopId));
+
+    // ---- files + shell on a fleet PC (native agents only; RDP agents return a clean error) ----
+
+    [McpServerTool(Name = "deskhand_agent_browse_files"), Description("Browse a fleet PC's file system (read-only): folders + files in a directory. path empty = drive roots, or a folder like \"C:\\\\Users\". Not available on RDP agents.")]
+    public static string AgentBrowseFiles(AgentRegistry r, FleetAudit audit, string agentId, string? path = null)
+        => Raw(O(r, audit, agentId, "browse_files").BrowseFiles(path));
+
+    [McpServerTool(Name = "deskhand_agent_read_file"), Description("Download a file from a fleet PC as base64: { path, size, base64, error? }. Refused over ~25 MB. Not available on RDP agents.")]
+    public static string AgentReadFile(AgentRegistry r, FleetAudit audit, string agentId, string path)
+        => Raw(O(r, audit, agentId, "read_file").ReadFile(path));
+
+    [McpServerTool(Name = "deskhand_agent_write_file"), Description("Upload/write a file to a fleet PC from base64. overwrite=false (default) fails if it exists. Not available on RDP agents.")]
+    public static string AgentWriteFile(AgentRegistry r, FleetAudit audit, string agentId, string path, string contentBase64, bool overwrite = false)
+        => Raw(O(r, audit, agentId, "write_file").WriteFile(path, contentBase64, overwrite));
+
+    [McpServerTool(Name = "deskhand_agent_delete_path"), Description("Delete a file/folder on a fleet PC (→ Recycle Bin unless permanent=true). Not available on RDP agents.")]
+    public static string AgentDeletePath(AgentRegistry r, FleetAudit audit, string agentId, string path, bool permanent = false)
+        => Raw(O(r, audit, agentId, "delete_path").DeletePath(path, permanent));
+
+    [McpServerTool(Name = "deskhand_agent_rename_path"), Description("Rename a file/folder in place on a fleet PC (newName is a bare name). Not available on RDP agents.")]
+    public static string AgentRenamePath(AgentRegistry r, FleetAudit audit, string agentId, string path, string newName)
+        => Raw(O(r, audit, agentId, "rename_path").RenamePath(path, newName));
+
+    [McpServerTool(Name = "deskhand_agent_move_path"), Description("Move a file/folder on a fleet PC. dest may be an existing folder or a full path. Not available on RDP agents.")]
+    public static string AgentMovePath(AgentRegistry r, FleetAudit audit, string agentId, string source, string dest, bool overwrite = false)
+        => Raw(O(r, audit, agentId, "move_path").MovePath(source, dest, overwrite));
+
+    [McpServerTool(Name = "deskhand_agent_copy_path"), Description("Copy a file, or a folder recursively, on a fleet PC. dest may be an existing folder or a full path. Not available on RDP agents.")]
+    public static string AgentCopyPath(AgentRegistry r, FleetAudit audit, string agentId, string source, string dest, bool overwrite = false)
+        => Raw(O(r, audit, agentId, "copy_path").CopyPath(source, dest, overwrite));
+
+    [McpServerTool(Name = "deskhand_agent_zip"), Description("Create a .zip on a fleet PC from files/folders (recursive). Not available on RDP agents.")]
+    public static string AgentZip(AgentRegistry r, FleetAudit audit, string agentId, string[] sources, string dest, bool overwrite = false)
+        => Raw(O(r, audit, agentId, "zip").Zip(sources, dest, overwrite));
+
+    [McpServerTool(Name = "deskhand_agent_unzip"), Description("Extract a .zip on a fleet PC into a folder (defaults to a folder named after the zip). Not available on RDP agents.")]
+    public static string AgentUnzip(AgentRegistry r, FleetAudit audit, string agentId, string zipPath, string? dest = null, bool overwrite = false)
+        => Raw(O(r, audit, agentId, "unzip").Unzip(zipPath, dest, overwrite));
+
+    [McpServerTool(Name = "deskhand_agent_run_command"), Description("Run a one-shot shell command on a fleet PC (default PowerShell; shell=\"cmd\"/\"pwsh\") and return output. STATELESS. The agent must have been started with DESKHAND_ENABLE_SHELL or it returns a shell_disabled error. Not available on RDP agents.")]
+    public static string AgentRunCommand(AgentRegistry r, FleetAudit audit, string agentId, string command, string? shell = null, string? cwd = null, int? timeoutMs = null)
+        => Raw(O(r, audit, agentId, "run_command").RunCommand(shell, command, cwd, timeoutMs));
 }

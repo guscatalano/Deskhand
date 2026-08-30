@@ -53,6 +53,37 @@ public static class AgentDispatcher
             case FleetMethods.RegistryBrowse:
                 if (svc.Dumper is null) throw new InvalidOperationException("Registry browsing isn't available on an RDP agent (it would read the connector's machine, not the target).");
                 return Services.RegistryService.Browse(a.Str("path"));
+            // ---- files + shell (native agents only: on an RDP connector they'd touch the connector, not the target) ----
+            case FleetMethods.BrowseFiles:
+                if (svc.Dumper is null) throw new InvalidOperationException("File browsing isn't available on an RDP agent (it would read the connector's machine, not the target).");
+                return Services.FileSystemService.Browse(a.Str("path"));
+            case FleetMethods.ReadFile:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would read the connector's machine).");
+                return Services.FileSystemService.ReadFileBase64(a.Str("path"));
+            case FleetMethods.WriteFile:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would write to the connector's machine).");
+                return Services.FileSystemService.WriteFileBase64(a.Str("path"), a.Str("contentBase64"), a.Bool("overwrite"));
+            case FleetMethods.DeletePath:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would delete on the connector's machine).");
+                return Services.FileSystemService.Delete(a.Str("path"), a.Bool("permanent"));
+            case FleetMethods.RenamePath:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.FileSystemService.Rename(a.Str("path"), a.Str("newName"));
+            case FleetMethods.MovePath:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.FileSystemService.Move(a.Str("source"), a.Str("dest"), a.Bool("overwrite"));
+            case FleetMethods.CopyPath:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.FileSystemService.Copy(a.Str("source"), a.Str("dest"), a.Bool("overwrite"));
+            case FleetMethods.ZipPaths:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.FileSystemService.Zip(a.Obj<string[]>("sources"), a.Str("dest"), a.Bool("overwrite"));
+            case FleetMethods.UnzipPath:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.FileSystemService.Unzip(a.Str("zipPath"), a.Str("dest"), a.Bool("overwrite"));
+            case FleetMethods.RunCommand:
+                if (svc.Dumper is null) throw new InvalidOperationException("Shell isn't available on an RDP agent (it would run on the connector, not the target).");
+                return Services.ShellService.Run(a.Str("shell"), a.Str("command"), a.Str("cwd"), a.IntN("timeoutMs"));
             case FleetMethods.ListApps:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would read the connector's machine).");
                 return Services.StartMenuService.List();

@@ -37,4 +37,16 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement ListApps() => Call(FleetMethods.ListApps, null);
     public JsonElement ListDesktops() => Call(FleetMethods.ListDesktops, null);
     public JsonElement MoveWindowToDesktop(long hwnd, string? desktopId) => Call(FleetMethods.MoveWindowToDesktop, new { hwnd, desktopId });
+
+    // Files + shell (native agents only).
+    public JsonElement BrowseFiles(string? path) => Call(FleetMethods.BrowseFiles, new { path });
+    public JsonElement ReadFile(string? path) => Call(FleetMethods.ReadFile, new { path });
+    public JsonElement WriteFile(string? path, string? contentBase64, bool overwrite) => Call(FleetMethods.WriteFile, new { path, contentBase64, overwrite });
+    public JsonElement DeletePath(string? path, bool permanent) => Call(FleetMethods.DeletePath, new { path, permanent });
+    public JsonElement RenamePath(string? path, string? newName) => Call(FleetMethods.RenamePath, new { path, newName });
+    public JsonElement MovePath(string? source, string? dest, bool overwrite) => Call(FleetMethods.MovePath, new { source, dest, overwrite });
+    public JsonElement CopyPath(string? source, string? dest, bool overwrite) => Call(FleetMethods.CopyPath, new { source, dest, overwrite });
+    public JsonElement Zip(string[]? sources, string? dest, bool overwrite) => Call(FleetMethods.ZipPaths, new { sources, dest, overwrite });
+    public JsonElement Unzip(string? zipPath, string? dest, bool overwrite) => Call(FleetMethods.UnzipPath, new { zipPath, dest, overwrite });
+    public JsonElement RunCommand(string? shell, string? command, string? cwd, int? timeoutMs) => Call(FleetMethods.RunCommand, new { shell, command, cwd, timeoutMs });
 }

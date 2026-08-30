@@ -141,6 +141,9 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_scheduled_tasks"), Description("Scheduled tasks (read-only, Task Scheduler): { path, name, state (Ready/Running/Disabled/…), enabled, lastRun, nextRun }.")]
     public static string ScheduledTasks() => Json(Deskhand.Core.Services.SoftwareService.ScheduledTasks());
 
+    [McpServerTool(Name = "deskhand_security_posture"), Description("Security posture (read-only): TPM (present/enabled/version), Secure Boot, BitLocker per volume, Windows activation, Defender status + installed AV products, and pending-reboot with reasons. TPM/BitLocker/Defender need elevation to read fully; unknown/empty when Deskhand runs unelevated.")]
+    public static string SecurityPosture() => Json(Deskhand.Core.Services.SecurityService.Get());
+
     [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));

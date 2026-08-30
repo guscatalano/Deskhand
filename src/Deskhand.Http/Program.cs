@@ -357,6 +357,9 @@ api.MapGet("/software/printers", () => Results.Ok(Deskhand.Core.Services.Softwar
 api.MapGet("/software/shares", () => Results.Ok(Deskhand.Core.Services.SoftwareService.Shares()));
 api.MapGet("/software/tasks", () => Results.Ok(Deskhand.Core.Services.SoftwareService.ScheduledTasks()));
 
+// Security posture (read-only): TPM, Secure Boot, BitLocker, activation, Defender/AV, pending reboot.
+api.MapGet("/security", () => Results.Ok(Deskhand.Core.Services.SecurityService.Get()));
+
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));

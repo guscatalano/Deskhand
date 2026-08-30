@@ -135,7 +135,8 @@
   .pfilter { margin-bottom:8px; width:100%; }
 
   /* screen tab */
-  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect, #tab-apps, #tab-hardware { overflow:auto; }
+  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect, #tab-apps, #tab-hardware, #tab-software { overflow:auto; }
+  .swfilter { width:100%; font-family:var(--mono); font-size:12px; margin:6px 0 4px; }
   .approw { display:flex; align-items:center; gap:10px; padding:5px 7px; border-radius:6px; font-size:12.5px; }
   .approw:hover { background:var(--surface-2); }
   .approw .an { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -221,6 +222,7 @@
   <button class="tabbtn" data-tab="system">System</button>
   <button class="tabbtn" data-tab="apps">Apps</button>
   <button class="tabbtn" data-tab="hardware">Hardware</button>
+  <button class="tabbtn" data-tab="software">Software</button>
   <span class="tabsep"></span>
   <button class="tabbtn" data-tab="shell">Shell</button>
   <button class="tabbtn" data-tab="screen">Screen</button>
@@ -365,6 +367,29 @@
       <div class="sect" style="margin-top:18px"><div class="h">Drivers</div></div>
       <div class="row"><button class="btn" id="hwDrvLoad">Load drivers</button><span class="lbl" id="hwDrvMsg" style="color:var(--ink-3)">slow — a few seconds</span></div>
       <div id="hwDrivers" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- SOFTWARE / config / diagnostics -->
+  <div class="tab" id="tab-software">
+    <div style="padding:14px 16px 60px;width:100%;max-width:1100px">
+      <div class="row"><button class="btn p" id="swRefresh">↻ Refresh</button><span class="lbl" id="swWhen" style="color:var(--ink-3)"></span></div>
+      <div class="sect" style="margin-top:12px"><div class="h">Installed programs <span class="count" id="swProgCount"></span></div></div>
+      <input class="swfilter" data-t="prog" placeholder="filter programs…"><div id="swProg"></div>
+      <div class="sect" style="margin-top:16px"><div class="h">Services <span class="count" id="swSvcCount"></span></div></div>
+      <input class="swfilter" data-t="svc" placeholder="filter services…"><div id="swSvc"></div>
+      <div class="sect" style="margin-top:16px"><div class="h">Startup items <span class="count" id="swStartCount"></span></div></div>
+      <div id="swStart"></div>
+      <div class="sect" style="margin-top:16px"><div class="h">Scheduled tasks <span class="count" id="swTaskCount"></span></div></div>
+      <input class="swfilter" data-t="task" placeholder="filter tasks…"><div id="swTask"></div>
+      <div class="sect" style="margin-top:16px"><div class="h">Network connections <span class="count" id="swConnCount"></span></div></div>
+      <input class="swfilter" data-t="conn" placeholder="filter by port / process / address…"><div id="swConn"></div>
+      <div class="sect" style="margin-top:16px"><div class="h">Recent errors <span class="count" id="swEvtCount"></span></div></div>
+      <div id="swEvt"></div>
+      <div class="sect" style="margin-top:16px"><div class="h">Printers · shares · disk health</div></div>
+      <div id="swMisc"></div>
+      <div class="sect" style="margin-top:16px"><div class="h">Environment variables <span class="count" id="swEnvCount"></span></div></div>
+      <input class="swfilter" data-t="env" placeholder="filter env…"><div id="swEnv"></div>
     </div>
   </div>
 
@@ -1130,6 +1155,17 @@ const loadSystem=guard(async()=>{
     let sh=""; d.sessions.forEach(s=>{ const who=s.user?((s.domain?s.domain+"\\":"")+s.user):"—"; const extra=[s.state,s.clientName&&("client "+s.clientName)].filter(Boolean).join(" · "); sh+=kv(`#${s.sessionId} ${s.station||""}${s.isCurrent?' <span style="color:var(--good)">●</span>':''}`, `${who} · ${extra}`); });
     card("Sessions (WTS)", sh);
   }
+  const yn=x=>x===true?'<span style="color:var(--good)">yes</span>':x===false?'<span style="color:var(--crit)">no</span>':'<span style="color:var(--ink-3)">unknown</span>';
+  try{ const pw=await api("/power");
+    card("Power", kv("Source",pw.acLine)+(pw.hasBattery?(kv("Battery",pw.batteryPercent!=null?pw.batteryPercent+"%":"—")+(pw.minutesRemaining?kv("Est. runtime",pw.minutesRemaining+" min"):"")+kv("Wear",pw.wearPercent!=null?pw.wearPercent+"%":"—")):kv("Battery","no battery"))+(pw.powerPlan?kv("Plan",pw.powerPlan):""));
+  }catch{}
+  try{ const sec=await api("/security");
+    card("Security", kv("Secure Boot",yn(sec.secureBootEnabled))+kv("TPM enabled",sec.tpm?yn(sec.tpm.enabled):yn(null))
+      +kv("BitLocker",(sec.bitLocker&&sec.bitLocker.length)?sec.bitLocker.map(v=>(v.drive||"")+" "+v.protectionStatus).join("; "):(sec.bitLockerNote||"—"))
+      +kv("Activated",yn(sec.windowsActivated))+kv("Defender RTP",sec.defender?yn(sec.defender.realTimeProtection):yn(null))
+      +kv("Pending reboot",sec.pendingReboot?('<span style="color:var(--warn)">yes</span> — '+(sec.rebootReasons||[]).join(", ")):yn(false)));
+  }catch{}
+  try{ const us=await api("/users"); let uh=""; us.forEach(u=>uh+=kv(u.name+(u.fullName&&u.fullName!==u.name?(" ("+u.fullName+")"):""), u.disabled?'<span style="color:var(--ink-3)">disabled</span>':'<span style="color:var(--good)">enabled</span>')); if(uh) card("Local users", uh); }catch{}
 });
 $("#sysRefresh").onclick=loadSystem;
 
@@ -1324,6 +1360,43 @@ $("#hwDrvLoad").onclick=guard(async()=>{
   drv.forEach(d=>c.append(hwKv(d.device, (d.provider||"")+" · v"+(d.version||"?")+" · "+(d.date||"")+" · "+(d.signed?"signed":"unsigned"))));
 });
 
+/* ---------- software / config / diagnostics ---------- */
+let swLoaded=false; const swData={};
+const SW={
+  prog:{el:"#swProg",cnt:"#swProgCount",row:p=>hwKv(p.name+(p.version?(" "+p.version):""),[p.publisher,p.installDate,p.scope].filter(Boolean).join(" · ")),m:p=>p.name+" "+(p.publisher||"")},
+  svc:{el:"#swSvc",cnt:"#swSvcCount",row:s=>hwKv(s.displayName||s.name,[s.state,s.startMode,s.account].filter(Boolean).join(" · ")),m:s=>s.name+" "+(s.displayName||"")+" "+(s.state||"")},
+  task:{el:"#swTask",cnt:"#swTaskCount",row:t=>hwKv(t.path,[t.state,t.nextRun&&("next "+t.nextRun)].filter(Boolean).join(" · ")),m:t=>t.path+" "+(t.state||"")},
+  conn:{el:"#swConn",cnt:"#swConnCount",row:c=>hwKv(c.protocol+" "+c.localAddress+(c.remoteAddress?(" → "+c.remoteAddress):""),c.state+" · "+(c.process||"?")+" ("+c.pid+")"),m:c=>c.localAddress+" "+(c.remoteAddress||"")+" "+(c.process||"")+" "+c.state},
+  env:{el:"#swEnv",cnt:"#swEnvCount",row:e=>hwKv(e.name+" ["+e.scope+"]",e.value),m:e=>e.name+" "+e.value},
+};
+function swRender(t){
+  const cfg=SW[t], items=swData[t]||[]; if(!cfg) return;
+  const q=(document.querySelector('.swfilter[data-t="'+t+'"]')?.value||"").toLowerCase();
+  const filtered=q?items.filter(x=>cfg.m(x).toLowerCase().includes(q)):items;
+  const el=$(cfg.el); el.innerHTML="";
+  filtered.slice(0,600).forEach(x=>el.append(cfg.row(x)));
+  if(filtered.length>600){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:11px;padding:4px 7px"; e.textContent="…"+(filtered.length-600)+" more (filter to narrow)"; el.append(e); }
+  $(cfg.cnt).textContent=q?(filtered.length+" / "+items.length):items.length;
+}
+const loadSoftware=guard(async()=>{
+  swLoaded=true; $("#swWhen").textContent="loading…";
+  const [prog,svc,start,task,conn,evt,printers,shares,disk,env]=await Promise.all([
+    api("/software/programs"),api("/software/services"),api("/software/startup"),api("/software/tasks"),
+    api("/net/connections"),api("/diagnostics/events?count=30"),api("/software/printers"),api("/software/shares"),
+    api("/diagnostics/disk-health"),api("/software/env")]);
+  Object.assign(swData,{prog,svc,task,conn,env});
+  ["prog","svc","task","conn","env"].forEach(swRender);
+  const st=$("#swStart"); st.innerHTML=""; start.forEach(s=>st.append(hwKv(s.name,[s.command,s.location].filter(Boolean).join("  ·  ")))); $("#swStartCount").textContent=start.length;
+  const ev=$("#swEvt"); ev.innerHTML=""; evt.forEach(e=>ev.append(hwKv(`[${e.log}] ${e.level} #${e.eventId} · ${e.source||""}`, (e.time||"")+(e.message?("  —  "+e.message):"")))); $("#swEvtCount").textContent=evt.length;
+  const mc=$("#swMisc"); mc.innerHTML="";
+  printers.forEach(p=>mc.append(hwKv("Printer: "+(p.name||""),[p.driver,p.port,p.default&&"default",p.status].filter(Boolean).join(" · "))));
+  shares.forEach(s=>mc.append(hwKv("Share: "+(s.name||""),[s.path,s.description].filter(Boolean).join(" · "))));
+  disk.forEach(d=>mc.append(hwKv("Disk: "+(d.model||""),"status "+(d.status||"?")+(d.predictFailure!=null?(" · SMART "+(d.predictFailure?"FAIL":"ok")):""))));
+  $("#swWhen").textContent="as of "+new Date().toLocaleTimeString();
+});
+document.querySelectorAll(".swfilter").forEach(f=>f.addEventListener("input",()=>{ if(swLoaded) swRender(f.dataset.t); }));
+$("#swRefresh").onclick=loadSoftware;
+
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
@@ -1336,6 +1409,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="connect"&&!connectLoaded) loadConnect();
   if(b.dataset.tab==="apps"&&!appsLoaded) loadApps();
   if(b.dataset.tab==="hardware"&&!hwLoaded) loadHardware();
+  if(b.dataset.tab==="software"&&!swLoaded) loadSoftware();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

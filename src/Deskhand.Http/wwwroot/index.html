@@ -135,7 +135,7 @@
   .pfilter { margin-bottom:8px; width:100%; }
 
   /* screen tab */
-  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect, #tab-apps { overflow:auto; }
+  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect, #tab-apps, #tab-hardware { overflow:auto; }
   .approw { display:flex; align-items:center; gap:10px; padding:5px 7px; border-radius:6px; font-size:12.5px; }
   .approw:hover { background:var(--surface-2); }
   .approw .an { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -220,6 +220,7 @@
   <span class="tabsep"></span>
   <button class="tabbtn" data-tab="system">System</button>
   <button class="tabbtn" data-tab="apps">Apps</button>
+  <button class="tabbtn" data-tab="hardware">Hardware</button>
   <span class="tabsep"></span>
   <button class="tabbtn" data-tab="shell">Shell</button>
   <button class="tabbtn" data-tab="screen">Screen</button>
@@ -338,6 +339,25 @@
       <div id="appsList" style="margin-top:8px"></div>
       <div class="sect" style="margin-top:22px"><div class="h">Virtual desktops <span class="count" id="deskCount"></span></div></div>
       <div id="deskList" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- HARDWARE / inventory -->
+  <div class="tab" id="tab-hardware">
+    <div style="padding:14px 16px 60px;width:100%;max-width:1100px">
+      <div class="row"><button class="btn p" id="hwRefresh">↻ Refresh</button><span class="lbl" id="hwWhen" style="color:var(--ink-3)"></span></div>
+      <div class="sect" style="margin-top:12px"><div class="h">Disks &amp; partitions <span class="count" id="hwDiskCount"></span></div></div>
+      <div id="hwDisks"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">Windows updates <span class="count" id="hwUpdCount"></span></div></div>
+      <div id="hwUpdates"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">Audio devices <span class="count" id="hwAudioCount"></span></div></div>
+      <div id="hwAudio"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">Devices</div></div>
+      <div class="row"><input id="hwDevClass" placeholder="class filter: Net · Display · Media · USB · System … (empty = all)" style="flex:1;font-family:var(--mono);font-size:12px"><button class="btn" id="hwDevLoad">Load</button></div>
+      <div id="hwDevices" style="margin-top:8px"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">Drivers</div></div>
+      <div class="row"><button class="btn" id="hwDrvLoad">Load drivers</button><span class="lbl" id="hwDrvMsg" style="color:var(--ink-3)">slow — a few seconds</span></div>
+      <div id="hwDrivers" style="margin-top:8px"></div>
     </div>
   </div>
 
@@ -1242,6 +1262,38 @@ const loadApps=guard(async()=>{ appsData=await api("/apps"); appsLoaded=true; re
 $("#appsFilter").addEventListener("input",()=>{ if(appsLoaded) renderApps(); });
 $("#appsRefresh").onclick=loadApps;
 
+/* ---------- hardware / inventory (WMI) ---------- */
+let hwLoaded=false;
+const hwKv=(k,v)=>{ const r=elm("div","syskv"); r.innerHTML=`<span class="k">${k}</span><span class="v">${v==null||v===""?"—":v}</span>`; return r; };
+const loadHardware=guard(async()=>{
+  hwLoaded=true; $("#hwWhen").textContent="as of "+new Date().toLocaleTimeString();
+  const disks=await api("/hardware/disks"); $("#hwDiskCount").textContent=disks.length;
+  const dc=$("#hwDisks"); dc.innerHTML="";
+  disks.forEach(d=>{
+    const card=elm("div","syscard"); card.style.marginBottom="10px";
+    let h=`<div style="font-family:var(--mono);font-size:12.5px;margin-bottom:6px">Disk ${d.index}: <b>${d.model||"?"}</b> · ${fmtSize(d.sizeBytes)} · ${d.interfaceType||""} · ${d.mediaType||""}${d.serial?(" · SN "+d.serial):""}</div>`;
+    (d.partitionList||[]).forEach(p=>{ const vols=(p.volumes||[]).map(v=>`${v.driveLetter||""} ${v.label||""} ${v.fileSystem||""}${v.sizeBytes?(" · "+fmtSize(v.freeBytes)+" free / "+fmtSize(v.sizeBytes)):""}`).join("; ")||"(no volume)"; h+=`<div class="syskv"><span class="k">${p.type||"partition"} · ${fmtSize(p.sizeBytes)}</span><span class="v">${vols}</span></div>`; });
+    card.innerHTML=h; dc.append(card);
+  });
+  const ups=await api("/hardware/updates"); $("#hwUpdCount").textContent=ups.length;
+  const uc=$("#hwUpdates"); uc.innerHTML=""; ups.forEach(u=>uc.append(hwKv((u.hotFixId||"")+" · "+(u.description||""), u.installedOn)));
+  const au=await api("/hardware/audio"); $("#hwAudioCount").textContent=au.length;
+  const ac=$("#hwAudio"); ac.innerHTML=""; au.forEach(a=>ac.append(hwKv(a.name, (a.manufacturer||"")+" · "+(a.status||""))));
+});
+$("#hwRefresh").onclick=loadHardware;
+$("#hwDevLoad").onclick=guard(async()=>{
+  const cls=$("#hwDevClass").value.trim();
+  const devs=await api("/hardware/devices"+(cls?("?class="+encodeURIComponent(cls)):""));
+  const c=$("#hwDevices"); c.innerHTML=`<div class="lbl" style="color:var(--ink-3);margin-bottom:6px">${devs.length} devices</div>`;
+  devs.forEach(d=>c.append(hwKv((d.class||"—")+" · "+(d.name||""), (d.manufacturer||"")+" · "+(d.status||""))));
+});
+$("#hwDrvLoad").onclick=guard(async()=>{
+  $("#hwDrvMsg").textContent="loading (a few seconds)…";
+  const drv=await api("/hardware/drivers"); $("#hwDrvMsg").textContent=drv.length+" drivers";
+  const c=$("#hwDrivers"); c.innerHTML="";
+  drv.forEach(d=>c.append(hwKv(d.device, (d.provider||"")+" · v"+(d.version||"?")+" · "+(d.date||"")+" · "+(d.signed?"signed":"unsigned"))));
+});
+
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
@@ -1253,6 +1305,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="system"&&!sysLoaded) loadSystem();
   if(b.dataset.tab==="connect"&&!connectLoaded) loadConnect();
   if(b.dataset.tab==="apps"&&!appsLoaded) loadApps();
+  if(b.dataset.tab==="hardware"&&!hwLoaded) loadHardware();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

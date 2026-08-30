@@ -81,7 +81,7 @@ horizontally on narrow widths (hidden scrollbar) instead of wrapping.
 **Tab model.** `.tabwrap` is `position:relative`; each `.tab` is `position:absolute; inset:0; display:none`,
 and `.tab.active` becomes visible. Crucially, **the visible display mode is opt-in per tab**: the base rule
 is `display:block`, but `#tab-explorer.active, #tab-processes.active` override to a two-column
-`display:grid` (`minmax(340px,40%) 1fr`), and `#tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect, #tab-apps` are `overflow:auto` single panes.
+`display:grid` (`minmax(340px,40%) 1fr`), and `#tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect, #tab-apps, #tab-hardware` are `overflow:auto` single panes.
 Forgetting to add a tab to the grid rule was a real bug (a two-pane tab with no grid shows no right pane).
 Under 900px the grid collapses to stacked rows. Tab switching (JS) toggles `.active` on both the clicked
 `.tabbtn` and its `#tab-…`, writes the URL hash, and lazy-loads that tab's data the first time.
@@ -166,6 +166,13 @@ Two sections. **Start Menu apps**: `loadApps` fetches `/apps` (once) into `appsD
 desktops**: `loadDesktops` fetches `/desktops` and lists each desktop (current flagged green) with its windows;
 a non-current window gets a **→ bring here** button (`/desktops/move-window {hwnd}`, armed-gated). Process
 **dumps** are not here — they live on the Processes tab (the process detail's "⤓ Full memory dump" button).
+
+### Hardware — inventory (WMI)
+`loadHardware` (on first open) pulls the fast queries — **disks** (`/hardware/disks`, rendered as a `.syscard`
+per physical disk with a `.syskv` row per partition→volume), **Windows updates** (`/hardware/updates`, KB +
+date), and **audio** (`/hardware/audio`). The slow/large ones are **on demand**: **Devices** has a class-filter
+input + **Load** (`/hardware/devices?class=`), and **Drivers** is behind a **Load drivers** button
+(`/hardware/drivers`, a few seconds). All read-only.
 
 ### Connect — MCP client setup
 A copy-paste helper for pointing an MCP client at this server. Shows the **endpoint** (`location.origin + /mcp`)

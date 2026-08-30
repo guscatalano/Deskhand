@@ -71,11 +71,13 @@ public sealed class LocalAutomationBackend : IAutomationBackend
         if (waitForWindowMs > 0)
             try { foreach (var w in _sta.Invoke(() => _uia.GetTopLevelWindows())) before.Add(w.NativeWindowHandle); } catch { }
 
-        var proc = System.Diagnostics.Process.Start(psi)
-                   ?? throw new ArgumentException($"Could not start '{path}' (the shell handled it without a new process).");
+        // Bad paths throw here (Win32Exception "file not found" etc.) — a real error, surfaced as-is. A NULL
+        // return is NOT an error: the shell reused an existing process (a URL opened in an already-running
+        // browser, a document opened in a running app). We keep going and still try to catch a new window.
+        var proc = System.Diagnostics.Process.Start(psi);
 
         int pid = -1; string name = "";
-        try { pid = proc.Id; name = proc.ProcessName; } catch { }
+        if (proc is not null) { try { pid = proc.Id; name = proc.ProcessName; } catch { } }
 
         ElementInfoDto? window = null;
         IntPtr hwnd = IntPtr.Zero;
@@ -85,7 +87,7 @@ public sealed class LocalAutomationBackend : IAutomationBackend
             while (sw.ElapsedMilliseconds < waitForWindowMs)
             {
                 // 1) the launched process's own main window
-                try { proc.Refresh(); if (!proc.HasExited) { hwnd = proc.MainWindowHandle; if (hwnd != IntPtr.Zero) break; } } catch { }
+                try { if (proc is not null) { proc.Refresh(); if (!proc.HasExited) { hwnd = proc.MainWindowHandle; if (hwnd != IntPtr.Zero) break; } } } catch { }
                 // 2) a NEW top-level window that appeared since launch, owned by the launched pid OR by a
                 //    process whose name relates to the launched exe (the Store-app handoff).
                 try

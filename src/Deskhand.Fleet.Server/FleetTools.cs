@@ -122,7 +122,7 @@ public static class FleetTools
     public static string AgentKeys(AgentRegistry r, FleetAudit audit, string agentId, string chord) { A(r, audit, agentId, $"keys {chord}").SendKeys(chord); return "ok"; }
 
     [McpServerTool(Name = "deskhand_agent_launch"), Description("Launch a program on a fleet PC; returns its window if it appears.")]
-    public static string AgentLaunch(AgentRegistry r, FleetAudit audit, string agentId, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 4000)
+    public static string AgentLaunch(AgentRegistry r, FleetAudit audit, string agentId, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 10000)
         => Json(A(r, audit, agentId, $"launch {path}").LaunchProcess(path, args, workingDir, waitForWindowMs));
 
     // ---------- fleet observation: events, hooks, recording, user-input ----------

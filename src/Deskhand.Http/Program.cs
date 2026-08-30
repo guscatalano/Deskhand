@@ -462,7 +462,7 @@ api.MapPost("/desktops/move-window", (ControlState st, MoveWindowRequest r) =>
 api.MapGet("/dumps/{name}", (Deskhand.Core.Services.ProcessDumper d, string name) =>
     Results.File(d.PathFor(name), "application/octet-stream", name));
 api.MapPost("/process/launch", (IAutomationBackend b, LaunchRequest r) =>
-    Results.Ok(b.LaunchProcess(r.Path, r.Args, r.WorkingDir, r.WaitForWindowMs ?? 4000)));
+    Results.Ok(b.LaunchProcess(r.Path, r.Args, r.WorkingDir, r.WaitForWindowMs ?? 10000)));
 
 // ---- uia read ----
 api.MapPost("/uia/tree", (IAutomationBackend b, TreeRequest r) =>

@@ -37,6 +37,14 @@ public static class DeskhandTools
         catch (Exception ex) { return Json(new { error = ex.Message, type = ex.GetType().Name }); }
     }
 
+    // Turn a thrown exception into its real message instead of the MCP SDK's generic
+    // "An error occurred invoking '<tool>'." — e.g. a bad launch path ("file not found").
+    private static string Try(Func<string> op)
+    {
+        try { return op(); }
+        catch (Exception ex) { return Json(new { error = ex.Message, type = ex.GetType().Name }); }
+    }
+
     private static ImageFormat Fmt(string? f) =>
         f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
 
@@ -210,8 +218,8 @@ public static class DeskhandTools
     }
 
     [McpServerTool(Name = "deskhand_launch_process"), Description("Launch a program by path or shell name/URL (e.g. \"notepad\", \"C:\\\\app.exe\", \"https://...\"). Waits up to waitForWindowMs for its main window and returns it if it appears.")]
-    public static string LaunchProcess(IAutomationBackend b, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 4000)
-        => Json(b.LaunchProcess(path, args, workingDir, waitForWindowMs));
+    public static string LaunchProcess(IAutomationBackend b, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 10000)
+        => Try(() => Json(b.LaunchProcess(path, args, workingDir, waitForWindowMs)));
 
     // ---------- governance ----------
 

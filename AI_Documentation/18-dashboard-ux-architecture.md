@@ -67,11 +67,16 @@ input get a `.act` modifier (an orange square marker in their header).
 `<body>` is a vertical flexbox: a fixed **`.topbar`** on top, a flex-1 **`.tabwrap`** filling the rest, then
 fixed-position overlays (`#logdrawer`, `#toast`) that float above everything.
 
-**Topbar** (left→right): the brand (a `.dot` that turns green — class `live` — once the first API call
-succeeds) · a machine/user `stat` · a "desktop" `stat` with a state `.pill` · a monitor-count `stat` · a
-`.spacer` (flex:1 pushes the rest right) · the **`.tabs`** group (Explorer / Processes / Files / Registry / Shell / System / Apps / Connect / Screen &
-Input) · a cross-link to the Fleet dashboard (`:8799`) · the **arm** ghost button (kill switch) · **Log** ·
-**Theme**.
+**Topbar** (row 1 — identity + global actions): the brand (a `.dot` that turns green — class `live` — once
+the first API call succeeds) · a machine/user `stat` · a "desktop" `stat` with a state `.pill` · a
+monitor-count `stat` · a `.spacer` · a cross-link to the Fleet dashboard (`:8799`) · the **arm** ghost button
+(kill switch) · **Log** · **Theme**. The tabs used to live here too, which made the bar busy; they now sit on
+their own strip.
+
+**Tab strip** (`.tabbar`, row 2): the tabs as underline-style buttons (`.tabbtn`, active = accent
+`border-bottom`), grouped by `.tabsep` dividers — **Explorer · Processes · Files · Registry** ¦ **System ·
+Apps** ¦ **Shell · Screen** — with a `.spacer` pushing **Connect** to the right. The strip scrolls
+horizontally on narrow widths (hidden scrollbar) instead of wrapping.
 
 **Tab model.** `.tabwrap` is `position:relative`; each `.tab` is `position:absolute; inset:0; display:none`,
 and `.tab.active` becomes visible. Crucially, **the visible display mode is opt-in per tab**: the base rule
@@ -164,11 +169,14 @@ a non-current window gets a **→ bring here** button (`/desktops/move-window {h
 
 ### Connect — MCP client setup
 A copy-paste helper for pointing an MCP client at this server. Shows the **endpoint** (`location.origin + /mcp`)
-with a Copy button, a **client `<select>`** (Claude Code CLI, Claude Desktop, Cursor, VS Code, opencode, stdio
-`deskhand-mcp.exe`, generic HTTP JSON), and a `#mcpSnippet` `<pre>` rendered by `mcpConfig(client)` with a
-per-client hint + **Copy config**. Front-end only except it fetches `/health` for `requiresToken` (the server
-reports the boolean, never the token); when true, the snippets include an `Authorization: Bearer <YOUR_TOKEN>`
-header/line and the note tells the user to substitute it. Copy uses `navigator.clipboard`.
+with Copy, an optional **token** row, a **client `<select>`** (Claude Code CLI, Claude Desktop, Cursor, VS
+Code, opencode, **Hermes Agent** `config.yaml`, stdio `deskhand-mcp.exe`, generic HTTP JSON), and a
+`#mcpSnippet` `<pre>` rendered by `mcpConfig(client)` (+ per-client hint + **Copy config**). It fetches
+`/health` for `requiresToken` and `/token` for the **actual token** — `/token` is a normal (middleware-gated)
+route, so it returns the value only to the trusted same-origin dashboard or an authenticated caller, never
+publicly (unlike `/health`, which reports just the boolean). When a token is present it's shown in the token
+row and **baked into every snippet** (`tk()` substitutes it for the `<YOUR_TOKEN>` placeholder); the `?token=`
+value the page was opened with is the fallback. Copy uses `navigator.clipboard`.
 
 ### System — about this machine
 A responsive card grid (`.sysgrid` of `.syscard`) fetched once from `/system`: **OS** (name, edition,

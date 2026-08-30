@@ -60,10 +60,12 @@
   .pill.default { color:var(--good); background:var(--good-soft); }
   .pill.secure,.pill.locked { color:var(--crit); background:var(--crit-soft); }
   .pill.unknown { color:var(--warn); background:var(--warn-soft); }
-  .tabs { display:flex; gap:4px; }
-  .tabbtn { font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); background:transparent; border:1px solid transparent; padding:6px 12px; border-radius:7px; cursor:pointer; }
+  .tabbar { flex:none; display:flex; align-items:center; gap:1px; padding:3px 12px 0; border-bottom:1px solid var(--line); background:var(--surface); overflow-x:auto; }
+  .tabbar::-webkit-scrollbar { height:0; }
+  .tabsep { width:1px; height:15px; background:var(--line); margin:0 9px; flex:none; }
+  .tabbtn { font-family:var(--mono); font-size:11.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3); background:transparent; border:none; border-bottom:2px solid transparent; padding:8px 11px; margin-bottom:-1px; border-radius:0; cursor:pointer; white-space:nowrap; transition:color .12s; }
   .tabbtn:hover { color:var(--ink); }
-  .tabbtn.active { color:var(--ink); background:var(--surface-2); border-color:var(--line); }
+  .tabbtn.active { color:var(--ink); border-bottom-color:var(--accent); }
   .ghost { color:var(--ink-2); background:var(--surface); border:1px solid var(--line); padding:6px 10px; border-radius:7px; cursor:pointer; font-family:var(--mono); font-size:11px; }
   .ghost:hover { border-color:var(--accent); color:var(--ink); }
 
@@ -205,22 +207,25 @@
   <span class="stat">desktop <span class="pill unknown" id="statDesktop">?</span></span>
   <span class="stat" id="statMon"></span>
   <span class="spacer"></span>
-  <div class="tabs">
-    <button class="tabbtn active" data-tab="explorer">Explorer</button>
-    <button class="tabbtn" data-tab="processes">Processes</button>
-    <button class="tabbtn" data-tab="files">Files</button>
-    <button class="tabbtn" data-tab="registry">Registry</button>
-    <button class="tabbtn" data-tab="shell">Shell</button>
-    <button class="tabbtn" data-tab="system">System</button>
-    <button class="tabbtn" data-tab="apps">Apps</button>
-    <button class="tabbtn" data-tab="connect">Connect</button>
-    <button class="tabbtn" data-tab="screen">Screen &amp; Input</button>
-  </div>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8799/" target="_blank" title="Fleet dashboard — other PCs">⛶ Fleet</a>
   <button class="ghost" id="armBtn" title="Toggle kill switch (Ctrl+Alt+Pause)">● armed</button>
   <button class="ghost" id="logBtn">Log</button>
   <button class="ghost" id="themeBtn">Theme</button>
 </div>
+<nav class="tabbar">
+  <button class="tabbtn active" data-tab="explorer">Explorer</button>
+  <button class="tabbtn" data-tab="processes">Processes</button>
+  <button class="tabbtn" data-tab="files">Files</button>
+  <button class="tabbtn" data-tab="registry">Registry</button>
+  <span class="tabsep"></span>
+  <button class="tabbtn" data-tab="system">System</button>
+  <button class="tabbtn" data-tab="apps">Apps</button>
+  <span class="tabsep"></span>
+  <button class="tabbtn" data-tab="shell">Shell</button>
+  <button class="tabbtn" data-tab="screen">Screen</button>
+  <span class="spacer"></span>
+  <button class="tabbtn" data-tab="connect">Connect</button>
+</nav>
 
 <div class="tabwrap">
   <!-- EXPLORER -->
@@ -344,6 +349,11 @@
         <input type="text" id="mcpUrl" readonly style="flex:1;font-family:var(--mono);font-size:12.5px">
         <button class="btn" id="mcpUrlCopy">Copy</button>
       </div>
+      <div class="row" id="mcpTokenRow" style="margin-top:8px;display:none">
+        <span class="lbl" style="color:var(--ink-3);align-self:center">token</span>
+        <input type="text" id="mcpTokenVal" readonly style="flex:1;font-family:var(--mono);font-size:12.5px">
+        <button class="btn" id="mcpTokenCopy">Copy</button>
+      </div>
       <div class="lbl" id="mcpTokenNote" style="color:var(--ink-3);margin-top:7px"></div>
       <div class="sect" style="margin-top:20px"><div class="h">Configure a client</div></div>
       <div class="row" style="margin-top:8px">
@@ -353,6 +363,7 @@
           <option value="cursor">Cursor</option>
           <option value="vscode">VS Code</option>
           <option value="opencode">opencode</option>
+          <option value="hermes">Hermes Agent (config.yaml)</option>
           <option value="stdio">Stdio (deskhand-mcp.exe)</option>
           <option value="generic">Generic HTTP JSON</option>
         </select>
@@ -1092,14 +1103,14 @@ const loadSystem=guard(async()=>{
 $("#sysRefresh").onclick=loadSystem;
 
 /* ---------- connect (MCP client setup) ---------- */
-let connectLoaded=false, mcpNeedsToken=false;
+let connectLoaded=false, mcpNeedsToken=false, mcpToken=null;
+function tk(){ return mcpToken || "<YOUR_TOKEN>"; }   // real token when known, else a placeholder
 function mcpConfig(client){
-  const url=location.origin+"/mcp";
-  const tok=mcpNeedsToken;
-  const hdr=tok?',\n        "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }':'';
+  const url=location.origin+"/mcp", tok=mcpNeedsToken, T=tk();
+  const hdr=tok?`,\n        "headers": { "Authorization": "Bearer ${T}" }`:'';
   switch(client){
     case "claude-code":
-      return { code:"claude mcp add --transport http deskhand "+url+(tok?' \\\n  --header "Authorization: Bearer <YOUR_TOKEN>"':""),
+      return { code:"claude mcp add --transport http deskhand "+url+(tok?` \\\n  --header "Authorization: Bearer ${T}"`:""),
                hint:"Run in a terminal where Claude Code is installed. Keep deskhand-http running." };
     case "claude-desktop":
       return { code:`{
@@ -1134,10 +1145,15 @@ function mcpConfig(client){
     "deskhand": {
       "type": "remote",
       "url": "${url}",
-      "enabled": true${tok?',\n      "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }':''}
+      "enabled": true${tok?`,\n      "headers": { "Authorization": "Bearer ${T}" }`:''}
     }
   }
 }`, hint:"Merge into your opencode.json." };
+    case "hermes":
+      return { code:`mcp_servers:
+  deskhand:
+    url: "${url}"${tok?`\n    headers:\n      Authorization: "Bearer ${T}"`:''}
+    timeout: 180`, hint:"Add under mcp_servers in ~/.hermes/config.yaml (Hermes Agent, HTTP transport)." };
     case "stdio":
       return { code:`{
   "mcpServers": {
@@ -1167,15 +1183,24 @@ const loadConnect=guard(async()=>{
   connectLoaded=true;
   let h={}; try{ h=await api("/health"); }catch{}
   mcpNeedsToken=!!h.requiresToken;
+  // The real token (only returned to a trusted same-origin / authenticated caller). Prefer it; fall back to
+  // the token this page was opened with (?token=) when the server won't hand it back.
+  mcpToken=null; try{ const t=await api("/token"); mcpToken=t.token||null; }catch{}
+  if(!mcpToken && AUTH_TOKEN) mcpToken=AUTH_TOKEN;
   $("#mcpUrl").value=location.origin+"/mcp";
-  $("#mcpTokenNote").innerHTML = mcpNeedsToken
-    ? 'This server requires a token (DESKHAND_TOKEN). Replace <b>&lt;YOUR_TOKEN&gt;</b> in the config with it.'
-    : 'No token required (loopback). If you expose the port, set DESKHAND_TOKEN and add the Authorization header.';
+  const row=$("#mcpTokenRow");
+  if(mcpToken){ row.style.display=""; $("#mcpTokenVal").value=mcpToken; }
+  else row.style.display="none";
+  $("#mcpTokenNote").innerHTML = !mcpNeedsToken
+    ? 'No token required (loopback). If you expose the port, set DESKHAND_TOKEN and re-open this page.'
+    : (mcpToken ? 'This server requires a token — it is shown above and already baked into the config below.'
+                : 'This server requires a token (DESKHAND_TOKEN). Replace <b>&lt;YOUR_TOKEN&gt;</b> below with it.');
   renderMcp();
 });
 $("#mcpClient").onchange=renderMcp;
 $("#mcpCopy").onclick=()=>copyText($("#mcpSnippet").textContent,"config copied");
 $("#mcpUrlCopy").onclick=()=>copyText($("#mcpUrl").value,"URL copied");
+$("#mcpTokenCopy").onclick=()=>copyText($("#mcpTokenVal").value,"token copied");
 
 /* ---------- apps (Start Menu) + virtual desktops ---------- */
 let appsData=[], appsLoaded=false;

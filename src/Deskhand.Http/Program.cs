@@ -326,6 +326,11 @@ api.MapPost("/process/dump", (Deskhand.Core.Services.ProcessDumper d, ControlSta
 });
 api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.List()));
 
+// The access token, for the dashboard's Connect page to show + bake into client configs. This route goes
+// through the auth middleware, so it only returns the token to a trusted same-origin loopback browser or a
+// caller that already presents it — it is NOT public like /health (which reports only the boolean).
+api.MapGet("/token", () => Results.Ok(new { token }));
+
 // About this machine (read-only): Windows version/buildlab, uptime, CPU, memory, disks, network, firewall.
 api.MapGet("/system", () => Results.Ok(Deskhand.Core.Services.SystemInfoService.Get()));
 

@@ -133,7 +133,7 @@
   .pfilter { margin-bottom:8px; width:100%; }
 
   /* screen tab */
-  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system { overflow:auto; }
+  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect { overflow:auto; }
   .sysgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; margin-top:12px; align-items:start; }
   .syscard { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:13px 15px; }
   .syscard h4 { margin:0 0 9px; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
@@ -208,6 +208,7 @@
     <button class="tabbtn" data-tab="registry">Registry</button>
     <button class="tabbtn" data-tab="shell">Shell</button>
     <button class="tabbtn" data-tab="system">System</button>
+    <button class="tabbtn" data-tab="connect">Connect</button>
     <button class="tabbtn" data-tab="screen">Screen &amp; Input</button>
   </div>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8799/" target="_blank" title="Fleet dashboard — other PCs">⛶ Fleet</a>
@@ -313,6 +314,34 @@
       <div class="lbl" style="margin-top:6px;color:var(--ink-3)">Runs one command in a fresh process (state doesn't persist). Off unless the server has <b>DESKHAND_ENABLE_SHELL=1</b>; requires <b>armed</b>; audited.</div>
       <div class="coordbar" id="shMeta" style="margin:12px 0 6px"></div>
       <pre id="shOut" style="background:var(--surface-3);border:1px solid var(--line);border-radius:8px;padding:11px 13px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:52vh;overflow:auto;margin:0"></pre>
+    </div>
+  </div>
+
+  <!-- CONNECT (MCP client setup) -->
+  <div class="tab" id="tab-connect">
+    <div style="padding:14px 16px 60px;max-width:900px;width:100%">
+      <div class="sect"><div class="h">MCP endpoint</div></div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="mcpUrl" readonly style="flex:1;font-family:var(--mono);font-size:12.5px">
+        <button class="btn" id="mcpUrlCopy">Copy</button>
+      </div>
+      <div class="lbl" id="mcpTokenNote" style="color:var(--ink-3);margin-top:7px"></div>
+      <div class="sect" style="margin-top:20px"><div class="h">Configure a client</div></div>
+      <div class="row" style="margin-top:8px">
+        <select id="mcpClient" style="max-width:260px">
+          <option value="claude-code">Claude Code (CLI)</option>
+          <option value="claude-desktop">Claude Desktop (mcp.json)</option>
+          <option value="cursor">Cursor</option>
+          <option value="vscode">VS Code</option>
+          <option value="opencode">opencode</option>
+          <option value="stdio">Stdio (deskhand-mcp.exe)</option>
+          <option value="generic">Generic HTTP JSON</option>
+        </select>
+        <span style="flex:1"></span>
+        <button class="btn p" id="mcpCopy">Copy config</button>
+      </div>
+      <pre id="mcpSnippet" style="background:var(--surface-3);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;margin:10px 0 0;overflow:auto"></pre>
+      <div class="lbl" id="mcpHint" style="color:var(--ink-3);margin-top:9px;line-height:1.5"></div>
     </div>
   </div>
 
@@ -1043,6 +1072,92 @@ const loadSystem=guard(async()=>{
 });
 $("#sysRefresh").onclick=loadSystem;
 
+/* ---------- connect (MCP client setup) ---------- */
+let connectLoaded=false, mcpNeedsToken=false;
+function mcpConfig(client){
+  const url=location.origin+"/mcp";
+  const tok=mcpNeedsToken;
+  const hdr=tok?',\n        "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }':'';
+  switch(client){
+    case "claude-code":
+      return { code:"claude mcp add --transport http deskhand "+url+(tok?' \\\n  --header "Authorization: Bearer <YOUR_TOKEN>"':""),
+               hint:"Run in a terminal where Claude Code is installed. Keep deskhand-http running." };
+    case "claude-desktop":
+      return { code:`{
+  "mcpServers": {
+    "deskhand": {
+      "type": "http",
+      "url": "${url}"${hdr}
+    }
+  }
+}`, hint:"Merge into your claude_desktop_config.json, then restart Claude Desktop." };
+    case "cursor":
+      return { code:`{
+  "mcpServers": {
+    "deskhand": {
+      "url": "${url}"${hdr}
+    }
+  }
+}`, hint:"Save as ~/.cursor/mcp.json (global) or .cursor/mcp.json (per-project)." };
+    case "vscode":
+      return { code:`{
+  "servers": {
+    "deskhand": {
+      "type": "http",
+      "url": "${url}"${hdr}
+    }
+  }
+}`, hint:"Save as .vscode/mcp.json in your workspace (VS Code MCP support)." };
+    case "opencode":
+      return { code:`{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "deskhand": {
+      "type": "remote",
+      "url": "${url}",
+      "enabled": true${tok?',\n      "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }':''}
+    }
+  }
+}`, hint:"Merge into your opencode.json." };
+    case "stdio":
+      return { code:`{
+  "mcpServers": {
+    "deskhand": {
+      "command": "C:\\\\path\\\\to\\\\deskhand-mcp.exe"
+    }
+  }
+}`, hint:"The stdio host is a separate local process — it does NOT use the URL or a token. Point command at your built deskhand-mcp.exe." };
+    default:
+      return { code:`{
+  "mcpServers": {
+    "deskhand": { "type": "http", "url": "${url}"${hdr} }
+  }
+}`, hint:"Most HTTP-MCP clients accept this shape — the URL is the important part." };
+  }
+}
+function renderMcp(){
+  const c=mcpConfig($("#mcpClient").value);
+  $("#mcpSnippet").textContent=c.code;
+  $("#mcpHint").textContent=c.hint;
+}
+async function copyText(text,label){
+  try{ await navigator.clipboard.writeText(text); toast((label||"copied")+" ✓"); }
+  catch{ toast("copy failed — select manually",true); }
+}
+const loadConnect=guard(async()=>{
+  connectLoaded=true;
+  let h={}; try{ h=await api("/health"); }catch{}
+  mcpNeedsToken=!!h.requiresToken;
+  $("#mcpUrl").value=location.origin+"/mcp";
+  $("#mcpTokenNote").innerHTML = mcpNeedsToken
+    ? 'This server requires a token (DESKHAND_TOKEN). Replace <b>&lt;YOUR_TOKEN&gt;</b> in the config with it.'
+    : 'No token required (loopback). If you expose the port, set DESKHAND_TOKEN and add the Authorization header.';
+  renderMcp();
+});
+$("#mcpClient").onchange=renderMcp;
+$("#mcpCopy").onclick=()=>copyText($("#mcpSnippet").textContent,"config copied");
+$("#mcpUrlCopy").onclick=()=>copyText($("#mcpUrl").value,"URL copied");
+
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
@@ -1052,6 +1167,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="registry"&&!regLoaded&&!location.hash.startsWith("#registry/")) loadRegistry("");
   if(b.dataset.tab==="files"&&!fsLoaded&&!location.hash.startsWith("#files/")) loadFiles("");
   if(b.dataset.tab==="system"&&!sysLoaded) loadSystem();
+  if(b.dataset.tab==="connect"&&!connectLoaded) loadConnect();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

@@ -69,14 +69,14 @@ fixed-position overlays (`#logdrawer`, `#toast`) that float above everything.
 
 **Topbar** (left→right): the brand (a `.dot` that turns green — class `live` — once the first API call
 succeeds) · a machine/user `stat` · a "desktop" `stat` with a state `.pill` · a monitor-count `stat` · a
-`.spacer` (flex:1 pushes the rest right) · the **`.tabs`** group (Explorer / Processes / Files / Registry / Shell / System / Screen &
+`.spacer` (flex:1 pushes the rest right) · the **`.tabs`** group (Explorer / Processes / Files / Registry / Shell / System / Connect / Screen &
 Input) · a cross-link to the Fleet dashboard (`:8799`) · the **arm** ghost button (kill switch) · **Log** ·
 **Theme**.
 
 **Tab model.** `.tabwrap` is `position:relative`; each `.tab` is `position:absolute; inset:0; display:none`,
 and `.tab.active` becomes visible. Crucially, **the visible display mode is opt-in per tab**: the base rule
 is `display:block`, but `#tab-explorer.active, #tab-processes.active` override to a two-column
-`display:grid` (`minmax(340px,40%) 1fr`), and `#tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system` are `overflow:auto` single panes.
+`display:grid` (`minmax(340px,40%) 1fr`), and `#tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect` are `overflow:auto` single panes.
 Forgetting to add a tab to the grid rule was a real bug (a two-pane tab with no grid shows no right pane).
 Under 900px the grid collapses to stacked rows. Tab switching (JS) toggles `.active` on both the clicked
 `.tabbtn` and its `#tab-…`, writes the URL hash, and lazy-loads that tab's data the first time.
@@ -154,6 +154,14 @@ runs), a muted hint that it needs `DESKHAND_ENABLE_SHELL` + armed, a `#shMeta` s
 `<pre>` output. `runShell()` POSTs `/shell/run {shell,command,cwd}`; on success it prints exit code (green/red)
 + duration into `#shMeta` and stdout then stderr (red) into `#shOut`; a `403` (shell disabled / disarmed)
 renders its message in `#shMeta`. No persisted state — each run is a fresh process.
+
+### Connect — MCP client setup
+A copy-paste helper for pointing an MCP client at this server. Shows the **endpoint** (`location.origin + /mcp`)
+with a Copy button, a **client `<select>`** (Claude Code CLI, Claude Desktop, Cursor, VS Code, opencode, stdio
+`deskhand-mcp.exe`, generic HTTP JSON), and a `#mcpSnippet` `<pre>` rendered by `mcpConfig(client)` with a
+per-client hint + **Copy config**. Front-end only except it fetches `/health` for `requiresToken` (the server
+reports the boolean, never the token); when true, the snippets include an `Authorization: Bearer <YOUR_TOKEN>`
+header/line and the note tells the user to substitute it. Copy uses `navigator.clipboard`.
 
 ### System — about this machine
 A responsive card grid (`.sysgrid` of `.syscard`) fetched once from `/system`: **OS** (name, edition,

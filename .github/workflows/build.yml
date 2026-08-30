@@ -67,7 +67,20 @@ jobs:
       - name: Build MSIX (self-signed dev cert)
         run: pwsh installer/build-msix.ps1 -Config Release
 
-      - name: Upload installers
+      - name: Publish self-contained zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Self-contained so the target needs no .NET installed. Folder publish with deskhand-http.exe +
+          # wwwroot + runtime; zipped with the exe at the ROOT (what database/provision install-deskhand.ps1
+          # expects: it Expand-Archive's deskhand.zip to C:\Deskhand and runs deskhand-http.exe there).
+          dotnet publish src/Deskhand.Http -c Release -r win-x64 --self-contained true -o publish/http --nologo
+          if (-not (Test-Path publish/http/deskhand-http.exe)) { throw 'publish missing deskhand-http.exe' }
+          New-Item -ItemType Directory -Force installer/out | Out-Null
+          Compress-Archive -Path publish/http/* -DestinationPath installer/out/deskhand.zip -Force
+          Write-Host "deskhand.zip -> $([int]((Get-Item installer/out/deskhand.zip).Length/1MB)) MB (self-contained)"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: deskhand-installers
@@ -75,6 +88,7 @@ jobs:
             installer/out/Deskhand.msi
             installer/out/Deskhand.msix
             installer/out/DeskhandDev.cer
+            installer/out/deskhand.zip
           if-no-files-found: error
 
   release:
@@ -95,3 +109,4 @@ jobs:
             dist/Deskhand.msi
             dist/Deskhand.msix
             dist/DeskhandDev.cer
+            dist/deskhand.zip

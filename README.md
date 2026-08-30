@@ -70,6 +70,10 @@ No bearer token is required for the browser dashboard. The server is protected b
   web pages in your browser cannot reach it. No CORS headers are emitted.
 - **Optional token** — set `DESKHAND_TOKEN` to require `Authorization: Bearer <token>` from
   *non-browser* clients (curl / scripts). On loopback the same-origin dashboard still needs none.
+- **Shell is opt-in** — the command runner (`/shell/run`, `deskhand_run_command`, the dashboard **Shell**
+  tab) is **disabled unless you start the server with `DESKHAND_ENABLE_SHELL=1`**, and even then requires
+  the kill switch to be *armed* and audits every command. Off by default because it runs arbitrary code as
+  the current user.
 
 ### Opening the port to the network (`DESKHAND_BIND`)
 

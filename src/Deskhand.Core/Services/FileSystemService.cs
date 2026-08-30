@@ -1,3 +1,5 @@
+using System.IO.Compression;
+
 namespace Deskhand.Core.Services;
 
 public record FileEntryDto(string Name, string Path, bool IsDirectory, long? Size, DateTime? Modified, string? Extension);
@@ -287,6 +289,106 @@ public static class FileSystemService
             File.Copy(f, System.IO.Path.Combine(dst, System.IO.Path.GetFileName(f)), overwrite);
         foreach (var d in Directory.EnumerateDirectories(src))
             CopyDir(d, System.IO.Path.Combine(dst, System.IO.Path.GetFileName(d)), overwrite);
+    }
+
+    // ---- zip / unzip ----
+
+    /// <summary>Create a .zip at <paramref name="destZip"/> from one or more files/folders (folders are added
+    /// recursively under their own name). overwrite=false fails if the zip already exists.</summary>
+    public static FsOpResultDto Zip(IReadOnlyList<string>? sources, string? destZip, bool overwrite)
+    {
+        if (sources is null || sources.Count == 0) return new FsOpResultDto("zip", destZip ?? "", null, false, null, "No source paths given.");
+        destZip = (destZip ?? "").Trim().Trim('"');
+        if (destZip.Length == 0) return new FsOpResultDto("zip", "", null, false, null, "No destination zip path given.");
+        string full;
+        try { full = System.IO.Path.GetFullPath(destZip); }
+        catch (Exception ex) { return new FsOpResultDto("zip", destZip, null, false, null, "Invalid zip path: " + ex.Message); }
+        if (File.Exists(full) && !overwrite) return new FsOpResultDto("zip", full, null, false, null, "Zip already exists — pass overwrite=true.");
+        try
+        {
+            var dir = System.IO.Path.GetDirectoryName(full);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            if (File.Exists(full)) File.Delete(full);
+            int n = 0;
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var zip = ZipFile.Open(full, ZipArchiveMode.Create))
+            {
+                foreach (var s in sources)
+                {
+                    var sf = (s ?? "").Trim().Trim('"');
+                    if (sf.Length == 0) continue;
+                    sf = System.IO.Path.GetFullPath(sf);
+                    if (Directory.Exists(sf))
+                    {
+                        var prefix = System.IO.Path.GetFileName(sf.TrimEnd('\\'));
+                        foreach (var file in Directory.EnumerateFiles(sf, "*", SearchOption.AllDirectories))
+                        {
+                            var rel = System.IO.Path.GetRelativePath(sf, file).Replace('\\', '/');
+                            zip.CreateEntryFromFile(file, Uniq($"{prefix}/{rel}", used), CompressionLevel.Optimal);
+                            n++;
+                        }
+                    }
+                    else if (File.Exists(sf))
+                    {
+                        zip.CreateEntryFromFile(sf, Uniq(System.IO.Path.GetFileName(sf), used), CompressionLevel.Optimal);
+                        n++;
+                    }
+                }
+            }
+            if (n == 0) { try { File.Delete(full); } catch { } return new FsOpResultDto("zip", full, null, false, null, "None of the sources were readable files/folders."); }
+            return new FsOpResultDto("zip", full, null, true, $"{n} entries");
+        }
+        catch (UnauthorizedAccessException) { return new FsOpResultDto("zip", full, null, false, null, "Access denied — needs elevation."); }
+        catch (Exception ex) { return new FsOpResultDto("zip", full, null, false, null, ex.Message); }
+    }
+
+    /// <summary>Extract a .zip into a folder. <paramref name="destDir"/> empty extracts next to the zip into a
+    /// folder named after it. overwrite=false fails if an output file already exists.</summary>
+    public static FsOpResultDto Unzip(string? zipPath, string? destDir, bool overwrite)
+    {
+        zipPath = (zipPath ?? "").Trim().Trim('"');
+        if (zipPath.Length == 0) return new FsOpResultDto("unzip", "", null, false, null, "No zip path given.");
+        string zf;
+        try { zf = System.IO.Path.GetFullPath(zipPath); }
+        catch (Exception ex) { return new FsOpResultDto("unzip", zipPath, null, false, null, "Invalid zip path: " + ex.Message); }
+        if (!File.Exists(zf)) return new FsOpResultDto("unzip", zf, null, false, null, "Zip file not found.");
+
+        string dest;
+        var d = (destDir ?? "").Trim().Trim('"');
+        try
+        {
+            dest = d.Length > 0
+                ? System.IO.Path.GetFullPath(d)
+                : System.IO.Path.Combine(System.IO.Path.GetDirectoryName(zf)!, System.IO.Path.GetFileNameWithoutExtension(zf));
+        }
+        catch (Exception ex) { return new FsOpResultDto("unzip", zf, destDir, false, null, "Invalid destination: " + ex.Message); }
+
+        try
+        {
+            Directory.CreateDirectory(dest);
+            int n;
+            using (var za = ZipFile.OpenRead(zf)) n = za.Entries.Count;
+            ZipFile.ExtractToDirectory(zf, dest, overwriteFiles: overwrite);
+            return new FsOpResultDto("unzip", zf, dest, true, $"{n} entries");
+        }
+        catch (IOException ex) when (!overwrite && ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+        { return new FsOpResultDto("unzip", zf, dest, false, null, "A file already exists at the destination — pass overwrite=true."); }
+        catch (UnauthorizedAccessException) { return new FsOpResultDto("unzip", zf, dest, false, null, "Access denied — needs elevation."); }
+        catch (InvalidDataException) { return new FsOpResultDto("unzip", zf, dest, false, null, "Not a valid zip archive."); }
+        catch (Exception ex) { return new FsOpResultDto("unzip", zf, dest, false, null, ex.Message); }
+    }
+
+    private static string Uniq(string name, HashSet<string> used)
+    {
+        if (used.Add(name)) return name;
+        var stem = System.IO.Path.GetFileNameWithoutExtension(name);
+        var ext = System.IO.Path.GetExtension(name);
+        var dir = System.IO.Path.GetDirectoryName(name)?.Replace('\\', '/');
+        for (int i = 1; ; i++)
+        {
+            var candidate = (string.IsNullOrEmpty(dir) ? "" : dir + "/") + $"{stem} ({i}){ext}";
+            if (used.Add(candidate)) return candidate;
+        }
     }
 
     // Recycle Bin delete via the shell, so a delete is recoverable by default.

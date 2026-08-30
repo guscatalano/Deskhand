@@ -145,6 +145,44 @@ public static class DeskhandTools
         return Json(r);
     }
 
+    [McpServerTool(Name = "deskhand_zip"), Description("Create a .zip archive from one or more files/folders (folders are added recursively under their own name). overwrite=false (default) fails if the zip exists. Returns { op, path, ok, detail, error? }. Requires the kill switch to be armed; audited.")]
+    public static string Zip(ControlState state, AuditLog audit,
+        [Description("Files and/or folders to include.")] string[] sources,
+        [Description("Destination .zip path, e.g. \"C:\\\\out\\\\bundle.zip\".")] string dest,
+        [Description("Overwrite the zip if it already exists (default false).")] bool overwrite = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.Zip(sources, dest, overwrite);
+        if (r.Ok) audit.Record("file_zip", r.Path, r.Detail ?? "");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_unzip"), Description("Extract a .zip archive into a folder. dest empty extracts next to the zip into a folder named after it. overwrite=false (default) fails if an output file already exists. Returns { op, path, dest, ok, detail, error? }. Requires the kill switch to be armed; audited.")]
+    public static string Unzip(ControlState state, AuditLog audit,
+        [Description("Path to the .zip file.")] string zipPath,
+        [Description("Destination folder (optional; defaults to a folder named after the zip).")] string? dest = null,
+        [Description("Overwrite existing files at the destination (default false).")] bool overwrite = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.Unzip(zipPath, dest, overwrite);
+        if (r.Ok) audit.Record("file_unzip", $"{r.Path} -> {r.Dest}", r.Detail ?? "");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_run_command"), Description("Run a single command in a shell (default PowerShell; shell=\"cmd\" or \"pwsh\") and return its output: { shell, command, cwd, exitCode, stdout, stderr, durationMs, timedOut, truncated, error? }. STATELESS — each call is a fresh process, so cd/variables do NOT persist between calls (pass cwd for a starting directory). MOST POWERFUL tool (arbitrary code as the current user): it is OFF unless the host sets DESKHAND_ENABLE_SHELL, and also requires the kill switch to be armed; every command is audited. Output is capped; long-running commands are killed at timeoutMs (default 30000, max 600000).")]
+    public static string RunCommand(ControlState state, AuditLog audit,
+        [Description("The command line to run, e.g. \"Get-Process | Sort CPU -Desc | Select -First 5\".")] string command,
+        [Description("\"powershell\" (default), \"pwsh\" (PowerShell 7), or \"cmd\".")] string? shell = null,
+        [Description("Working directory to start in (optional).")] string? cwd = null,
+        [Description("Kill the command after this many ms (default 30000, max 600000).")] int? timeoutMs = null)
+    {
+        if (!Deskhand.Core.Services.ShellService.Enabled) return "{\"error\":\"Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.\",\"type\":\"shell_disabled\"}";
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.ShellService.Run(shell, command, cwd, timeoutMs);
+        audit.Record("shell_run", $"{r.Shell}: {(command.Length <= 160 ? command : command[..160] + "…")}", r.TimedOut ? "TIMEOUT" : $"exit {r.ExitCode} in {r.DurationMs}ms");
+        return Json(r);
+    }
+
     [McpServerTool(Name = "deskhand_registry_browse"), Description("Browse the Windows Registry (read-only): list a key's subkeys and values. path is empty for the hive roots, or \"HKLM\" / \"HKCU\\SOFTWARE\\Microsoft\" etc. (hives: HKLM, HKCU, HKCR, HKU, HKCC). Returns { path, subKeys[], values[{name,kind,value}], error? }. Keys needing elevation return an access error, not a crash.")]
     public static string RegistryBrowse([Description("Registry key path, e.g. \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\". Empty lists the hives.")] string? path = null)
         => Json(Deskhand.Core.Services.RegistryService.Browse(path));

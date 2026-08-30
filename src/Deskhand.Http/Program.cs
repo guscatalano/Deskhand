@@ -184,6 +184,8 @@ static string BearerOf(HttpContext ctx)
     return ctx.Request.Query["token"].ToString().Trim();
 }
 
+static string Trunc(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+
 // ---- uniform error mapping ----
 app.Use(async (ctx, next) =>
 {
@@ -416,6 +418,22 @@ api.MapPost("/fs/move", (ControlState st, AuditLog al, FsMoveRequest r) =>
     FsOp(st, al, "file_move", () => Deskhand.Core.Services.FileSystemService.Move(r.Source, r.Dest, r.Overwrite ?? false)));
 api.MapPost("/fs/copy", (ControlState st, AuditLog al, FsCopyRequest r) =>
     FsOp(st, al, "file_copy", () => Deskhand.Core.Services.FileSystemService.Copy(r.Source, r.Dest, r.Overwrite ?? false)));
+api.MapPost("/fs/zip", (ControlState st, AuditLog al, FsZipRequest r) =>
+    FsOp(st, al, "file_zip", () => Deskhand.Core.Services.FileSystemService.Zip(r.Sources, r.Dest, r.Overwrite ?? false)));
+api.MapPost("/fs/unzip", (ControlState st, AuditLog al, FsUnzipRequest r) =>
+    FsOp(st, al, "file_unzip", () => Deskhand.Core.Services.FileSystemService.Unzip(r.ZipPath, r.Dest, r.Overwrite ?? false)));
+
+// One-shot shell: run a command in PowerShell/cmd and return its output. MOST POWERFUL capability
+// (arbitrary code as the current user) — OFF unless DESKHAND_ENABLE_SHELL is set, gated on armed, audited.
+api.MapPost("/shell/run", (ControlState st, AuditLog al, ShellRunRequest r) =>
+{
+    if (!Deskhand.Core.Services.ShellService.Enabled)
+        return Results.Json(new { error = "Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.", type = "shell_disabled" }, statusCode: 403);
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.ShellService.Run(r.Shell, r.Command, r.Cwd, r.TimeoutMs);
+    al.Record("shell_run", $"{res.Shell}: {Trunc(res.Command, 160)}", res.TimedOut ? "TIMEOUT" : $"exit {res.ExitCode} in {res.DurationMs}ms");
+    return Results.Ok(res);
+});
 
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
@@ -589,6 +607,9 @@ record FsDeleteRequest(string Path, bool? Permanent);
 record FsRenameRequest(string Path, string NewName);
 record FsMoveRequest(string Source, string Dest, bool? Overwrite);
 record FsCopyRequest(string Source, string Dest, bool? Overwrite);
+record FsZipRequest(IReadOnlyList<string>? Sources, string Dest, bool? Overwrite);
+record FsUnzipRequest(string ZipPath, string? Dest, bool? Overwrite);
+record ShellRunRequest(string? Shell, string Command, string? Cwd, int? TimeoutMs);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

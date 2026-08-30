@@ -24,6 +24,38 @@ jobs:
       - name: Restore & build (Release)
         run: dotnet build Deskhand.slnx -c Release --nologo
 
+      - name: Smoke test (deskhand-http)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem -Recurse -Filter deskhand-http.exe src/Deskhand.Http/bin/Release |
+                 Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { throw 'deskhand-http.exe not found' }
+          function Start-DH($vars) {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $exe; $psi.UseShellExecute = $false
+            foreach ($k in $vars.Keys) { $psi.EnvironmentVariables[$k] = $vars[$k] }
+            return [System.Diagnostics.Process]::Start($psi)
+          }
+          # 1) loopback HTTP: /health must answer 200
+          $p = Start-DH @{ DESKHAND_PORT = '8791' }; Start-Sleep 4
+          try {
+            $c = (Invoke-WebRequest http://127.0.0.1:8791/health -UseBasicParsing -TimeoutSec 15).StatusCode
+            if ($c -ne 200) { throw "loopback /health = $c" }; Write-Host '  loopback /health -> 200 OK'
+          } finally { $p.Kill($true) }
+          # 2) exposed without a token MUST refuse to start (exit 3)
+          $p = Start-DH @{ DESKHAND_PORT = '8792'; DESKHAND_BIND = 'any' }
+          if (-not $p.WaitForExit(10000)) { $p.Kill($true); throw 'exposed+no-token kept running (expected refuse)' }
+          if ($p.ExitCode -ne 3) { throw "expected exit 3, got $($p.ExitCode)" }
+          Write-Host '  exposed + no token -> refuses to start (exit 3) OK'
+          # 3) TLS self-signed on loopback: https /health must answer 200
+          $p = Start-DH @{ DESKHAND_PORT = '8793'; DESKHAND_TLS = 'self-signed' }; Start-Sleep 4
+          try {
+            $c = (Invoke-WebRequest https://127.0.0.1:8793/health -SkipCertificateCheck -UseBasicParsing -TimeoutSec 15).StatusCode
+            if ($c -ne 200) { throw "TLS /health = $c" }; Write-Host '  TLS self-signed /health -> 200 OK'
+          } finally { $p.Kill($true) }
+          Write-Host 'SMOKE PASSED'
+
       - name: Build MSI
         run: pwsh installer/build-msi.ps1 -Config Release
 

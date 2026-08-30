@@ -87,9 +87,25 @@ client, the browser dashboard included** (`Sec-Fetch-Site` can be forged off-loo
 no free pass), the loopback `Host` check is lifted, and `/mcp` requires the token too. The dashboard
 picks up the token from `?token=` on first load, stashes it in `sessionStorage`, and sends it as a
 bearer header (also via `?token=` on the `/events` stream). `/health` stays open; the static
-`index.html` is served without a token but is inert without one. There is **no TLS** — put a reverse
-proxy in front if this crosses an untrusted network. (The **fleet** server has the same switch:
-`DESKHAND_FLEET_BIND=any` with a mandatory `DESKHAND_FLEET_TOKEN`.)
+`index.html` is served without a token but is inert without one. (The **fleet** server has the same
+switch: `DESKHAND_FLEET_BIND=any` with a mandatory `DESKHAND_FLEET_TOKEN`.)
+
+### Optional HTTPS (`DESKHAND_TLS*`)
+
+By default the port is plain HTTP, so an exposed token crosses the wire in cleartext. Turn on TLS:
+
+```powershell
+$env:DESKHAND_TLS = "self-signed"          # ephemeral cert (CN=machine; SAN localhost+hostname+IPs)
+#   — or bring your own —
+$env:DESKHAND_TLS_CERT     = "C:\certs\deskhand.pfx"
+$env:DESKHAND_TLS_PASSWORD = "pfx-password"   # optional
+```
+
+With TLS on, the server speaks `https://` (and the banner/URLs switch scheme). A self-signed cert
+triggers a browser trust warning — import it or use a CA-issued `.pfx` for a clean padlock. The
+fleet server mirrors this with `DESKHAND_FLEET_TLS` / `DESKHAND_FLEET_TLS_CERT` /
+`DESKHAND_FLEET_TLS_PASSWORD`. There's still no cert *management* (rotation, ACME) — for that, or to
+terminate TLS centrally, front Deskhand with a reverse proxy (`caddy`, `nginx`) instead.
 - **No stealth** — input is honest `SendInput`; there is no anti-detection behavior.
 - Run **unelevated** to automate normal apps. Elevated / secure-desktop targets are refused with a
   clear error (UIPI / secure desktop), by design.

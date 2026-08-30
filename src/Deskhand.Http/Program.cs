@@ -22,9 +22,14 @@ int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_PORT"), out
 // If DESKHAND_TOKEN is set, non-browser clients (curl/scripts) must present it.
 string? token = Environment.GetEnvironmentVariable("DESKHAND_TOKEN")?.Trim();
 bool requireToken = !string.IsNullOrWhiteSpace(token);
+
+// Optional HTTPS: DESKHAND_TLS_CERT=<pfx> (+ DESKHAND_TLS_PASSWORD) or DESKHAND_TLS=self-signed.
+var tlsCert = Deskhand.Core.TlsSupport.FromEnvironment("DESKHAND_");
+bool tls = tlsCert is not null;
+string scheme = tls ? "https" : "http";
 var allowedOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
-    $"http://127.0.0.1:{port}", $"http://localhost:{port}",
+    $"{scheme}://127.0.0.1:{port}", $"{scheme}://localhost:{port}",
 };
 
 // Loopback by default. DESKHAND_BIND opens the port to the network on demand ("sometimes"):
@@ -46,10 +51,11 @@ if (external && !requireToken)
 }
 builder.WebHost.ConfigureKestrel(k =>
 {
-    if (!external) { k.ListenLocalhost(port); return; }
-    if (bind is "any" or "0.0.0.0" or "*") k.ListenAnyIP(port);
-    else if (System.Net.IPAddress.TryParse(bind, out var ip)) k.Listen(new System.Net.IPEndPoint(ip, port));
-    else { Console.Error.WriteLine($"Invalid DESKHAND_BIND '{bind}'; using all interfaces."); k.ListenAnyIP(port); }
+    void Https(Microsoft.AspNetCore.Server.Kestrel.Core.ListenOptions o) { if (tls) o.UseHttps(tlsCert!); }
+    if (!external) { k.ListenLocalhost(port, Https); return; }
+    if (bind is "any" or "0.0.0.0" or "*") k.ListenAnyIP(port, Https);
+    else if (System.Net.IPAddress.TryParse(bind, out var ip)) k.Listen(new System.Net.IPEndPoint(ip, port), Https);
+    else { Console.Error.WriteLine($"Invalid DESKHAND_BIND '{bind}'; using all interfaces."); k.ListenAnyIP(port, Https); }
 });
 builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
 
@@ -426,14 +432,15 @@ var shownHost = external ? (bind is "any" or "0.0.0.0" or "*" ? "<this-machine-i
 Console.WriteLine();
 Console.WriteLine("  Deskhand — one server, two faces:");
 Console.WriteLine();
-Console.WriteLine($"      dashboard   http://{shownHost}:{port}");
-Console.WriteLine($"      MCP (HTTP)  http://{shownHost}:{port}/mcp");
+Console.WriteLine($"      dashboard   {scheme}://{shownHost}:{port}");
+Console.WriteLine($"      MCP (HTTP)  {scheme}://{shownHost}:{port}/mcp");
 Console.WriteLine();
+if (tls) Console.WriteLine("  TLS enabled (HTTPS). A self-signed cert will trigger a browser trust warning; import it or use a CA cert.");
 if (external)
 {
     Console.WriteLine($"  ** PORT EXPOSED TO THE NETWORK (DESKHAND_BIND={bind}). A token is required for ALL clients. **");
-    Console.WriteLine($"     Open the dashboard from another machine as:  http://{shownHost}:{port}/?token=<DESKHAND_TOKEN>");
-    Console.WriteLine( "     Put TLS in front (reverse proxy) if this crosses an untrusted network.");
+    Console.WriteLine($"     Open the dashboard from another machine as:  {scheme}://{shownHost}:{port}/?token=<DESKHAND_TOKEN>");
+    if (!tls) Console.WriteLine("     No TLS: the token crosses the wire in cleartext. Set DESKHAND_TLS / DESKHAND_TLS_CERT or use a reverse proxy on untrusted networks.");
 }
 else Console.WriteLine(requireToken
     ? "  DESKHAND_TOKEN is set: scripts/curl must send 'Authorization: Bearer <token>'. The web UI does not."

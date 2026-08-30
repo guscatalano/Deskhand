@@ -125,7 +125,27 @@ Both HTTP hosts bind **loopback only** by default. To open a host to the LAN *on
 - **Dashboards** read the token from `?token=` on first load, scrub it from the URL bar
   (`history.replaceState`), stash it in `sessionStorage` (`deskhand_token` / `deskhand_fleet_token`),
   and attach it as a bearer header in `api()`; a `401` with no token triggers a `prompt()` + retry.
-- **No TLS** anywhere — front it with a reverse proxy for untrusted networks.
+
+### Optional HTTPS (`Deskhand.Core/TlsSupport.cs`)
+
+`TlsSupport.FromEnvironment(prefix)` returns an `X509Certificate2?` (null → stay on HTTP). Sources:
+`<prefix>TLS_CERT` (a `.pfx`, + optional `<prefix>TLS_PASSWORD`) loaded via `X509CertificateLoader`,
+or `<prefix>TLS=self-signed` which generates an ephemeral serverAuth cert (CN=machine; SAN localhost
++ hostname + IPv4s) and round-trips it through a PFX so Kestrel gets a persistable key (avoids the
+Windows "ephemeral key set" bind failure). Prefix is `DESKHAND_` (local) / `DESKHAND_FLEET_` (fleet).
+Both `Program.cs` pass the cert into a `void Https(ListenOptions o)` given to every `Listen*` call and
+flip `scheme` to `https` for banners/`allowedOrigins`. Caveat: the fleet's spawned RDP connector still
+dials `ws://` loopback, so fleet TLS + the built-in RDP connector don't mix (native agents dial the
+URL you give them, so use `wss://` there). No cert rotation/ACME — reverse-proxy for that.
+
+### CI (`.github/workflows/build.yml`)
+
+`windows-latest`: `dotnet build Deskhand.slnx -c Release`, then a **pwsh smoke test** that runs the
+built `deskhand-http.exe` three ways — loopback `/health`==200, `DESKHAND_BIND=any` with no token
+refuses to start (exit 3), and `DESKHAND_TLS=self-signed` `/health` over HTTPS ==200 — then builds
+MSI + MSIX and uploads them; a `release` job publishes them on `v*` tags. The fail-fast check runs
+before backend/UIA construction, so it's robust headless; the two live-server checks rely on the
+runner's interactive desktop.
 
 ## Open items / not yet verified
 

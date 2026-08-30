@@ -23,7 +23,15 @@ if (bindAny && string.IsNullOrWhiteSpace(token))
     Environment.Exit(3);
 }
 
-builder.WebHost.ConfigureKestrel(k => { if (bindAny) k.ListenAnyIP(port); else k.ListenLocalhost(port); });
+// Optional HTTPS: DESKHAND_FLEET_TLS_CERT=<pfx> (+ _PASSWORD) or DESKHAND_FLEET_TLS=self-signed.
+var tlsCert = Deskhand.Core.TlsSupport.FromEnvironment("DESKHAND_FLEET_");
+bool tls = tlsCert is not null;
+string scheme = tls ? "https" : "http";
+builder.WebHost.ConfigureKestrel(k =>
+{
+    void Https(Microsoft.AspNetCore.Server.Kestrel.Core.ListenOptions o) { if (tls) o.UseHttps(tlsCert!); }
+    if (bindAny) k.ListenAnyIP(port, Https); else k.ListenLocalhost(port, Https);
+});
 builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
 builder.Services.AddSingleton<AgentRegistry>();
 var rdpManager = new RdpConnectorManager(port, token);
@@ -233,8 +241,8 @@ app.MapPost("/agents/{id}/keyboard/keys", (string id, KeysReq r) => { A(id).Send
 app.MapMcp("/mcp");
 
 Console.WriteLine();
-Console.WriteLine($"  Deskhand Fleet Server   ·   {(bindAny ? "0.0.0.0" : "127.0.0.1")}:{port}   ·   token {(token is null ? "OFF" : "required")}");
-Console.WriteLine($"  agents dial: ws://<host>:{port}/agent/connect");
+Console.WriteLine($"  Deskhand Fleet Server   ·   {scheme}://{(bindAny ? "0.0.0.0" : "127.0.0.1")}:{port}   ·   token {(token is null ? "OFF" : "required")}{(tls ? "   ·   TLS on" : "")}");
+Console.WriteLine($"  agents dial: {(tls ? "wss" : "ws")}://<host>:{port}/agent/connect");
 Console.WriteLine();
 
 app.Run();

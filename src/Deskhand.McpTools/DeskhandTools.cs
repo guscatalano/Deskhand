@@ -120,6 +120,27 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_sessions"), Description("Logon sessions via the WTS APIs (read-only): the console session, any RDP sessions, and service/listener sessions — each with { sessionId, station, state (Active/Disconnected/Listen/…), user, domain, clientName (RDP client machine, empty for local), isCurrent }.")]
     public static string Sessions() => Json(Deskhand.Core.Services.SessionsService.List());
 
+    [McpServerTool(Name = "deskhand_installed_programs"), Description("Installed programs (read-only, from the registry Add/Remove list): { name, version, publisher, installDate, scope }. Fast and complete (not the slow Win32_Product).")]
+    public static string InstalledPrograms() => Json(Deskhand.Core.Services.SoftwareService.InstalledPrograms());
+
+    [McpServerTool(Name = "deskhand_services"), Description("Windows services (read-only): { name, displayName, state (Running/Stopped/…), startMode (Auto/Manual/Disabled), account }.")]
+    public static string Services() => Json(Deskhand.Core.Services.SoftwareService.Services());
+
+    [McpServerTool(Name = "deskhand_startup_items"), Description("Startup / autorun items (read-only): registry Run keys + Startup folders — { name, command, location }.")]
+    public static string StartupItems() => Json(Deskhand.Core.Services.SoftwareService.StartupItems());
+
+    [McpServerTool(Name = "deskhand_env_vars"), Description("Environment variables (read-only): machine + user scopes — { name, value, scope }.")]
+    public static string EnvVars() => Json(Deskhand.Core.Services.SoftwareService.EnvironmentVariables());
+
+    [McpServerTool(Name = "deskhand_printers"), Description("Installed printers (read-only): { name, driver, port, default, status }.")]
+    public static string Printers() => Json(Deskhand.Core.Services.SoftwareService.Printers());
+
+    [McpServerTool(Name = "deskhand_shares"), Description("Network shares hosted by this machine (read-only): { name, path, description, type }.")]
+    public static string Shares() => Json(Deskhand.Core.Services.SoftwareService.Shares());
+
+    [McpServerTool(Name = "deskhand_scheduled_tasks"), Description("Scheduled tasks (read-only, Task Scheduler): { path, name, state (Ready/Running/Disabled/…), enabled, lastRun, nextRun }.")]
+    public static string ScheduledTasks() => Json(Deskhand.Core.Services.SoftwareService.ScheduledTasks());
+
     [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));

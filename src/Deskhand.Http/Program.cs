@@ -348,6 +348,15 @@ api.MapGet("/sessions", () => Results.Ok(Deskhand.Core.Services.SessionsService.
 // Default audio endpoints (Core Audio): playback + recording device, volume %, mute.
 api.MapGet("/audio/default", () => Results.Ok(Deskhand.Core.Services.AudioService.Defaults()));
 
+// Software / configuration inventory (read-only).
+api.MapGet("/software/programs", () => Results.Ok(Deskhand.Core.Services.SoftwareService.InstalledPrograms()));
+api.MapGet("/software/services", () => Results.Ok(Deskhand.Core.Services.SoftwareService.Services()));
+api.MapGet("/software/startup", () => Results.Ok(Deskhand.Core.Services.SoftwareService.StartupItems()));
+api.MapGet("/software/env", () => Results.Ok(Deskhand.Core.Services.SoftwareService.EnvironmentVariables()));
+api.MapGet("/software/printers", () => Results.Ok(Deskhand.Core.Services.SoftwareService.Printers()));
+api.MapGet("/software/shares", () => Results.Ok(Deskhand.Core.Services.SoftwareService.Shares()));
+api.MapGet("/software/tasks", () => Results.Ok(Deskhand.Core.Services.SoftwareService.ScheduledTasks()));
+
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));

@@ -95,6 +95,22 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_system_info"), Description("About this machine (read-only): Windows version + BuildLab, uptime, CPU (name/cores/live load %), memory (total/available/load), disks (size/free per drive), network interfaces (IPs/MAC/gateway/DNS), and Windows Firewall per-profile state. Nothing is changed. Takes ~250 ms (samples CPU load).")]
     public static string SystemInfo() => Json(Deskhand.Core.Services.SystemInfoService.Get());
 
+    [McpServerTool(Name = "deskhand_disks"), Description("Physical disks with their partitions and logical volumes (read-only, via WMI): per disk — model, interface, media type, serial, size, partition count; per partition — size, type, bootable; per volume — drive letter, label, file system, size, free space.")]
+    public static string Disks() => Json(Deskhand.Core.Services.HardwareInfoService.Disks());
+
+    [McpServerTool(Name = "deskhand_windows_updates"), Description("Installed Windows updates / hotfixes (KBs), newest first: { hotFixId (e.g. KB5034123), description, installedOn, installedBy }. Read-only (Win32_QuickFixEngineering).")]
+    public static string WindowsUpdates() => Json(Deskhand.Core.Services.HardwareInfoService.WindowsUpdates());
+
+    [McpServerTool(Name = "deskhand_devices"), Description("PnP devices (Device Manager-like), read-only: { name, class, manufacturer, status, deviceId }. Optionally filter by PNP class (e.g. \"Net\", \"Display\", \"Media\", \"USB\", \"System\"); omit for all. Can be hundreds of rows.")]
+    public static string Devices([Description("PNP class filter, e.g. \"Net\" / \"Display\" / \"Media\". Empty = all devices.")] string? classFilter = null)
+        => Json(Deskhand.Core.Services.HardwareInfoService.Devices(classFilter));
+
+    [McpServerTool(Name = "deskhand_drivers"), Description("Installed drivers (read-only, Win32_PnPSignedDriver): { device, provider, version, date, infName, signed }. Can be hundreds of rows and take several seconds (the WMI query is slow).")]
+    public static string Drivers() => Json(Deskhand.Core.Services.HardwareInfoService.Drivers());
+
+    [McpServerTool(Name = "deskhand_audio_devices"), Description("Audio devices (read-only, Win32_SoundDevice): { name, manufacturer, status }.")]
+    public static string AudioDevices() => Json(Deskhand.Core.Services.HardwareInfoService.Audio());
+
     [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));

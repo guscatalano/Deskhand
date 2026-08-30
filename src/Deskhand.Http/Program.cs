@@ -334,6 +334,14 @@ api.MapGet("/token", () => Results.Ok(new { token }));
 // About this machine (read-only): Windows version/buildlab, uptime, CPU, memory, disks, network, firewall.
 api.MapGet("/system", () => Results.Ok(Deskhand.Core.Services.SystemInfoService.Get()));
 
+// Hardware / software inventory (read-only, via WMI): physical disks+partitions+volumes, installed Windows
+// updates (KBs), PnP devices (optional ?class=Net|Display|Media…), drivers, audio devices.
+api.MapGet("/hardware/disks", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Disks()));
+api.MapGet("/hardware/updates", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.WindowsUpdates()));
+api.MapGet("/hardware/devices", (string? @class) => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Devices(@class)));
+api.MapGet("/hardware/drivers", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Drivers()));
+api.MapGet("/hardware/audio", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Audio()));
+
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));

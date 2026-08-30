@@ -73,9 +73,77 @@ public static class DeskhandTools
         return ok ? "ok" : "{\"error\":\"move_failed\"}";
     }
 
-    [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file, pass its path to deskhand_launch_process (shell-execute), which also opens documents and URLs. Folders needing elevation return an access error, not a crash.")]
+    [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));
+
+    [McpServerTool(Name = "deskhand_read_file"), Description("Download a file's contents as base64 (\"download\"). Returns { path, size, base64, error? }. Refused for files over ~25 MB (use the HTTP /fs/download endpoint for large files). SENSITIVE: returns real file bytes (may include secrets). Requires the kill switch to be armed; audited.")]
+    public static string ReadFile(ControlState state, AuditLog audit,
+        [Description("Full path of the file to read, e.g. \"C:\\\\Users\\\\me\\\\notes.txt\".")] string path)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.ReadFileBase64(path);
+        if (r.Error is null) audit.Record("file_read", r.Path, r.Size + "B");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_write_file"), Description("Upload/write a file from base64 content (\"upload\"). Creates parent folders as needed. overwrite=false (default) fails if the file exists. Returns { path, size, overwritten, error? }. SENSITIVE: writes real files (can plant executables). Requires the kill switch to be armed; audited.")]
+    public static string WriteFile(ControlState state, AuditLog audit,
+        [Description("Full path to write, e.g. \"C:\\\\Users\\\\me\\\\out.bin\".")] string path,
+        [Description("File contents as base64.")] string contentBase64,
+        [Description("Replace the file if it already exists (default false).")] bool overwrite = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.WriteFileBase64(path, contentBase64, overwrite);
+        if (r.Error is null) audit.Record("file_write", r.Path, $"{r.Size}B{(r.Overwritten ? " (overwrote)" : "")}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_delete_path"), Description("Delete a file or folder (folders delete recursively). By DEFAULT it goes to the Recycle Bin (recoverable); pass permanent=true to delete irreversibly. DESTRUCTIVE. Requires the kill switch to be armed; audited. Refuses to delete a drive root.")]
+    public static string DeletePath(ControlState state, AuditLog audit,
+        [Description("Path of the file or folder to delete.")] string path,
+        [Description("Delete permanently instead of to the Recycle Bin (default false).")] bool permanent = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.Delete(path, permanent);
+        if (r.Ok) audit.Record("file_delete", r.Path, r.Detail ?? "");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_rename_path"), Description("Rename a file or folder in place. newName is a bare name (no path separators), placed in the same folder. Requires the kill switch to be armed; audited.")]
+    public static string RenamePath(ControlState state, AuditLog audit,
+        [Description("Path of the file/folder to rename.")] string path,
+        [Description("New name (not a path), e.g. \"report-final.txt\".")] string newName)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.Rename(path, newName);
+        if (r.Ok) audit.Record("file_rename", $"{r.Path} -> {r.Dest}", r.Detail ?? "");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_move_path"), Description("Move a file or folder. dest may be an existing folder (moves the source into it) or a full destination path. overwrite=false (default) fails if the destination exists. DESTRUCTIVE. Requires the kill switch to be armed; audited.")]
+    public static string MovePath(ControlState state, AuditLog audit,
+        [Description("Source file/folder path.")] string source,
+        [Description("Destination folder or full path.")] string dest,
+        [Description("Replace the destination if it exists (default false).")] bool overwrite = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.Move(source, dest, overwrite);
+        if (r.Ok) audit.Record("file_move", $"{r.Path} -> {r.Dest}", r.Detail ?? "");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_copy_path"), Description("Copy a file, or a folder recursively. dest may be an existing folder (copies the source into it) or a full destination path. overwrite=false (default) fails if the destination exists. Requires the kill switch to be armed; audited.")]
+    public static string CopyPath(ControlState state, AuditLog audit,
+        [Description("Source file/folder path.")] string source,
+        [Description("Destination folder or full path.")] string dest,
+        [Description("Overwrite existing files at the destination (default false).")] bool overwrite = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.Copy(source, dest, overwrite);
+        if (r.Ok) audit.Record("file_copy", $"{r.Path} -> {r.Dest}", r.Detail ?? "");
+        return Json(r);
+    }
 
     [McpServerTool(Name = "deskhand_registry_browse"), Description("Browse the Windows Registry (read-only): list a key's subkeys and values. path is empty for the hive roots, or \"HKLM\" / \"HKCU\\SOFTWARE\\Microsoft\" etc. (hives: HKLM, HKCU, HKCR, HKU, HKCC). Returns { path, subKeys[], values[{name,kind,value}], error? }. Keys needing elevation return an access error, not a crash.")]
     public static string RegistryBrowse([Description("Registry key path, e.g. \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\". Empty lists the hives.")] string? path = null)

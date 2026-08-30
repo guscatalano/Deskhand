@@ -328,6 +328,95 @@ api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.Li
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));
 
+// Download a single file (stream). SENSITIVE (reads real file bytes) — gated on armed + audited.
+api.MapGet("/fs/download", (ControlState st, AuditLog al, string? path) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var (full, err) = Deskhand.Core.Services.FileSystemService.ResolveForDownload(path);
+    if (full is null) return Results.Json(new { error = err, type = "bad_request" }, statusCode: 400);
+    al.Record("file_download", full, new FileInfo(full).Length + "B");
+    return Results.File(full, "application/octet-stream", Path.GetFileName(full), enableRangeProcessing: true);
+});
+
+// Download multiple files as a zip. Body: { paths: ["C:\\a.txt", ...] }. Gated + audited.
+api.MapPost("/fs/download-zip", (ControlState st, AuditLog al, FsPathsRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var paths = r.Paths ?? Array.Empty<string>();
+    if (paths.Count == 0) return Results.Json(new { error = "no paths", type = "bad_request" }, statusCode: 400);
+    using var ms = new MemoryStream();
+    long total = 0; int added = 0;
+    using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+    {
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in paths)
+        {
+            var (full, _) = Deskhand.Core.Services.FileSystemService.ResolveForDownload(p);
+            if (full is null) continue;
+            var entryName = Path.GetFileName(full);
+            for (int i = 1; !used.Add(entryName); i++)   // de-dupe same-named files from different folders
+                entryName = $"{Path.GetFileNameWithoutExtension(full)} ({i}){Path.GetExtension(full)}";
+            try
+            {
+                var e = zip.CreateEntry(entryName, System.IO.Compression.CompressionLevel.Fastest);
+                using var es = e.Open();
+                using var fs = File.OpenRead(full);
+                fs.CopyTo(es); total += fs.Length; added++;
+            }
+            catch { /* skip a file we can't read; the rest still zip */ }
+        }
+    }
+    if (added == 0) return Results.Json(new { error = "none of the paths were readable files", type = "bad_request" }, statusCode: 400);
+    al.Record("file_download_zip", $"{added} files", total + "B");
+    return Results.File(ms.ToArray(), "application/zip", $"deskhand-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
+});
+
+// Upload one or more files into a target directory (multipart/form-data: field "dir" + one or more "files").
+// SENSITIVE (writes real files) — gated on armed + audited.
+api.MapPost("/fs/upload", async (ControlState st, AuditLog al, HttpRequest req) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    if (!req.HasFormContentType) return Results.Json(new { error = "expected multipart/form-data", type = "bad_request" }, statusCode: 400);
+    var form = await req.ReadFormAsync();
+    var dir = form["dir"].ToString().Trim().Trim('"');
+    if (dir.Length == 0) return Results.Json(new { error = "no target dir", type = "bad_request" }, statusCode: 400);
+    string full;
+    try { full = Path.GetFullPath(dir); Directory.CreateDirectory(full); }
+    catch (Exception ex) { return Results.Json(new { error = ex.Message, type = "bad_request" }, statusCode: 400); }
+    var written = new List<object>();
+    foreach (var f in form.Files)
+    {
+        var target = Path.Combine(full, Path.GetFileName(f.FileName));
+        try
+        {
+            await using var outStream = File.Create(target);
+            await f.CopyToAsync(outStream);
+            written.Add(new { path = target, size = f.Length });
+        }
+        catch (Exception ex) { written.Add(new { path = target, error = ex.Message }); }
+    }
+    al.Record("file_upload", full, $"{form.Files.Count} files");
+    return Results.Ok(new { dir = full, written });
+});
+
+// File-manager mutations. DESTRUCTIVE: all gated on armed + audited. Delete goes to the Recycle Bin
+// unless permanent=true.
+static IResult FsOp(ControlState st, AuditLog al, string auditAction, Func<Deskhand.Core.Services.FsOpResultDto> op)
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = op();
+    if (res.Ok) al.Record(auditAction, res.Dest is null ? res.Path : $"{res.Path} -> {res.Dest}", res.Detail ?? "");
+    return res.Ok ? Results.Ok(res) : Results.Json(res, statusCode: 400);
+}
+api.MapPost("/fs/delete", (ControlState st, AuditLog al, FsDeleteRequest r) =>
+    FsOp(st, al, "file_delete", () => Deskhand.Core.Services.FileSystemService.Delete(r.Path, r.Permanent ?? false)));
+api.MapPost("/fs/rename", (ControlState st, AuditLog al, FsRenameRequest r) =>
+    FsOp(st, al, "file_rename", () => Deskhand.Core.Services.FileSystemService.Rename(r.Path, r.NewName)));
+api.MapPost("/fs/move", (ControlState st, AuditLog al, FsMoveRequest r) =>
+    FsOp(st, al, "file_move", () => Deskhand.Core.Services.FileSystemService.Move(r.Source, r.Dest, r.Overwrite ?? false)));
+api.MapPost("/fs/copy", (ControlState st, AuditLog al, FsCopyRequest r) =>
+    FsOp(st, al, "file_copy", () => Deskhand.Core.Services.FileSystemService.Copy(r.Source, r.Dest, r.Overwrite ?? false)));
+
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 
@@ -495,6 +584,11 @@ record RefRequest(string Reference);
 record PointRequest(int X, int Y);
 record ProcessWaitRequest(string? Event, string? Name, int? Pid, int? TimeoutMs);
 record PidRequest(int Pid);
+record FsPathsRequest(IReadOnlyList<string>? Paths);
+record FsDeleteRequest(string Path, bool? Permanent);
+record FsRenameRequest(string Path, string NewName);
+record FsMoveRequest(string Source, string Dest, bool? Overwrite);
+record FsCopyRequest(string Source, string Dest, bool? Overwrite);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

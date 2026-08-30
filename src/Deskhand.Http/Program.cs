@@ -326,6 +326,9 @@ api.MapPost("/process/dump", (Deskhand.Core.Services.ProcessDumper d, ControlSta
 });
 api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.List()));
 
+// About this machine (read-only): Windows version/buildlab, uptime, CPU, memory, disks, network, firewall.
+api.MapGet("/system", () => Results.Ok(Deskhand.Core.Services.SystemInfoService.Get()));
+
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));

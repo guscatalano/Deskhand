@@ -133,7 +133,16 @@
   .pfilter { margin-bottom:8px; width:100%; }
 
   /* screen tab */
-  #tab-screen, #tab-registry, #tab-files, #tab-shell { overflow:auto; }
+  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system { overflow:auto; }
+  .sysgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; margin-top:12px; align-items:start; }
+  .syscard { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:13px 15px; }
+  .syscard h4 { margin:0 0 9px; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
+  .syskv { display:flex; justify-content:space-between; gap:12px; padding:3px 0; font-size:12.5px; border-bottom:1px solid var(--line-2); }
+  .syskv:last-child { border-bottom:none; }
+  .syskv .k { color:var(--ink-3); white-space:nowrap; } .syskv .v { color:var(--ink); text-align:right; word-break:break-word; font-family:var(--mono); }
+  .meter { height:7px; background:var(--surface-3); border-radius:4px; overflow:hidden; margin:5px 0 3px; }
+  .meter > span { display:block; height:100%; background:var(--good); }
+  .meter.warn > span { background:var(--warn); } .meter.crit > span { background:var(--crit); }
   .fsrow { display:grid; grid-template-columns:1fr 84px 150px 56px; gap:8px; padding:5px 7px; border-radius:6px; font-family:var(--mono); font-size:12px; align-items:center; }
   .fsrow:hover { background:var(--surface-2); }
   .fsrow .nm { display:flex; align-items:center; gap:7px; word-break:break-all; }
@@ -195,6 +204,7 @@
     <button class="tabbtn" data-tab="files">Files</button>
     <button class="tabbtn" data-tab="registry">Registry</button>
     <button class="tabbtn" data-tab="shell">Shell</button>
+    <button class="tabbtn" data-tab="system">System</button>
     <button class="tabbtn" data-tab="screen">Screen &amp; Input</button>
   </div>
   <a class="ghost" style="text-decoration:none" href="http://localhost:8799/" target="_blank" title="Fleet dashboard — other PCs">⛶ Fleet</a>
@@ -290,6 +300,14 @@
       <div class="lbl" style="margin-top:6px;color:var(--ink-3)">Runs one command in a fresh process (state doesn't persist). Off unless the server has <b>DESKHAND_ENABLE_SHELL=1</b>; requires <b>armed</b>; audited.</div>
       <div class="coordbar" id="shMeta" style="margin:12px 0 6px"></div>
       <pre id="shOut" style="background:var(--surface-3);border:1px solid var(--line);border-radius:8px;padding:11px 13px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:52vh;overflow:auto;margin:0"></pre>
+    </div>
+  </div>
+
+  <!-- SYSTEM (about this machine) -->
+  <div class="tab" id="tab-system">
+    <div style="padding:14px 16px 60px;width:100%">
+      <div class="row"><button class="btn p" id="sysRefresh">↻ Refresh</button><span class="lbl" id="sysWhen" style="color:var(--ink-3)"></span></div>
+      <div id="sysGrid" class="sysgrid"></div>
     </div>
   </div>
 
@@ -935,6 +953,29 @@ async function runShell(){
 $("#shRun").onclick=runShell;
 $("#shCmd").addEventListener("keydown",e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); runShell(); }});
 
+/* ---------- system (about this machine) ---------- */
+let sysLoaded=false;
+const loadSystem=guard(async()=>{
+  const d=await api("/system"); sysLoaded=true;
+  $("#sysWhen").textContent="as of "+new Date().toLocaleTimeString();
+  const g=$("#sysGrid"); g.innerHTML="";
+  const kv=(k,v)=>`<div class="syskv"><span class="k">${k}</span><span class="v">${v==null||v===""?"—":v}</span></div>`;
+  const meter=p=>{ const c=p>=90?"crit":p>=75?"warn":""; return `<div class="meter ${c}"><span style="width:${Math.max(0,Math.min(100,p))}%"></span></div>`; };
+  const card=(title,html)=>{ const c=elm("div","syscard"); c.innerHTML=`<h4>${title}</h4>`+html; g.append(c); };
+  const o=d.os;
+  card("Operating system", kv("Name",o.name)+kv("Edition",o.edition)+kv("Version",o.displayVersion)+kv("Build",o.build)+kv("BuildLab",o.buildLab)+kv("Architecture",o.architecture)+kv("Machine",d.machineName)+kv("User",d.userName)+(d.domain?kv("Domain",d.domain):""));
+  card("Uptime", kv("Up for",d.time.uptime)+kv("Booted",new Date(d.time.bootTime).toLocaleString())+kv("Now",new Date(d.time.now).toLocaleString()));
+  card("CPU", kv("Model",d.cpu.name)+kv("Logical cores",d.cpu.logicalProcessors)+kv("Architecture",d.cpu.architecture)+(d.cpu.loadPercent!=null?kv("Load",d.cpu.loadPercent+"%")+meter(d.cpu.loadPercent):""));
+  card("Memory", kv("Physical",fmtSize(d.memory.usedPhysical)+" / "+fmtSize(d.memory.totalPhysical))+kv("Available",fmtSize(d.memory.availablePhysical))+kv("Load",d.memory.loadPercent+"%")+meter(d.memory.loadPercent)+kv("Page file",fmtSize(d.memory.totalPageFile-d.memory.availablePageFile)+" / "+fmtSize(d.memory.totalPageFile)));
+  let dh=""; (d.disks||[]).forEach(k=>{ if(k.totalSize>0){ const p=Math.round(k.usedSize*100/k.totalSize); dh+=kv(k.name+(k.label?" ("+k.label+")":""),fmtSize(k.usedSize)+" / "+fmtSize(k.totalSize)+" · "+k.format)+meter(p); } else dh+=kv(k.name,k.driveType+" (not ready)"); });
+  card("Disks", dh||kv("none",""));
+  let nh=""; (d.network||[]).forEach(n=>{ nh+=`<div style="margin:0 0 9px"><div style="font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:2px">${n.name}</div>`+kv("IPv4",(n.iPv4||[]).join(", "))+((n.iPv6&&n.iPv6.length)?kv("IPv6",n.iPv6.slice(0,2).join(", ")):"")+kv("Gateway",(n.gateways||[]).join(", "))+kv("DNS",(n.dnsServers||[]).join(", "))+kv("MAC",n.mac)+kv("Type",n.type)+(n.speedBps>0?kv("Speed",(n.speedBps/1e6).toFixed(0)+" Mbps"):"")+`</div>`; });
+  card("Network", nh||kv("none",""));
+  const fp=(l,on)=>`<div class="syskv"><span class="k">${l}</span><span class="v"><span style="color:${on===true?'var(--good)':on===false?'var(--crit)':'var(--ink-3)'}">${on===true?'on':on===false?'off':'unknown'}</span></span></div>`;
+  card("Windows Firewall", fp("Domain",d.firewall.domainEnabled)+fp("Private",d.firewall.privateEnabled)+fp("Public",d.firewall.publicEnabled)+(d.firewall.note?`<div class="lbl" style="color:var(--ink-3);margin-top:6px">${d.firewall.note}</div>`:""));
+});
+$("#sysRefresh").onclick=loadSystem;
+
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
@@ -943,6 +984,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="processes"&&!procLoaded) loadProcesses();
   if(b.dataset.tab==="registry"&&!regLoaded&&!location.hash.startsWith("#registry/")) loadRegistry("");
   if(b.dataset.tab==="files"&&!fsLoaded&&!location.hash.startsWith("#files/")) loadFiles("");
+  if(b.dataset.tab==="system"&&!sysLoaded) loadSystem();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

@@ -1299,7 +1299,7 @@ const loadHardware=guard(async()=>{
     + (det.motherboard?hwKv("Motherboard",(det.motherboard.manufacturer||"")+" "+(det.motherboard.product||"")+" "+(det.motherboard.version||"")).outerHTML:"");
   $("#hwSystem").innerHTML=""; $("#hwSystem").append(sysc);
   const gc=$("#hwGraphics"); gc.innerHTML="";
-  (det.gpus||[]).forEach(g=>gc.append(hwKv(g.name, [g.resolution&&(g.resolution+(g.refreshHz?(" @ "+g.refreshHz+"Hz"):"")), g.vramBytes&&(fmtSize(g.vramBytes)+" VRAM"), g.driverVersion&&("driver "+g.driverVersion+(g.driverDate?(" ("+g.driverDate+")"):""))].filter(Boolean).join(" · "))));
+  (det.gpus||[]).forEach(g=>gc.append(hwKv(g.name, [g.resolution&&(g.resolution+(g.refreshHz?(" @ "+g.refreshHz+"Hz"):"")), g.vramBytes&&(fmtSize(g.vramBytes)+" VRAM"), g.sharedMemoryBytes&&(fmtSize(g.sharedMemoryBytes)+" shared"), g.driverVersion&&("driver "+g.driverVersion+(g.driverDate?(" ("+g.driverDate+")"):""))].filter(Boolean).join(" · "))));
   (det.monitors||[]).forEach(m=>gc.append(hwKv("Display", [m.manufacturer,m.model,m.serial&&("SN "+m.serial),m.year].filter(Boolean).join(" · "))));
   $("#hwMemCount").textContent=(det.memory||[]).length+(det.memory&&det.memory.length?(" · "+fmtSize(det.memory.reduce((a,m)=>a+(m.capacityBytes||0),0))+" total"):"");
   const mc=$("#hwMemory"); mc.innerHTML="";

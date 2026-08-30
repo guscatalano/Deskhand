@@ -9,7 +9,7 @@ public record HotfixDto(string? HotFixId, string? Description, string? Installed
 public record DeviceDto(string? Name, string? Class, string? Manufacturer, string? Status, string? DeviceId);
 public record DriverDto(string? Device, string? Provider, string? Version, string? Date, string? InfName, bool? Signed);
 public record AudioDeviceDto(string? Name, string? Manufacturer, string? Status);
-public record GpuDto(string? Name, string? DriverVersion, string? DriverDate, long? VramBytes, string? VideoProcessor, string? Resolution, uint? RefreshHz);
+public record GpuDto(string? Name, string? DriverVersion, string? DriverDate, long? VramBytes, long? SharedMemoryBytes, string? VideoProcessor, string? Resolution, uint? RefreshHz);
 public record MonitorDetailDto(string? Manufacturer, string? Model, string? Serial, int? Year);
 public record BiosDto(string? Manufacturer, string? Version, string? ReleaseDate, string? SerialNumber, string? SmbiosVersion);
 public record BaseboardDto(string? Manufacturer, string? Product, string? Version, string? SerialNumber);
@@ -150,9 +150,20 @@ public static class HardwareInfoService
         var gpus = new List<GpuDto>();
         Each("SELECT Name, DriverVersion, DriverDate, AdapterRAM, VideoProcessor, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController",
             o => gpus.Add(new GpuDto(Str(o["Name"]), Str(o["DriverVersion"]), WmiDate(o["DriverDate"]),
-                L(o["AdapterRAM"]), Str(o["VideoProcessor"]),
+                L(o["AdapterRAM"]), null, Str(o["VideoProcessor"]),
                 (L(o["CurrentHorizontalResolution"]) is long w && L(o["CurrentVerticalResolution"]) is long h && w > 0) ? $"{w}×{h}" : null,
                 U(o["CurrentRefreshRate"]) is uint r && r > 0 ? r : null)));
+        // WMI's AdapterRAM is a 32-bit field (caps at ~4 GB). Get the TRUE dedicated VRAM + shared memory
+        // from DXGI (IDXGIAdapter1.Description1) and override by matching the adapter name.
+        var dxgi = DxgiAdapters();
+        if (dxgi.Count > 0)
+            for (int i = 0; i < gpus.Count; i++)
+            {
+                var g = gpus[i];
+                var a = dxgi.FirstOrDefault(x => NameMatch(x.Name, g.Name));
+                if (a.Name is not null && (a.Dedicated > 0 || a.Shared > 0))
+                    gpus[i] = g with { VramBytes = a.Dedicated > 0 ? a.Dedicated : g.VramBytes, SharedMemoryBytes = a.Shared };
+            }
 
         var monitors = new List<MonitorDetailDto>();
         try
@@ -171,6 +182,32 @@ public static class HardwareInfoService
                 FormFactor(U(o["FormFactor"])), MemType(U(o["SMBIOSMemoryType"])))));
 
         return new HardwareDetailDto(cMfr, cModel, bios, board, gpus, monitors, mem);
+    }
+
+    // True dedicated VRAM + shared system memory per adapter, via DXGI (uncapped, unlike WMI's AdapterRAM).
+    private static List<(string Name, long Dedicated, long Shared)> DxgiAdapters()
+    {
+        var list = new List<(string, long, long)>();
+        try
+        {
+            using var factory = Vortice.DXGI.DXGI.CreateDXGIFactory1<Vortice.DXGI.IDXGIFactory1>();
+            for (uint i = 0; factory.EnumAdapters1(i, out Vortice.DXGI.IDXGIAdapter1 adapter).Success; i++)
+            {
+                using (adapter)
+                {
+                    var d = adapter.Description1;
+                    list.Add((d.Description ?? "", (long)(ulong)d.DedicatedVideoMemory, (long)(ulong)d.SharedSystemMemory));
+                }
+            }
+        }
+        catch { }
+        return list;
+    }
+
+    private static bool NameMatch(string? a, string? b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+        return a.Contains(b, StringComparison.OrdinalIgnoreCase) || b.Contains(a, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? FormFactor(uint f) => f switch { 8 => "DIMM", 12 => "SODIMM", 0 => null, _ => $"FF{f}" };

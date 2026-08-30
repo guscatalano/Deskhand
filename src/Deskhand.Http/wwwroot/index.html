@@ -133,7 +133,11 @@
   .pfilter { margin-bottom:8px; width:100%; }
 
   /* screen tab */
-  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect { overflow:auto; }
+  #tab-screen, #tab-registry, #tab-files, #tab-shell, #tab-system, #tab-connect, #tab-apps { overflow:auto; }
+  .approw { display:flex; align-items:center; gap:10px; padding:5px 7px; border-radius:6px; font-size:12.5px; }
+  .approw:hover { background:var(--surface-2); }
+  .approw .an { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .approw .af { color:var(--ink-3); font-size:11px; font-family:var(--mono); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sysgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; margin-top:12px; align-items:start; }
   .syscard { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:13px 15px; }
   .syscard h4 { margin:0 0 9px; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
@@ -208,6 +212,7 @@
     <button class="tabbtn" data-tab="registry">Registry</button>
     <button class="tabbtn" data-tab="shell">Shell</button>
     <button class="tabbtn" data-tab="system">System</button>
+    <button class="tabbtn" data-tab="apps">Apps</button>
     <button class="tabbtn" data-tab="connect">Connect</button>
     <button class="tabbtn" data-tab="screen">Screen &amp; Input</button>
   </div>
@@ -314,6 +319,20 @@
       <div class="lbl" style="margin-top:6px;color:var(--ink-3)">Runs one command in a fresh process (state doesn't persist). Off unless the server has <b>DESKHAND_ENABLE_SHELL=1</b>; requires <b>armed</b>; audited.</div>
       <div class="coordbar" id="shMeta" style="margin:12px 0 6px"></div>
       <pre id="shOut" style="background:var(--surface-3);border:1px solid var(--line);border-radius:8px;padding:11px 13px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:52vh;overflow:auto;margin:0"></pre>
+    </div>
+  </div>
+
+  <!-- APPS + VIRTUAL DESKTOPS -->
+  <div class="tab" id="tab-apps">
+    <div style="padding:14px 16px 60px;max-width:1000px;width:100%">
+      <div class="sect"><div class="h">Start Menu apps <span class="count" id="appsCount"></span></div></div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="appsFilter" placeholder="filter apps…" style="flex:1;font-family:var(--mono);font-size:12px">
+        <button class="btn" id="appsRefresh" title="Reload">↻</button>
+      </div>
+      <div id="appsList" style="margin-top:8px"></div>
+      <div class="sect" style="margin-top:22px"><div class="h">Virtual desktops <span class="count" id="deskCount"></span></div></div>
+      <div id="deskList" style="margin-top:8px"></div>
     </div>
   </div>
 
@@ -1158,6 +1177,46 @@ $("#mcpClient").onchange=renderMcp;
 $("#mcpCopy").onclick=()=>copyText($("#mcpSnippet").textContent,"config copied");
 $("#mcpUrlCopy").onclick=()=>copyText($("#mcpUrl").value,"URL copied");
 
+/* ---------- apps (Start Menu) + virtual desktops ---------- */
+let appsData=[], appsLoaded=false;
+function renderApps(){
+  const q=$("#appsFilter").value.trim().toLowerCase(), list=$("#appsList"); list.innerHTML="";
+  let shown=0;
+  appsData.forEach(a=>{
+    if(q&&!(a.name+" "+(a.folder||"")).toLowerCase().includes(q)) return;
+    const row=elm("div","approw");
+    const nm=elm("div","an"); nm.textContent=a.name;
+    const fo=elm("div","af"); fo.textContent=a.folder||"";
+    const btn=elm("button","btn sm a"); btn.textContent="Launch";
+    btn.onclick=guard(async()=>{ const r=await api("/process/launch","POST",{path:a.path,waitForWindowMs:4000}); toast(r.hasWindow?`launched: ${r.window?.name||a.name}`:`launched: ${a.name}`); });
+    row.append(nm,fo,btn); list.append(row); shown++;
+  });
+  $("#appsCount").textContent=shown+(shown!==appsData.length?" / "+appsData.length:"");
+  if(!shown){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; e.textContent="(no matches)"; list.append(e); }
+}
+const loadDesktops=guard(async()=>{
+  const d=await api("/desktops"), list=$("#deskList"); list.innerHTML="";
+  $("#deskCount").textContent=d.length+" desktop"+(d.length===1?"":"s");
+  d.forEach((dk,i)=>{
+    const sect=elm("div"); sect.style.cssText="margin-bottom:12px";
+    const head=elm("div"); head.style.cssText="font-family:var(--mono);font-size:12px;margin-bottom:3px";
+    head.innerHTML=`Desktop ${i+1} ${dk.isCurrent?'<span style="color:var(--good)">(current)</span>':''} <span style="color:var(--ink-3)">· ${dk.windows.length} window${dk.windows.length===1?"":"s"}</span>`;
+    sect.append(head);
+    dk.windows.forEach(w=>{
+      const row=elm("div","approw");
+      const nm=elm("div","an"); nm.textContent=w.title||"(untitled)";
+      row.append(nm);
+      if(!dk.isCurrent){ const btn=elm("button","btn sm"); btn.textContent="→ bring here"; btn.onclick=guard(async()=>{ await api("/desktops/move-window","POST",{hwnd:w.hwnd}); toast("moved to current desktop"); loadDesktops(); }); row.append(btn); }
+      sect.append(row);
+    });
+    if(!dk.windows.length){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:12px;padding:3px 7px"; e.textContent="(no windows)"; sect.append(e); }
+    list.append(sect);
+  });
+});
+const loadApps=guard(async()=>{ appsData=await api("/apps"); appsLoaded=true; renderApps(); loadDesktops(); });
+$("#appsFilter").addEventListener("input",()=>{ if(appsLoaded) renderApps(); });
+$("#appsRefresh").onclick=loadApps;
+
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
@@ -1168,6 +1227,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="files"&&!fsLoaded&&!location.hash.startsWith("#files/")) loadFiles("");
   if(b.dataset.tab==="system"&&!sysLoaded) loadSystem();
   if(b.dataset.tab==="connect"&&!connectLoaded) loadConnect();
+  if(b.dataset.tab==="apps"&&!appsLoaded) loadApps();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

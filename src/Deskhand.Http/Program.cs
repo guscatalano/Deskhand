@@ -360,6 +360,14 @@ api.MapGet("/software/tasks", () => Results.Ok(Deskhand.Core.Services.SoftwareSe
 // Security posture (read-only): TPM, Secure Boot, BitLocker, activation, Defender/AV, pending reboot.
 api.MapGet("/security", () => Results.Ok(Deskhand.Core.Services.SecurityService.Get()));
 
+// Local users & groups, power/battery, network connections, diagnostics (read-only).
+api.MapGet("/users", () => Results.Ok(Deskhand.Core.Services.UsersService.Users()));
+api.MapGet("/groups", () => Results.Ok(Deskhand.Core.Services.UsersService.Groups()));
+api.MapGet("/power", () => Results.Ok(Deskhand.Core.Services.PowerService.Get()));
+api.MapGet("/net/connections", () => Results.Ok(Deskhand.Core.Services.NetConnectionsService.List()));
+api.MapGet("/diagnostics/events", (int? count) => Results.Ok(Deskhand.Core.Services.DiagnosticsService.RecentErrors(count ?? 50)));
+api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.DiagnosticsService.DiskHealth()));
+
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));

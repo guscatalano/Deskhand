@@ -144,6 +144,24 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_security_posture"), Description("Security posture (read-only): TPM (present/enabled/version), Secure Boot, BitLocker per volume, Windows activation, Defender status + installed AV products, and pending-reboot with reasons. TPM/BitLocker/Defender need elevation to read fully; unknown/empty when Deskhand runs unelevated.")]
     public static string SecurityPosture() => Json(Deskhand.Core.Services.SecurityService.Get());
 
+    [McpServerTool(Name = "deskhand_local_users"), Description("Local user accounts (read-only): { name, fullName, disabled, lockout, passwordExpires, sid }. Local accounts only (no domain).")]
+    public static string LocalUsers() => Json(Deskhand.Core.Services.UsersService.Users());
+
+    [McpServerTool(Name = "deskhand_local_groups"), Description("Local groups with membership (read-only): { name, description, members[] }.")]
+    public static string LocalGroups() => Json(Deskhand.Core.Services.UsersService.Groups());
+
+    [McpServerTool(Name = "deskhand_power"), Description("Power / battery state (read-only): { acLine (AC/Battery), hasBattery, batteryPercent, minutesRemaining, wearPercent, designCapacityMwh, fullChargeCapacityMwh, powerPlan }.")]
+    public static string Power() => Json(Deskhand.Core.Services.PowerService.Get());
+
+    [McpServerTool(Name = "deskhand_net_connections"), Description("Active network connections + listening ports (read-only, netstat-like, IPv4): { protocol, localAddress, remoteAddress, state, pid, process }.")]
+    public static string NetConnections() => Json(Deskhand.Core.Services.NetConnectionsService.List());
+
+    [McpServerTool(Name = "deskhand_event_errors"), Description("Recent error/warning events (read-only) from the System + Application logs, newest first: { log, level, eventId, source, time, message }. count = max per log (default 50).")]
+    public static string EventErrors(int count = 50) => Json(Deskhand.Core.Services.DiagnosticsService.RecentErrors(count));
+
+    [McpServerTool(Name = "deskhand_disk_health"), Description("Disk health (read-only): per drive { model, serial, status, predictFailure (SMART) }. SMART predict needs elevation on some drivers.")]
+    public static string DiskHealth() => Json(Deskhand.Core.Services.DiagnosticsService.DiskHealth());
+
     [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));

@@ -324,6 +324,10 @@ api.MapPost("/process/dump", (Deskhand.Core.Services.ProcessDumper d, ControlSta
 });
 api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.List()));
 
+// Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
+// its path to /process/launch (shell-execute), which also opens documents and URLs.
+api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));
+
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 

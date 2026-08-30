@@ -69,19 +69,19 @@ fixed-position overlays (`#logdrawer`, `#toast`) that float above everything.
 
 **Topbar** (left→right): the brand (a `.dot` that turns green — class `live` — once the first API call
 succeeds) · a machine/user `stat` · a "desktop" `stat` with a state `.pill` · a monitor-count `stat` · a
-`.spacer` (flex:1 pushes the rest right) · the **`.tabs`** group (Explorer / Processes / Registry / Screen &
+`.spacer` (flex:1 pushes the rest right) · the **`.tabs`** group (Explorer / Processes / Files / Registry / Screen &
 Input) · a cross-link to the Fleet dashboard (`:8799`) · the **arm** ghost button (kill switch) · **Log** ·
 **Theme**.
 
 **Tab model.** `.tabwrap` is `position:relative`; each `.tab` is `position:absolute; inset:0; display:none`,
 and `.tab.active` becomes visible. Crucially, **the visible display mode is opt-in per tab**: the base rule
 is `display:block`, but `#tab-explorer.active, #tab-processes.active` override to a two-column
-`display:grid` (`minmax(340px,40%) 1fr`), and `#tab-screen, #tab-registry` are `overflow:auto` single panes.
+`display:grid` (`minmax(340px,40%) 1fr`), and `#tab-screen, #tab-registry, #tab-files` are `overflow:auto` single panes.
 Forgetting to add a tab to the grid rule was a real bug (a two-pane tab with no grid shows no right pane).
 Under 900px the grid collapses to stacked rows. Tab switching (JS) toggles `.active` on both the clicked
 `.tabbtn` and its `#tab-…`, writes the URL hash, and lazy-loads that tab's data the first time.
 
-## Local dashboard — the four tabs
+## Local dashboard — the tabs
 
 ### Explorer (default) — the UIA tree browser
 Two panes. **Left `.treecol`** (a vertical flexbox): a `.treetools` header with a **window picker** `<select>`
@@ -132,6 +132,16 @@ A single scrolling pane: a **path** input + **Go** + **↑ up**, a clickable **b
 renders a **keys** `.sect` (each `.regkey` row navigates deeper on click) and a **values** `.sect` (each
 `.regval` is a 3-column grid: name / kind / value). Errors (access-denied) render as a red message. Navigation
 is all client-side re-fetches; the hash tracks the current path.
+
+### Files — read-only file browser
+Same single-scrolling-pane shape as Registry (path input + **Go** + **↑ up**, a clickable **breadcrumb**
+`#fsCrumb` "This PC \ C: \ Users \ …", and **`#fsBody`**). `loadFiles(path)` fetches `/fs?path=…`; an empty
+path lists the drives (`isRoot`). Each entry renders as a `.fsrow` grid (name / size / modified / action):
+folders (`.fsrow.dir`, accent name) descend on click, files show a **launch** link that POSTs `/process/launch`
+(shell-execute — opens exes, documents, URLs). `↑ up` follows the server-provided `parent` (null at a drive
+root → back to the drive list). Access-denied / not-found / "that's a file" render as a red message. The hash
+tracks the folder (`#files/C:\Users`), restored on load like Registry. It **reads metadata only** — never file
+contents; opening is always the launch path.
 
 ### Screen & Input — the operator console
 `.inner` is a responsive grid of `.card` sections:

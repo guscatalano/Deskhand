@@ -27,8 +27,30 @@ var allowedOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     $"http://127.0.0.1:{port}", $"http://localhost:{port}",
 };
 
-// Loopback only. No external interface is ever bound.
-builder.WebHost.ConfigureKestrel(k => k.ListenLocalhost(port));
+// Loopback by default. DESKHAND_BIND opens the port to the network on demand ("sometimes"):
+//   (unset)            -> loopback only (127.0.0.1); the browser dashboard needs no token
+//   any | 0.0.0.0 | *  -> all interfaces
+//   <ip>               -> that specific local address
+// Binding to a non-loopback address REQUIRES a DESKHAND_TOKEN — otherwise anyone on the network
+// gets full desktop control with no auth. We refuse to start otherwise.
+string? bind = Environment.GetEnvironmentVariable("DESKHAND_BIND")?.Trim();
+bool external = !string.IsNullOrWhiteSpace(bind)
+    && bind is not ("127.0.0.1" or "localhost" or "::1" or "[::1]");
+if (external && !requireToken)
+{
+    Console.Error.WriteLine(
+        "REFUSING TO START: DESKHAND_BIND opens a non-loopback port, but DESKHAND_TOKEN is not set.\n" +
+        "  Anyone on the network would get full desktop control with no authentication.\n" +
+        "  Fix: set DESKHAND_TOKEN to a strong secret, or unset DESKHAND_BIND to stay loopback-only.");
+    Environment.Exit(3);
+}
+builder.WebHost.ConfigureKestrel(k =>
+{
+    if (!external) { k.ListenLocalhost(port); return; }
+    if (bind is "any" or "0.0.0.0" or "*") k.ListenAnyIP(port);
+    else if (System.Net.IPAddress.TryParse(bind, out var ip)) k.Listen(new System.Net.IPEndPoint(ip, port));
+    else { Console.Error.WriteLine($"Invalid DESKHAND_BIND '{bind}'; using all interfaces."); k.ListenAnyIP(port); }
+});
 builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -90,58 +112,71 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 
-// ---- security middleware: loopback Host + cross-site Origin block + optional token ----
+// ---- security middleware: loopback Host + cross-site Origin block + token ----
+// Loopback bind: same-origin browser is trusted without a token (you're already on the box);
+//   a token, if set, is only demanded of non-browser clients. (Original behavior — unchanged.)
+// External bind (DESKHAND_BIND): a token is mandatory for EVERY client, browser included —
+//   Sec-Fetch-Site can be forged off-loopback, so it grants no trust; the dashboard sends the
+//   token as a Bearer header (it reads it from ?token= on first load).
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path.Value ?? "";
-    if (path is "/health" || path.StartsWith("/mcp", StringComparison.Ordinal))
+    if (path is "/health") { await next(); return; }
+    if (path.StartsWith("/mcp", StringComparison.Ordinal))
     {
-        await next(); // MCP transport handles its own protocol; loopback binding still applies
+        // MCP has no same-origin browser; when the port is exposed it must carry the token.
+        if (external && !FixedEquals(BearerOf(ctx), token!))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await ctx.Response.WriteAsJsonAsync(new { error = "MCP over an exposed port requires Authorization: Bearer <DESKHAND_TOKEN>.", type = "unauthorized" });
+            return;
+        }
+        await next(); // MCP transport handles its own protocol
         return;
     }
 
-    // Defense in depth against DNS-rebinding: require a loopback Host header.
-    var host = ctx.Request.Host.Host;
-    if (host is not ("localhost" or "127.0.0.1" or "[::1]" or "::1"))
+    if (!external)
     {
-        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-        await ctx.Response.WriteAsJsonAsync(new { error = "Non-loopback Host header rejected.", type = "forbidden" });
-        return;
+        // Defense in depth against DNS-rebinding: require a loopback Host header.
+        var host = ctx.Request.Host.Host;
+        if (host is not ("localhost" or "127.0.0.1" or "[::1]" or "::1"))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(new { error = "Non-loopback Host header rejected.", type = "forbidden" });
+            return;
+        }
+
+        // Block any cross-site caller (e.g. a malicious web page fetching localhost).
+        var origin = ctx.Request.Headers.Origin.ToString();
+        if (origin.Length > 0 && !allowedOrigins.Contains(origin))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(new { error = "Cross-origin request rejected.", type = "forbidden" });
+            return;
+        }
+
+        // Trust our own same-origin dashboard without a token.
+        var secFetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString();
+        bool trustedBrowser = (origin.Length > 0 && allowedOrigins.Contains(origin))
+            || string.Equals(secFetchSite, "same-origin", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(secFetchSite, "none", StringComparison.OrdinalIgnoreCase);
+        if (trustedBrowser || !requireToken) { await next(); return; }
     }
 
-    // Block any cross-site caller (e.g. a malicious web page fetching localhost).
-    var origin = ctx.Request.Headers.Origin.ToString();
-    if (origin.Length > 0 && !allowedOrigins.Contains(origin))
-    {
-        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-        await ctx.Response.WriteAsJsonAsync(new { error = "Cross-origin request rejected.", type = "forbidden" });
-        return;
-    }
-
-    // Trust our own same-origin dashboard without a token.
-    var secFetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString();
-    bool trustedBrowser = (origin.Length > 0 && allowedOrigins.Contains(origin))
-        || string.Equals(secFetchSite, "same-origin", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(secFetchSite, "none", StringComparison.OrdinalIgnoreCase);
-
-    if (trustedBrowser || !requireToken)
-    {
-        await next();
-        return;
-    }
-
-    // Non-browser client and a token is required.
-    var auth = ctx.Request.Headers.Authorization.ToString();
-    var provided = auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? auth["Bearer ".Length..].Trim() : "";
-    if (FixedEquals(provided, token!))
-    {
-        await next();
-        return;
-    }
+    // Token required: non-browser clients on loopback, and EVERY client when externally bound.
+    if (requireToken && FixedEquals(BearerOf(ctx), token!)) { await next(); return; }
 
     ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
-    await ctx.Response.WriteAsJsonAsync(new { error = "This non-browser client requires Authorization: Bearer <DESKHAND_TOKEN>.", type = "unauthorized" });
+    await ctx.Response.WriteAsJsonAsync(new { error = "This client requires Authorization: Bearer <DESKHAND_TOKEN>.", type = "unauthorized" });
 });
+
+static string BearerOf(HttpContext ctx)
+{
+    var auth = ctx.Request.Headers.Authorization.ToString();
+    if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return auth["Bearer ".Length..].Trim();
+    // Fallback for callers that cannot set headers (EventSource /events, an <img src=...>): ?token=.
+    return ctx.Request.Query["token"].ToString().Trim();
+}
 
 // ---- uniform error mapping ----
 app.Use(async (ctx, next) =>
@@ -387,13 +422,20 @@ api.MapPost("/keyboard/keys", (IAutomationBackend b, KeysRequest r) => { b.SendK
 // MCP over Streamable HTTP — same server, same state as the dashboard.
 app.MapMcp("/mcp");
 
+var shownHost = external ? (bind is "any" or "0.0.0.0" or "*" ? "<this-machine-ip>" : bind) : "127.0.0.1";
 Console.WriteLine();
 Console.WriteLine("  Deskhand — one server, two faces:");
 Console.WriteLine();
-Console.WriteLine($"      dashboard   http://127.0.0.1:{port}");
-Console.WriteLine($"      MCP (HTTP)  http://127.0.0.1:{port}/mcp");
+Console.WriteLine($"      dashboard   http://{shownHost}:{port}");
+Console.WriteLine($"      MCP (HTTP)  http://{shownHost}:{port}/mcp");
 Console.WriteLine();
-Console.WriteLine(requireToken
+if (external)
+{
+    Console.WriteLine($"  ** PORT EXPOSED TO THE NETWORK (DESKHAND_BIND={bind}). A token is required for ALL clients. **");
+    Console.WriteLine($"     Open the dashboard from another machine as:  http://{shownHost}:{port}/?token=<DESKHAND_TOKEN>");
+    Console.WriteLine( "     Put TLS in front (reverse proxy) if this crosses an untrusted network.");
+}
+else Console.WriteLine(requireToken
     ? "  DESKHAND_TOKEN is set: scripts/curl must send 'Authorization: Bearer <token>'. The web UI does not."
     : "  No token needed (loopback only). Set DESKHAND_TOKEN to require one for non-browser clients.");
 Console.WriteLine($"  Audit log: {auditLog.Directory}");

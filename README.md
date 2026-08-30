@@ -63,12 +63,33 @@ The dashboard talks to the API same-origin, so it needs no token.
 
 No bearer token is required for the browser dashboard. The server is protected by:
 
-- **Loopback only** — Kestrel binds `127.0.0.1` / `::1`; no external interface is ever exposed.
+- **Loopback by default** — Kestrel binds `127.0.0.1` / `::1`; no external interface is exposed
+  unless you opt in with `DESKHAND_BIND` (see below).
 - **Host check** — non-loopback `Host` headers are rejected (DNS-rebinding defense).
 - **Cross-site block** — any request whose `Origin` isn't this server is rejected `403`, so other
   web pages in your browser cannot reach it. No CORS headers are emitted.
 - **Optional token** — set `DESKHAND_TOKEN` to require `Authorization: Bearer <token>` from
-  *non-browser* clients (curl / scripts). The same-origin dashboard still needs none.
+  *non-browser* clients (curl / scripts). On loopback the same-origin dashboard still needs none.
+
+### Opening the port to the network (`DESKHAND_BIND`)
+
+The port is loopback-only until you set `DESKHAND_BIND` — so you expose it *sometimes*, on purpose:
+
+```powershell
+$env:DESKHAND_TOKEN = "a-strong-secret"   # MANDATORY when exposing — the server refuses to start without it
+$env:DESKHAND_BIND  = "any"               # "any" / "0.0.0.0" = all interfaces, or a specific local IP
+dotnet run --project src/Deskhand.Http -c Release
+# reach it from another machine: http://<this-pc-ip>:8791/?token=a-strong-secret
+```
+
+When bound to a non-loopback address the rules tighten: a **token becomes mandatory for *every*
+client, the browser dashboard included** (`Sec-Fetch-Site` can be forged off-loopback, so it grants
+no free pass), the loopback `Host` check is lifted, and `/mcp` requires the token too. The dashboard
+picks up the token from `?token=` on first load, stashes it in `sessionStorage`, and sends it as a
+bearer header (also via `?token=` on the `/events` stream). `/health` stays open; the static
+`index.html` is served without a token but is inert without one. There is **no TLS** — put a reverse
+proxy in front if this crosses an untrusted network. (The **fleet** server has the same switch:
+`DESKHAND_FLEET_BIND=any` with a mandatory `DESKHAND_FLEET_TOKEN`.)
 - **No stealth** — input is honest `SendInput`; there is no anti-detection behavior.
 - Run **unelevated** to automate normal apps. Elevated / secure-desktop targets are refused with a
   clear error (UIPI / secure desktop), by design.

@@ -362,12 +362,32 @@
 const $ = s => document.querySelector(s);
 const elm = (t,c) => { const e=document.createElement(t); if(c) e.className=c; return e; };
 
+/* Auth token. Only needed when the server is bound to the network (DESKHAND_BIND); on loopback
+   it stays empty and no header is sent. Read once from ?token= then scrubbed from the URL bar. */
+let AUTH_TOKEN = "";
+(function initToken(){
+  try{
+    const u=new URL(location.href);
+    const t=u.searchParams.get("token");
+    if(t){ AUTH_TOKEN=t; try{ sessionStorage.setItem("deskhand_token",t); }catch{}
+           u.searchParams.delete("token"); history.replaceState(null,"",u.pathname+u.search+u.hash); }
+    else { try{ AUTH_TOKEN=sessionStorage.getItem("deskhand_token")||""; }catch{} }
+  }catch{}
+})();
+
 async function api(path, method="GET", body){
   let res,data,txt="";
+  const headers = body?{"Content-Type":"application/json"}:{};
+  if(AUTH_TOKEN) headers["Authorization"]="Bearer "+AUTH_TOKEN;
   try {
-    res = await fetch(path,{ method, headers: body?{"Content-Type":"application/json"}:{}, body: body?JSON.stringify(body):undefined });
+    res = await fetch(path,{ method, headers, body: body?JSON.stringify(body):undefined });
     txt = await res.text(); try{ data = txt?JSON.parse(txt):null }catch{ data=txt }
   } catch(e){ logRow(method,path,"ERR"); throw e; }
+  if(res.status===401 && !AUTH_TOKEN){
+    const t=prompt("This Deskhand is exposed to the network and needs its access token:");
+    if(t){ AUTH_TOKEN=t.trim(); try{ sessionStorage.setItem("deskhand_token",AUTH_TOKEN); }catch{}
+           return api(path,method,body); }
+  }
   logRow(method,path,res.status);
   if(!res.ok){ const err=new Error((data&&data.error)||res.statusText); err.status=res.status; err.data=data; throw err; }
   return data;
@@ -880,7 +900,7 @@ setInterval(()=>{ refresh().catch(()=>{}); refreshControl(); macStatus(); },5000
 $("#evClr").onclick=()=>$("#events").innerHTML="";
 (function startEvents(){
   try{
-    const es=new EventSource("/events");
+    const es=new EventSource("/events"+(AUTH_TOKEN?("?token="+encodeURIComponent(AUTH_TOKEN)):""));
     es.onmessage=(e)=>{ try{ const ev=JSON.parse(e.data);
       const row=elm("div","logrow");
       const t=elm("span","s "+(ev.type==="focus"?"ok":"")); t.textContent=ev.type; t.style.width="96px"; t.style.flex="none";

@@ -12,6 +12,17 @@ int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_FLEET_PORT"
 bool bindAny = string.Equals(Environment.GetEnvironmentVariable("DESKHAND_FLEET_BIND"), "any", StringComparison.OrdinalIgnoreCase);
 string? token = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN");
 
+// Binding to the network without a shared token would let anyone reach the fleet + drive every
+// connected PC. Refuse to start in that state (matches the local server's DESKHAND_BIND rule).
+if (bindAny && string.IsNullOrWhiteSpace(token))
+{
+    Console.Error.WriteLine(
+        "REFUSING TO START: DESKHAND_FLEET_BIND=any exposes the fleet to the network, but\n" +
+        "  DESKHAND_FLEET_TOKEN is not set. Anyone could reach the fleet and drive every connected PC.\n" +
+        "  Fix: set DESKHAND_FLEET_TOKEN to a strong secret, or unset DESKHAND_FLEET_BIND.");
+    Environment.Exit(3);
+}
+
 builder.WebHost.ConfigureKestrel(k => { if (bindAny) k.ListenAnyIP(port); else k.ListenLocalhost(port); });
 builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
 builder.Services.AddSingleton<AgentRegistry>();
@@ -77,7 +88,10 @@ app.Map("/agent/connect", async (HttpContext ctx) =>
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path.Value ?? "";
-    if (path is "/health" || path.StartsWith("/agent/connect") || path.StartsWith("/mcp")) { await next(); return; }
+    // /agent/connect authenticates itself (above). /health is always open. /mcp normally rides the
+    // loopback bind, but once the port is exposed (bindAny) it must present the token like any client.
+    if (path is "/health" || path.StartsWith("/agent/connect")) { await next(); return; }
+    if (path.StartsWith("/mcp") && !bindAny) { await next(); return; }
     if (token is not null && Bearer(ctx) != token)
     {
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;

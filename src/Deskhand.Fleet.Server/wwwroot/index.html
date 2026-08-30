@@ -132,9 +132,20 @@
 const $=s=>document.querySelector(s), elm=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
 let toastT; function toast(m,err){const t=$("#toast");t.textContent=m;t.className="show"+(err?" err":"");clearTimeout(toastT);toastT=setTimeout(()=>t.className="",2200);}
 function guard(fn){return async(...a)=>{try{await fn(...a)}catch(e){toast(e.message||"error",true)}};}
+/* Fleet token: needed only when the server is bound to the network (DESKHAND_FLEET_BIND=any).
+   Read once from ?token= then scrubbed from the URL bar; empty on loopback. */
+let AUTH_TOKEN="";
+(function(){try{const u=new URL(location.href);const t=u.searchParams.get("token");
+  if(t){AUTH_TOKEN=t;try{sessionStorage.setItem("deskhand_fleet_token",t)}catch{}
+        u.searchParams.delete("token");history.replaceState(null,"",u.pathname+u.search+u.hash);}
+  else{try{AUTH_TOKEN=sessionStorage.getItem("deskhand_fleet_token")||""}catch{}}}catch{}})();
 async function api(path,method="GET",body){
-  const r=await fetch(path,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined});
+  const headers=body?{"Content-Type":"application/json"}:{};
+  if(AUTH_TOKEN) headers["Authorization"]="Bearer "+AUTH_TOKEN;
+  const r=await fetch(path,{method,headers,body:body?JSON.stringify(body):undefined});
   const txt=await r.text(); let d; try{d=txt?JSON.parse(txt):null}catch{d=txt}
+  if(r.status===401 && !AUTH_TOKEN){const t=prompt("This fleet server is exposed to the network and needs its token:");
+    if(t){AUTH_TOKEN=t.trim();try{sessionStorage.setItem("deskhand_fleet_token",AUTH_TOKEN)}catch{}return api(path,method,body);}}
   if(!r.ok) throw new Error((d&&d.error)||r.statusText);
   return d;
 }

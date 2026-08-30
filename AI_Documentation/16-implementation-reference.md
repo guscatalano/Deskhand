@@ -107,6 +107,26 @@ Agent **dials out** (WebSocket) to the server — no inbound port on the target.
 - **MCP client:** `claude mcp add --transport http deskhand http://127.0.0.1:8791/mcp` (+ `deskhand-fleet` @ 8799/mcp).
 - **Acceptance:** run through `15-test-plan.md`.
 
+### Exposing the port to the network (`DESKHAND_BIND`)
+
+Both HTTP hosts bind **loopback only** by default. To open a host to the LAN *on demand*:
+- **Local server** (`Deskhand.Http/Program.cs`): set `DESKHAND_BIND` = `any`/`0.0.0.0`/`*` (all
+  interfaces) or a specific local IP. **Fail-fast:** if `DESKHAND_BIND` is set to a non-loopback
+  value and `DESKHAND_TOKEN` is empty, the process prints a refusal and `Environment.Exit(3)` — you
+  cannot expose an unauthenticated server. When `external`, the security middleware changes: it skips
+  the loopback `Host` check, drops the tokenless same-origin trust (Sec-Fetch-Site is forgeable
+  off-box), and requires the token for **every** request including `/mcp` and the browser dashboard.
+  `/health` stays open; static `index.html` is served unauthenticated but is inert without the token.
+  `BearerOf(ctx)` accepts the token from `Authorization: Bearer` **or** a `?token=` query param (the
+  latter for `EventSource("/events")` and any `<img src>`, which can't set headers).
+- **Fleet server** (`Deskhand.Fleet.Server/Program.cs`): `DESKHAND_FLEET_BIND=any` +
+  mandatory `DESKHAND_FLEET_TOKEN` (same fail-fast). When exposed, `/mcp` no longer bypasses the
+  token; `/agent/connect` and `/health` are always exempt (the former authenticates itself).
+- **Dashboards** read the token from `?token=` on first load, scrub it from the URL bar
+  (`history.replaceState`), stash it in `sessionStorage` (`deskhand_token` / `deskhand_fleet_token`),
+  and attach it as a bearer header in `api()`; a `401` with no token triggers a `prompt()` + retry.
+- **No TLS** anywhere — front it with a reverse proxy for untrusted networks.
+
 ## Open items / not yet verified
 
 - **RDP install last-mile**: the full RPC chain is verified (non-RDP agent returns a clean "not an RDP connector" error), but the actual remote Win+R bootstrap needs a real RDP target + a published self-contained agent. Fragile (UAC, login screen, AV, focus, drive-redirection policy). Fallback if Win+R misfires: click Start instead.

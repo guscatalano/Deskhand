@@ -143,14 +143,17 @@
   .meter { height:7px; background:var(--surface-3); border-radius:4px; overflow:hidden; margin:5px 0 3px; }
   .meter > span { display:block; height:100%; background:var(--good); }
   .meter.warn > span { background:var(--warn); } .meter.crit > span { background:var(--crit); }
-  .fsrow { display:grid; grid-template-columns:1fr 84px 150px 56px; gap:8px; padding:5px 7px; border-radius:6px; font-family:var(--mono); font-size:12px; align-items:center; }
+  .fsrow { display:grid; grid-template-columns:22px 1fr 84px 148px auto; gap:8px; padding:5px 7px; border-radius:6px; font-family:var(--mono); font-size:12px; align-items:center; }
   .fsrow:hover { background:var(--surface-2); }
   .fsrow .nm { display:flex; align-items:center; gap:7px; word-break:break-all; }
   .fsrow.dir .nm { cursor:pointer; color:var(--accent); }
   .fsrow .sz, .fsrow .md { color:var(--ink-3); font-size:11px; text-align:right; font-variant-numeric:tabular-nums; }
   .fsrow .md { text-align:left; }
-  .fsrow .act a { cursor:pointer; color:var(--accent); font-size:11px; }
+  .fsrow .act { display:flex; gap:9px; justify-content:flex-end; }
+  .fsrow .act a { cursor:pointer; color:var(--accent); font-size:11px; white-space:nowrap; }
+  .fsrow .act a.danger { color:var(--action); }
   .fsrow .act a:hover { text-decoration:underline; }
+  .fsrow input[type=checkbox] { accent-color:var(--accent); cursor:pointer; }
   .regkey { display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:6px; cursor:pointer; font-family:var(--mono); font-size:12px; }
   .regkey:hover { background:var(--surface-2); }
   .regval { display:grid; grid-template-columns:minmax(140px,240px) 90px 1fr; gap:8px; padding:5px 7px; border-bottom:1px solid var(--line-2); font-family:var(--mono); font-size:11.5px; align-items:start; }
@@ -278,6 +281,16 @@
         <input type="text" id="fsPath" placeholder="C:\Users" style="flex:1;font-family:var(--mono);font-size:12px">
         <button class="btn p" id="fsGo">Go</button>
         <button class="btn" id="fsUp" title="Parent folder">↑ up</button>
+      </div>
+      <div class="row" id="fsTools" style="margin-top:8px">
+        <button class="btn a" id="fsUploadBtn" title="Upload files into this folder">⬆ Upload</button>
+        <input type="file" id="fsUpload" multiple hidden>
+        <span style="flex:1"></span>
+        <span class="lbl" id="fsSelCount" style="color:var(--ink-3)">0 selected</span>
+        <button class="btn sm" id="fsZipSel" title="Zip selected into this folder">Zip</button>
+        <button class="btn sm" id="fsCopySel" title="Copy selected to…">Copy…</button>
+        <button class="btn sm" id="fsMoveSel" title="Move selected to…">Move…</button>
+        <button class="btn sm a" id="fsDelSel" title="Delete selected (to Recycle Bin)">Delete</button>
       </div>
       <div class="coordbar" id="fsCrumb" style="margin:10px 0"></div>
       <div id="fsBody"></div>
@@ -894,15 +907,19 @@ $("#regGo").onclick=()=>loadRegistry($("#regPath").value.trim());
 $("#regPath").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#regGo").click(); });
 $("#regUp").onclick=()=>{ const p=regCurrent.split("\\"); p.pop(); loadRegistry(p.join("\\")); };
 
-/* ---------- files (read-only file browser) ---------- */
+/* ---------- files (file manager: browse + download/upload/delete/rename/move/copy/zip) ---------- */
 let fsCurrent="", fsParent=null, fsIsRoot=true, fsLoaded=false;
+const fsSel=new Set();
 function fmtSize(n){ if(n==null) return ""; const u=["B","KB","MB","GB","TB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return (i?v.toFixed(1):v)+" "+u[i]; }
+function fsUpdateSel(){ $("#fsSelCount").textContent=fsSel.size+" selected"; ["fsZipSel","fsCopySel","fsMoveSel","fsDelSel"].forEach(id=>{ const b=$("#"+id); if(b) b.disabled=fsSel.size===0; }); }
+function fsReload(){ loadFiles(fsIsRoot?"":fsCurrent); }
 const loadFiles=guard(async(path)=>{
   const d=await api("/fs?path="+encodeURIComponent(path||""));
   fsIsRoot=!!d.isRoot; fsParent=d.parent||null; fsCurrent=fsIsRoot?"":(d.path||""); fsLoaded=true;
+  fsSel.clear(); fsUpdateSel();
   $("#fsPath").value=fsCurrent;
+  $("#fsUploadBtn").disabled=fsIsRoot;
   history.replaceState(null,"","#files"+(fsCurrent?"/"+fsCurrent:""));
-  // breadcrumb
   const crumb=$("#fsCrumb"); crumb.innerHTML="";
   const mk=(label,target)=>{ const a=elm("a"); a.textContent=label; a.style.cursor="pointer"; a.onclick=()=>loadFiles(target); return a; };
   crumb.append(mk("This PC",""));
@@ -914,20 +931,70 @@ const loadFiles=guard(async(path)=>{
   const sect=elm("div","sect"); const h=elm("div","h"); h.innerHTML=`entries <span class="count">${nDir} folder${nDir===1?"":"s"} · ${nFile} file${nFile===1?"":"s"}</span>`; sect.append(h);
   d.entries.forEach(e=>{
     const row=elm("div","fsrow"+(e.isDirectory?" dir":""));
+    // select checkbox (not for drive roots)
+    const cbCell=elm("div");
+    if(!fsIsRoot){ const cb=elm("input"); cb.type="checkbox"; cb.onclick=()=>{ if(cb.checked) fsSel.add(e.path); else fsSel.delete(e.path); fsUpdateSel(); }; cbCell.append(cb); }
     const nm=elm("div","nm"); const tick=elm("span"); tick.style.color="var(--ink-3)"; tick.textContent=e.isDirectory?"▸":"·"; const t=elm("span"); t.textContent=e.name; nm.append(tick,t);
     if(e.isDirectory) nm.onclick=()=>loadFiles(e.path);
     const sz=elm("div","sz"); sz.textContent=e.isDirectory?"":fmtSize(e.size);
     const md=elm("div","md"); md.textContent=e.modified?new Date(e.modified).toLocaleString():"";
-    const act=elm("div","act"); const a=elm("a"); a.textContent=e.isDirectory?"open":"launch";
-    a.onclick=guard(async()=>{ if(e.isDirectory){ loadFiles(e.path); return; } const r=await api("/process/launch","POST",{path:e.path,waitForWindowMs:4000}); toast(r.hasWindow?`launched: ${r.window?.name||r.processName||e.name}`:`launched: ${e.name}`); });
-    act.append(a); row.append(nm,sz,md,act); sect.append(row);
+    const act=elm("div","act");
+    const link=(label,cls,fn)=>{ const a=elm("a"); a.textContent=label; if(cls) a.className=cls; a.onclick=guard(fn); return a; };
+    if(e.isDirectory){ act.append(link("open",null,async()=>loadFiles(e.path))); }
+    else {
+      act.append(link("download",null,async()=>fsDownload(e.path,e.name)));
+      act.append(link("launch",null,async()=>{ const r=await api("/process/launch","POST",{path:e.path,waitForWindowMs:4000}); toast(r.hasWindow?`launched: ${r.window?.name||r.processName||e.name}`:`launched: ${e.name}`); }));
+      if((e.extension||"").toLowerCase()===".zip") act.append(link("unzip",null,async()=>{ const r=await api("/fs/unzip","POST",{zipPath:e.path}); toast(r.ok?`unzipped (${r.detail})`:r.error,!r.ok); fsReload(); }));
+    }
+    if(!fsIsRoot){
+      act.append(link("rename",null,async()=>{ const nn=prompt("Rename to:",e.name); if(!nn||nn===e.name) return; const r=await api("/fs/rename","POST",{path:e.path,newName:nn}); toast(r.ok?"renamed":r.error,!r.ok); fsReload(); }));
+      act.append(link("delete","danger",async()=>{ if(!confirm(`Delete "${e.name}" to the Recycle Bin?`)) return; const r=await api("/fs/delete","POST",{path:e.path}); toast(r.ok?`deleted (${r.detail})`:r.error,!r.ok); fsReload(); }));
+    }
+    row.append(cbCell,nm,sz,md,act); sect.append(row);
   });
   if(!d.entries.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(empty)"; sect.append(em); }
   body.append(sect);
 });
+async function fsDownload(path,name){
+  const h={}; if(AUTH_TOKEN) h["Authorization"]="Bearer "+AUTH_TOKEN;
+  const r=await fetch("/fs/download?path="+encodeURIComponent(path),{headers:h});
+  if(!r.ok){ let m=r.status; try{ m=(await r.json()).error||m; }catch{} toast("download: "+m,true); return; }
+  const blob=await r.blob(); const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=name; document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+$("#fsUploadBtn").onclick=()=>$("#fsUpload").click();
+$("#fsUpload").onchange=guard(async()=>{
+  const files=$("#fsUpload").files; if(!files.length||!fsCurrent) return;
+  const fd=new FormData(); fd.append("dir",fsCurrent); for(const f of files) fd.append("files",f);
+  const h={}; if(AUTH_TOKEN) h["Authorization"]="Bearer "+AUTH_TOKEN;
+  const r=await fetch("/fs/upload",{method:"POST",headers:h,body:fd});
+  $("#fsUpload").value="";
+  if(!r.ok){ let m=r.status; try{ m=(await r.json()).error||m; }catch{} toast("upload: "+m,true); return; }
+  const d=await r.json(); toast(`uploaded ${d.written.length} file(s)`); fsReload();
+});
+$("#fsZipSel").onclick=guard(async()=>{
+  if(!fsSel.size) return; const name=prompt("Zip file name:","archive.zip"); if(!name) return;
+  const dest=fsCurrent.replace(/\\+$/,"")+"\\"+name;
+  const r=await api("/fs/zip","POST",{sources:[...fsSel],dest,overwrite:true}); toast(r.ok?`zipped ${r.detail}`:r.error,!r.ok); fsReload();
+});
+$("#fsCopySel").onclick=guard(()=>fsCopyMove("/fs/copy","Copy"));
+$("#fsMoveSel").onclick=guard(()=>fsCopyMove("/fs/move","Move"));
+async function fsCopyMove(ep,verb){
+  if(!fsSel.size) return; const dest=prompt(verb+" selected to folder:",fsCurrent); if(!dest) return;
+  let ok=0,fail=0;
+  for(const s of [...fsSel]){ try{ const r=await api(ep,"POST",{source:s,dest,overwrite:false}); if(r.ok)ok++; else fail++; }catch{ fail++; } }
+  toast(`${verb.toLowerCase()}: ${ok} ok${fail?`, ${fail} failed`:""}`,fail>0); fsReload();
+}
+$("#fsDelSel").onclick=guard(async()=>{
+  if(!fsSel.size) return; if(!confirm(`Delete ${fsSel.size} item(s) to the Recycle Bin?`)) return;
+  let ok=0,fail=0;
+  for(const s of [...fsSel]){ try{ const r=await api("/fs/delete","POST",{path:s}); if(r.ok)ok++; else fail++; }catch{ fail++; } }
+  toast(`deleted: ${ok} ok${fail?`, ${fail} failed`:""}`,fail>0); fsReload();
+});
 $("#fsGo").onclick=()=>loadFiles($("#fsPath").value.trim());
 $("#fsPath").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#fsGo").click(); });
 $("#fsUp").onclick=()=>{ if(fsIsRoot) return; loadFiles(fsParent||""); };
+fsUpdateSel();
 
 /* ---------- shell (one-shot command runner) ---------- */
 async function runShell(){

@@ -133,15 +133,19 @@ renders a **keys** `.sect` (each `.regkey` row navigates deeper on click) and a 
 `.regval` is a 3-column grid: name / kind / value). Errors (access-denied) render as a red message. Navigation
 is all client-side re-fetches; the hash tracks the current path.
 
-### Files — read-only file browser
-Same single-scrolling-pane shape as Registry (path input + **Go** + **↑ up**, a clickable **breadcrumb**
-`#fsCrumb` "This PC \ C: \ Users \ …", and **`#fsBody`**). `loadFiles(path)` fetches `/fs?path=…`; an empty
-path lists the drives (`isRoot`). Each entry renders as a `.fsrow` grid (name / size / modified / action):
-folders (`.fsrow.dir`, accent name) descend on click, files show a **launch** link that POSTs `/process/launch`
-(shell-execute — opens exes, documents, URLs). `↑ up` follows the server-provided `parent` (null at a drive
-root → back to the drive list). Access-denied / not-found / "that's a file" render as a red message. The hash
-tracks the folder (`#files/C:\Users`), restored on load like Registry. It **reads metadata only** — never file
-contents; opening is always the launch path.
+### Files — file manager
+Single scrolling pane: path input + **Go** + **↑ up**, a **toolbar** (`#fsTools`), a clickable **breadcrumb**
+`#fsCrumb` "This PC \ C: \ Users \ …", and **`#fsBody`**. `loadFiles(path)` fetches `/fs?path=…`; an empty path
+lists the drives (`isRoot`). Each entry is a `.fsrow` grid (**checkbox** / name / size / modified / **actions**):
+folders (`.fsrow.dir`, accent name) descend on click; per-row action links are **download** (`fsDownload` —
+`fetch /fs/download` with the auth header → blob → `<a download>`), **launch** (`/process/launch`), **unzip**
+(on `.zip`), **rename** (prompt → `/fs/rename`), and **delete** (confirm → `/fs/delete`, → Recycle Bin; the
+link is orange `.danger`). The **toolbar** has **⬆ Upload** (hidden `#fsUpload` multi-file input → multipart
+`/fs/upload` into the current folder) and, gated on a non-empty selection (`fsSel` Set + `fsUpdateSel`),
+**Zip** (`/fs/zip` the selected into a named archive), **Copy…** / **Move…** (prompt a destination →
+`/fs/copy` / `/fs/move` per item), and **Delete** selected. Drive roots show no checkbox/actions and disable
+upload. Mutating calls are armed-gated + audited server-side; `fsReload()` re-fetches after each. The hash
+tracks the folder (`#files/C:\Users`), restored on load like Registry.
 
 ### Shell — one-shot command runner
 A single scrolling pane: a shell `<select>` (PowerShell / pwsh / cmd), an optional `#shCwd` working-dir

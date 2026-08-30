@@ -9,6 +9,13 @@ public record HotfixDto(string? HotFixId, string? Description, string? Installed
 public record DeviceDto(string? Name, string? Class, string? Manufacturer, string? Status, string? DeviceId);
 public record DriverDto(string? Device, string? Provider, string? Version, string? Date, string? InfName, bool? Signed);
 public record AudioDeviceDto(string? Name, string? Manufacturer, string? Status);
+public record GpuDto(string? Name, string? DriverVersion, string? DriverDate, long? VramBytes, string? VideoProcessor, string? Resolution, uint? RefreshHz);
+public record MonitorDetailDto(string? Manufacturer, string? Model, string? Serial, int? Year);
+public record BiosDto(string? Manufacturer, string? Version, string? ReleaseDate, string? SerialNumber, string? SmbiosVersion);
+public record BaseboardDto(string? Manufacturer, string? Product, string? Version, string? SerialNumber);
+public record MemoryModuleDto(string? Slot, string? BankLabel, long? CapacityBytes, uint? SpeedMhz, string? Manufacturer, string? PartNumber, string? FormFactor, string? MemoryType);
+public record HardwareDetailDto(string? ComputerManufacturer, string? ComputerModel, BiosDto? Bios, BaseboardDto? Motherboard,
+    IReadOnlyList<GpuDto> Gpus, IReadOnlyList<MonitorDetailDto> Monitors, IReadOnlyList<MemoryModuleDto> Memory);
 
 /// <summary>
 /// Read-only hardware / software inventory via WMI (CIM): physical disks + partitions + volumes, installed
@@ -123,6 +130,71 @@ public static class HardwareInfoService
         }
         catch { }
         return list;
+    }
+
+    // ---- detailed inventory: computer, BIOS, motherboard, GPUs, monitors, RAM sticks ----
+    public static HardwareDetailDto Detail()
+    {
+        string? cMfr = null, cModel = null;
+        First("SELECT Manufacturer, Model FROM Win32_ComputerSystem", o => { cMfr = Str(o["Manufacturer"]); cModel = Str(o["Model"]); });
+
+        BiosDto? bios = null;
+        First("SELECT Manufacturer, SMBIOSBIOSVersion, ReleaseDate, SerialNumber, SMBIOSMajorVersion, SMBIOSMinorVersion FROM Win32_BIOS",
+            o => bios = new BiosDto(Str(o["Manufacturer"]), Str(o["SMBIOSBIOSVersion"]), WmiDate(o["ReleaseDate"]),
+                Str(o["SerialNumber"]), $"{Str(o["SMBIOSMajorVersion"])}.{Str(o["SMBIOSMinorVersion"])}"));
+
+        BaseboardDto? board = null;
+        First("SELECT Manufacturer, Product, Version, SerialNumber FROM Win32_BaseBoard",
+            o => board = new BaseboardDto(Str(o["Manufacturer"]), Str(o["Product"]), Str(o["Version"]), Str(o["SerialNumber"])));
+
+        var gpus = new List<GpuDto>();
+        Each("SELECT Name, DriverVersion, DriverDate, AdapterRAM, VideoProcessor, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController",
+            o => gpus.Add(new GpuDto(Str(o["Name"]), Str(o["DriverVersion"]), WmiDate(o["DriverDate"]),
+                L(o["AdapterRAM"]), Str(o["VideoProcessor"]),
+                (L(o["CurrentHorizontalResolution"]) is long w && L(o["CurrentVerticalResolution"]) is long h && w > 0) ? $"{w}×{h}" : null,
+                U(o["CurrentRefreshRate"]) is uint r && r > 0 ? r : null)));
+
+        var monitors = new List<MonitorDetailDto>();
+        try
+        {
+            using var s = new ManagementObjectSearcher(@"root\wmi", "SELECT ManufacturerName, UserFriendlyName, SerialNumberID, YearOfManufacture FROM WmiMonitorID");
+            foreach (ManagementObject o in s.Get())
+                monitors.Add(new MonitorDetailDto(U16(o["ManufacturerName"]), U16(o["UserFriendlyName"]), U16(o["SerialNumberID"]),
+                    (int?)(U(o["YearOfManufacture"]) is uint y && y > 0 ? y : (uint?)null)));
+        }
+        catch { }
+
+        var mem = new List<MemoryModuleDto>();
+        Each("SELECT DeviceLocator, BankLabel, Capacity, Speed, Manufacturer, PartNumber, FormFactor, SMBIOSMemoryType FROM Win32_PhysicalMemory",
+            o => mem.Add(new MemoryModuleDto(Str(o["DeviceLocator"]), Str(o["BankLabel"]), L(o["Capacity"]),
+                U(o["Speed"]) is uint sp && sp > 0 ? sp : null, Str(o["Manufacturer"])?.Trim(), Str(o["PartNumber"])?.Trim(),
+                FormFactor(U(o["FormFactor"])), MemType(U(o["SMBIOSMemoryType"])))));
+
+        return new HardwareDetailDto(cMfr, cModel, bios, board, gpus, monitors, mem);
+    }
+
+    private static string? FormFactor(uint f) => f switch { 8 => "DIMM", 12 => "SODIMM", 0 => null, _ => $"FF{f}" };
+    private static string? MemType(uint t) => t switch
+    { 20 => "DDR", 21 => "DDR2", 24 => "DDR3", 26 => "DDR4", 34 => "DDR5", 0 => null, _ => $"type{t}" };
+
+    // WmiMonitorID string fields are UInt16[] (char codes, null-terminated).
+    private static string? U16(object? v)
+    {
+        if (v is not ushort[] arr) return null;
+        var chars = arr.TakeWhile(c => c != 0).Select(c => (char)c).ToArray();
+        var s = new string(chars).Trim();
+        return string.IsNullOrEmpty(s) ? null : s;
+    }
+
+    private static void First(string query, Action<ManagementObject> use)
+    {
+        try { using var s = new ManagementObjectSearcher(query); foreach (ManagementObject o in s.Get()) { use(o); break; } }
+        catch { }
+    }
+    private static void Each(string query, Action<ManagementObject> use)
+    {
+        try { using var s = new ManagementObjectSearcher(query); foreach (ManagementObject o in s.Get()) use(o); }
+        catch { }
     }
 
     // ---- WMI value helpers ----

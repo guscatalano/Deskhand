@@ -341,6 +341,12 @@ api.MapGet("/hardware/updates", () => Results.Ok(Deskhand.Core.Services.Hardware
 api.MapGet("/hardware/devices", (string? @class) => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Devices(@class)));
 api.MapGet("/hardware/drivers", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Drivers()));
 api.MapGet("/hardware/audio", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Audio()));
+// Detailed hardware: computer model, BIOS, motherboard, GPUs, monitors, RAM sticks.
+api.MapGet("/hardware/detail", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Detail()));
+// Logon sessions (WTS): console + RDP sessions, their state, user, client.
+api.MapGet("/sessions", () => Results.Ok(Deskhand.Core.Services.SessionsService.List()));
+// Default audio endpoints (Core Audio): playback + recording device, volume %, mute.
+api.MapGet("/audio/default", () => Results.Ok(Deskhand.Core.Services.AudioService.Defaults()));
 
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.

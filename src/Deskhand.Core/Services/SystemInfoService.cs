@@ -15,7 +15,8 @@ public record NetInfoDto(string Name, string Description, string Type, string St
 public record FirewallInfoDto(bool? DomainEnabled, bool? PrivateEnabled, bool? PublicEnabled, string? Note = null);
 public record SystemInfoDto(OsInfoDto Os, string MachineName, string UserName, string? Domain,
     TimeInfoDto Time, CpuInfoDto Cpu, MemoryInfoDto Memory,
-    IReadOnlyList<DiskInfoDto> Disks, IReadOnlyList<NetInfoDto> Network, FirewallInfoDto Firewall);
+    IReadOnlyList<DiskInfoDto> Disks, IReadOnlyList<NetInfoDto> Network, FirewallInfoDto Firewall,
+    IReadOnlyList<SessionDto> Sessions);
 
 /// <summary>
 /// Read-only "about this machine" snapshot: Windows version (incl. BuildLab), uptime, CPU, memory, disks,
@@ -26,7 +27,7 @@ public static class SystemInfoService
 {
     public static SystemInfoDto Get() => new(
         Os(), Environment.MachineName, Environment.UserName, DomainName(),
-        Time(), Cpu(), Memory(), Disks(), Network(), Firewall());
+        Time(), Cpu(), Memory(), Disks(), Network(), Firewall(), SessionsService.List());
 
     // ---- OS / Windows version ----
     private static OsInfoDto Os()

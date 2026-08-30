@@ -111,6 +111,15 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_audio_devices"), Description("Audio devices (read-only, Win32_SoundDevice): { name, manufacturer, status }.")]
     public static string AudioDevices() => Json(Deskhand.Core.Services.HardwareInfoService.Audio());
 
+    [McpServerTool(Name = "deskhand_audio_defaults"), Description("Default audio endpoints (read-only, Core Audio): { playback, recording } each with { name, id, volumePercent (0-100), muted }.")]
+    public static string AudioDefaults() => Json(Deskhand.Core.Services.AudioService.Defaults());
+
+    [McpServerTool(Name = "deskhand_hardware_detail"), Description("Detailed hardware inventory (read-only, WMI): computer manufacturer/model, BIOS (version/date/serial/SMBIOS), motherboard (manufacturer/product/serial), GPUs (name/driver/VRAM/resolution/refresh), monitors (manufacturer/model/serial/year), and RAM sticks (slot/capacity/speed/manufacturer/part/type e.g. DDR5).")]
+    public static string HardwareDetail() => Json(Deskhand.Core.Services.HardwareInfoService.Detail());
+
+    [McpServerTool(Name = "deskhand_sessions"), Description("Logon sessions via the WTS APIs (read-only): the console session, any RDP sessions, and service/listener sessions — each with { sessionId, station, state (Active/Disconnected/Listen/…), user, domain, clientName (RDP client machine, empty for local), isCurrent }.")]
+    public static string Sessions() => Json(Deskhand.Core.Services.SessionsService.List());
+
     [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));

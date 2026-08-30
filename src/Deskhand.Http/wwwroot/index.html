@@ -350,8 +350,15 @@
       <div id="hwDisks"></div>
       <div class="sect" style="margin-top:18px"><div class="h">Windows updates <span class="count" id="hwUpdCount"></span></div></div>
       <div id="hwUpdates"></div>
-      <div class="sect" style="margin-top:18px"><div class="h">Audio devices <span class="count" id="hwAudioCount"></span></div></div>
-      <div id="hwAudio"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">System · BIOS · motherboard</div></div>
+      <div id="hwSystem"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">Graphics &amp; displays</div></div>
+      <div id="hwGraphics"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">Memory <span class="count" id="hwMemCount"></span></div></div>
+      <div id="hwMemory"></div>
+      <div class="sect" style="margin-top:18px"><div class="h">Audio <span class="count" id="hwAudioCount"></span></div></div>
+      <div id="hwAudioDefault"></div>
+      <div id="hwAudio" style="margin-top:6px"></div>
       <div class="sect" style="margin-top:18px"><div class="h">Devices</div></div>
       <div class="row"><input id="hwDevClass" placeholder="class filter: Net · Display · Media · USB · System … (empty = all)" style="flex:1;font-family:var(--mono);font-size:12px"><button class="btn" id="hwDevLoad">Load</button></div>
       <div id="hwDevices" style="margin-top:8px"></div>
@@ -1119,6 +1126,10 @@ const loadSystem=guard(async()=>{
   card("Network", nh||kv("none",""));
   const fp=(l,on)=>`<div class="syskv"><span class="k">${l}</span><span class="v"><span style="color:${on===true?'var(--good)':on===false?'var(--crit)':'var(--ink-3)'}">${on===true?'on':on===false?'off':'unknown'}</span></span></div>`;
   card("Windows Firewall", fp("Domain",d.firewall.domainEnabled)+fp("Private",d.firewall.privateEnabled)+fp("Public",d.firewall.publicEnabled)+(d.firewall.note?`<div class="lbl" style="color:var(--ink-3);margin-top:6px">${d.firewall.note}</div>`:""));
+  if(d.sessions&&d.sessions.length){
+    let sh=""; d.sessions.forEach(s=>{ const who=s.user?((s.domain?s.domain+"\\":"")+s.user):"—"; const extra=[s.state,s.clientName&&("client "+s.clientName)].filter(Boolean).join(" · "); sh+=kv(`#${s.sessionId} ${s.station||""}${s.isCurrent?' <span style="color:var(--good)">●</span>':''}`, `${who} · ${extra}`); });
+    card("Sessions (WTS)", sh);
+  }
 });
 $("#sysRefresh").onclick=loadSystem;
 
@@ -1279,6 +1290,25 @@ const loadHardware=guard(async()=>{
   const uc=$("#hwUpdates"); uc.innerHTML=""; ups.forEach(u=>uc.append(hwKv((u.hotFixId||"")+" · "+(u.description||""), u.installedOn)));
   const au=await api("/hardware/audio"); $("#hwAudioCount").textContent=au.length;
   const ac=$("#hwAudio"); ac.innerHTML=""; au.forEach(a=>ac.append(hwKv(a.name, (a.manufacturer||"")+" · "+(a.status||""))));
+  // detailed hardware: computer/BIOS/board, GPUs, monitors, RAM
+  const det=await api("/hardware/detail");
+  const sysc=elm("div","syscard");
+  sysc.innerHTML=hwKv("Computer",(det.computerManufacturer||"")+" "+(det.computerModel||"")).outerHTML
+    + (det.bios?hwKv("BIOS",(det.bios.manufacturer||"")+" v"+(det.bios.version||"?")+" · "+(det.bios.releaseDate||"")+" · SMBIOS "+(det.bios.smbiosVersion||"")).outerHTML:"")
+    + (det.bios&&det.bios.serialNumber?hwKv("BIOS serial",det.bios.serialNumber).outerHTML:"")
+    + (det.motherboard?hwKv("Motherboard",(det.motherboard.manufacturer||"")+" "+(det.motherboard.product||"")+" "+(det.motherboard.version||"")).outerHTML:"");
+  $("#hwSystem").innerHTML=""; $("#hwSystem").append(sysc);
+  const gc=$("#hwGraphics"); gc.innerHTML="";
+  (det.gpus||[]).forEach(g=>gc.append(hwKv(g.name, [g.resolution&&(g.resolution+(g.refreshHz?(" @ "+g.refreshHz+"Hz"):"")), g.vramBytes&&(fmtSize(g.vramBytes)+" VRAM"), g.driverVersion&&("driver "+g.driverVersion+(g.driverDate?(" ("+g.driverDate+")"):""))].filter(Boolean).join(" · "))));
+  (det.monitors||[]).forEach(m=>gc.append(hwKv("Display", [m.manufacturer,m.model,m.serial&&("SN "+m.serial),m.year].filter(Boolean).join(" · "))));
+  $("#hwMemCount").textContent=(det.memory||[]).length+(det.memory&&det.memory.length?(" · "+fmtSize(det.memory.reduce((a,m)=>a+(m.capacityBytes||0),0))+" total"):"");
+  const mc=$("#hwMemory"); mc.innerHTML="";
+  (det.memory||[]).forEach(m=>mc.append(hwKv((m.slot||"DIMM")+(m.bankLabel?(" ("+m.bankLabel+")"):""), [fmtSize(m.capacityBytes), m.memoryType, m.speedMhz&&(m.speedMhz+" MHz"), m.manufacturer, m.partNumber].filter(Boolean).join(" · "))));
+  // default audio endpoints + volume
+  const ad=await api("/audio/default"); const adc=$("#hwAudioDefault"); adc.innerHTML="";
+  const fmtEp=(e)=> e? ((e.name||"?")+" · "+(e.volumePercent!=null?e.volumePercent+"%":"?")+(e.muted?" · muted":"")) : "—";
+  adc.append(hwKv("Default playback", fmtEp(ad.playback)));
+  adc.append(hwKv("Default recording", fmtEp(ad.recording)));
 });
 $("#hwRefresh").onclick=loadHardware;
 $("#hwDevLoad").onclick=guard(async()=>{

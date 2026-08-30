@@ -93,4 +93,5 @@ public static class FleetMethods
     public const string ZipPaths = "zip";
     public const string UnzipPath = "unzip";
     public const string RunCommand = "run_command";
+    public const string SystemInfo = "system_info";
 }

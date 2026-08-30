@@ -241,6 +241,14 @@ button reads "▶ Go live"); `thumbAll` (grid) and `refreshView` (detail) early-
 also auto-pauses when the page isn't visible (`visibilitychange`). Opening a single agent still fetches *one*
 frame (an explicit `force` bypass), so the detail view isn't blank. Deep-link is `#agent=<id>`.
 
+**Per-agent Files / Shell / System sub-panels** (native agents only — hidden for RDP connectors). Below the
+viewer, `wireAgentPanels(id)` wires a `.subtabs` bar over three `.subpane`s: **Files** (a compact browser —
+path bar + `↑ up` + **Upload**, rows that descend into folders or **download**/**delete** files, hitting
+`/agents/{id}/fs[...]`; `agentDownload` streams via the auth header into a blob), **Shell** (shell select +
+command + Run → `/agents/{id}/shell/run`, output into `#asOut`; needs the agent's `DESKHAND_ENABLE_SHELL`),
+and **System** (a Load button → `/agents/{id}/system`, rendered compactly by `renderAgentSys`). All reuse the
+fleet `api()` (which carries the token) and the agent-side governance.
+
 Overlays: a **`#toast`**, an **`#auditdrawer`** (a fixed panel polling `/fleet/audit`, rows colored by kind —
 connect/disconnect/action), and a **`#rdpModal`** (a centered form over a dim backdrop for ＋ RDP).
 

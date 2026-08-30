@@ -56,6 +56,16 @@
   /* detail */
   #detail{display:none;}
   #detail.show{display:block;}
+  .subtabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:16px 0 0;}
+  .subtab{background:none;border:none;border-bottom:2px solid transparent;color:var(--ink-3);padding:7px 11px;cursor:pointer;font:inherit;font-size:12.5px;}
+  .subtab.active{color:var(--ink);border-bottom-color:var(--accent);}
+  .subpane{padding-top:12px;}
+  .afrow{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;font-family:var(--mono);font-size:12px;}
+  .afrow:hover{background:var(--surface-2);}
+  .afrow .an{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .afrow.dir .an{cursor:pointer;color:var(--accent);}
+  .afrow a{cursor:pointer;color:var(--accent);font-size:11px;}
+  .afrow a.danger{color:var(--action,#d9822b);}
   .dhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
   .dhead h1{font-size:20px;margin:0;letter-spacing:-.01em;}
   .viewer{position:relative;background:var(--surface-3);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:200px;box-shadow:var(--shadow);}
@@ -239,7 +249,28 @@ const openAgent = guard(async(a)=>{
       <input type="text" id="typeTxt" placeholder="type text on this PC…" style="flex:1;min-width:160px"><button class="btn a" id="typeBtn">Type</button>
       <input type="text" id="keysTxt" placeholder="ctrl+a · enter · alt+F4" style="width:180px"><button class="btn a" id="keysBtn">Send keys</button>
     </div>
-    <div class="hint">Live view refreshes ~2s. Coordinates map to the captured monitor; input is injected on the remote PC (governed on the agent).</div>`;
+    <div class="hint">Live view refreshes ~2s. Coordinates map to the captured monitor; input is injected on the remote PC (governed on the agent).</div>
+    ${rdpIds.has(a.id)?"":`
+    <div class="subtabs">
+      <button class="subtab active" data-sub="files">Files</button>
+      <button class="subtab" data-sub="shell">Shell</button>
+      <button class="subtab" data-sub="system">System</button>
+    </div>
+    <div id="subFiles" class="subpane">
+      <div class="ctrls"><input id="afPath" placeholder="C:\\Users" style="flex:1;font-family:var(--mono)"><button class="btn" id="afGo">Go</button><button class="btn" id="afUp">↑ up</button><button class="btn a" id="afUpBtn">⬆ Upload</button><input type="file" id="afUpload" multiple hidden></div>
+      <div id="afCrumb" style="font-family:var(--mono);font-size:11px;color:var(--ink-3);margin:8px 0"></div>
+      <div id="afBody"></div>
+    </div>
+    <div id="subShell" class="subpane" style="display:none">
+      <div class="ctrls"><select id="asShell"><option value="powershell">PowerShell</option><option value="pwsh">pwsh</option><option value="cmd">cmd</option></select><input id="asCmd" placeholder="command… (Enter to run)" style="flex:1;font-family:var(--mono)"><button class="btn a" id="asRun">Run</button></div>
+      <div id="asMeta" style="font-family:var(--mono);font-size:11px;color:var(--ink-3);margin:8px 0 4px"></div>
+      <pre id="asOut" style="background:var(--surface-3);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;margin:0"></pre>
+    </div>
+    <div id="subSystem" class="subpane" style="display:none">
+      <button class="btn" id="asysLoad">↻ Load system info</button>
+      <div id="asysBody" style="margin-top:10px;font-family:var(--mono);font-size:12px"></div>
+    </div>
+    <div class="hint" style="margin-top:6px">Files / Shell / System run on this agent PC. Shell needs the agent started with DESKHAND_ENABLE_SHELL. (Not available on RDP connectors.)</div>`}`;
   { const rb=$("#rmRdpBtn"); if(rb) rb.onclick=()=>removeRdp(a.id); }
   { const ib=$("#rdpInstallBtn"); if(ib) ib.onclick=guard(async()=>{
       if(!confirm("Install the native agent on "+a.machine+" over RDP?\nThis drives the remote Run dialog to launch the agent from \\\\tsclient. It reconnects as a full native agent.")) return;
@@ -252,9 +283,74 @@ const openAgent = guard(async(a)=>{
   $("#typeBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/type`,"POST",{text:$("#typeTxt").value}); toast("typed"); });
   $("#keysBtn").onclick=guard(async()=>{ await api(`/agents/${a.id}/keyboard/keys`,"POST",{chord:$("#keysTxt").value}); toast("sent"); });
   $("#saveBtn").onclick=()=>{ const img=$("#viewer img"); if(!img){toast("no frame yet",true);return;} const dl=document.createElement("a"); dl.href=img.src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); dl.download=`${a.machine}-${ts}.jpg`; document.body.appendChild(dl); dl.click(); dl.remove(); toast("saved"); };
+  if(!rdpIds.has(a.id)) wireAgentPanels(a.id);
   await refreshView(true);   // one frame on open (explicit intent); continuous polling stays off until Go live
   clearInterval(detailTimer); detailTimer=setInterval(()=>refreshView().catch(()=>{}), 2200);
 });
+
+// Files / Shell / System sub-panels for a native agent (they call /agents/{id}/fs|shell|system).
+function wireAgentPanels(id){
+  document.querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{
+    document.querySelectorAll(".subtab").forEach(x=>x.classList.remove("active")); b.classList.add("active");
+    $("#subFiles").style.display=b.dataset.sub==="files"?"":"none";
+    $("#subShell").style.display=b.dataset.sub==="shell"?"":"none";
+    $("#subSystem").style.display=b.dataset.sub==="system"?"":"none";
+  });
+  // ---- files ----
+  let afCur="";
+  const loadAf=guard(async(p)=>{
+    const d=await api(`/agents/${id}/fs?path=`+encodeURIComponent(p||""));
+    afCur=d.isRoot?"":(d.path||""); $("#afPath").value=afCur; $("#afUpBtn").disabled=!!d.isRoot;
+    $("#afCrumb").textContent=afCur||"This PC — drives";
+    const body=$("#afBody"); body.innerHTML="";
+    if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:8px">'+d.error+'</div>'; return; }
+    (d.entries||[]).forEach(e=>{
+      const row=elm("div","afrow"+(e.isDirectory?" dir":""));
+      const nm=elm("div","an"); nm.textContent=(e.isDirectory?"▸ ":"· ")+e.name; if(e.isDirectory) nm.onclick=()=>loadAf(e.path); row.append(nm);
+      if(!e.isDirectory){ const dl=elm("a"); dl.textContent="download"; dl.onclick=()=>agentDownload(id,e.path,e.name); row.append(dl); }
+      if(!d.isRoot){ const del=elm("a"); del.className="danger"; del.textContent="delete"; del.onclick=guard(async()=>{ if(!confirm("Delete "+e.name+" on "+id+"?")) return; const r=await api(`/agents/${id}/fs/delete`,"POST",{path:e.path}); toast(r.ok?"deleted":r.error||"error",!r.ok); loadAf(afCur); }); row.append(del); }
+      body.append(row);
+    });
+    if(!(d.entries||[]).length) body.innerHTML='<div style="color:var(--ink-3);padding:6px">(empty)</div>';
+  });
+  $("#afGo").onclick=()=>loadAf($("#afPath").value.trim());
+  $("#afPath").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#afGo").click(); });
+  $("#afUp").onclick=()=>{ if(afCur) loadAf(afCur.replace(/\\+$/,"").split("\\").slice(0,-1).join("\\")); };
+  $("#afUpBtn").onclick=()=>$("#afUpload").click();
+  $("#afUpload").onchange=guard(async()=>{
+    const files=$("#afUpload").files; if(!files.length||!afCur) return;
+    const fd=new FormData(); fd.append("dir",afCur); for(const f of files) fd.append("files",f);
+    const h={}; if(AUTH_TOKEN) h["Authorization"]="Bearer "+AUTH_TOKEN;
+    const r=await fetch(`/agents/${id}/fs/upload`,{method:"POST",headers:h,body:fd}); $("#afUpload").value="";
+    if(!r.ok){ toast("upload failed",true); return; } toast("uploaded"); loadAf(afCur);
+  });
+  loadAf("");
+  // ---- shell ----
+  const runAsh=guard(async()=>{
+    const cmd=$("#asCmd").value; if(!cmd.trim()) return; $("#asMeta").textContent="running…";
+    try{ const r=await api(`/agents/${id}/shell/run`,"POST",{shell:$("#asShell").value,command:cmd});
+      $("#asMeta").textContent=r.timedOut?"timed out":`exit ${r.exitCode} · ${r.durationMs} ms`;
+      $("#asOut").textContent=(r.stdout||"")+(r.stderr?("\n"+r.stderr):"")+((r.error&&!r.stderr&&!r.timedOut)?("\n"+r.error):"")||"(no output)";
+    }catch(e){ $("#asMeta").textContent=e.message; $("#asOut").textContent=""; }
+  });
+  $("#asRun").onclick=runAsh; $("#asCmd").addEventListener("keydown",e=>{ if(e.key==="Enter") runAsh(); });
+  // ---- system ----
+  $("#asysLoad").onclick=guard(async()=>{ $("#asysBody").textContent="loading…"; const s=await api(`/agents/${id}/system`); $("#asysBody").innerHTML=renderAgentSys(s); });
+}
+async function agentDownload(id,path,name){
+  const h={}; if(AUTH_TOKEN) h["Authorization"]="Bearer "+AUTH_TOKEN;
+  const r=await fetch(`/agents/${id}/fs/download?path=`+encodeURIComponent(path),{headers:h});
+  if(!r.ok){ toast("download failed",true); return; }
+  const b=await r.blob(); const u=URL.createObjectURL(b); const el=document.createElement("a"); el.href=u; el.download=name; document.body.append(el); el.click(); el.remove(); setTimeout(()=>URL.revokeObjectURL(u),4000);
+}
+function renderAgentSys(d){
+  const kv=(k,v)=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0;border-bottom:1px solid var(--line-2,rgba(128,128,128,.2))"><span style="color:var(--ink-3)">${k}</span><span style="text-align:right;word-break:break-word">${v==null||v===""?"—":v}</span></div>`;
+  const gb=n=>(n/1073741824).toFixed(1)+" GB";
+  const disks=(d.disks||[]).filter(x=>x.totalSize>0).map(x=>x.name+" "+gb(x.usedSize)+"/"+gb(x.totalSize)).join(" · ");
+  const net=(d.network||[]).map(n=>n.name+": "+((n.iPv4||[]).join(",")||"—")).join(" | ");
+  const fw=d.firewall||{};
+  return kv("OS",d.os.name+" "+d.os.displayVersion+" (build "+d.os.build+")")+kv("BuildLab",d.os.buildLab)+kv("Uptime",d.time.uptime)+kv("CPU",d.cpu.name+" · "+(d.cpu.loadPercent!=null?d.cpu.loadPercent+"%":"")+" · "+d.cpu.logicalProcessors+" cores")+kv("Memory",gb(d.memory.usedPhysical)+" / "+gb(d.memory.totalPhysical)+" ("+d.memory.loadPercent+"%)")+kv("Disks",disks)+kv("Network",net)+kv("Firewall","dom "+fw.domainEnabled+" · priv "+fw.privateEnabled+" · pub "+fw.publicEnabled);
+}
 
 async function refreshView(force){
   if(!current || (!liveOn() && !force)) return;

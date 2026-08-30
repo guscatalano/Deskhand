@@ -220,4 +220,8 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_run_command"), Description("Run a one-shot shell command on a fleet PC (default PowerShell; shell=\"cmd\"/\"pwsh\") and return output. STATELESS. The agent must have been started with DESKHAND_ENABLE_SHELL or it returns a shell_disabled error. Not available on RDP agents.")]
     public static string AgentRunCommand(AgentRegistry r, FleetAudit audit, string agentId, string command, string? shell = null, string? cwd = null, int? timeoutMs = null)
         => Raw(O(r, audit, agentId, "run_command").RunCommand(shell, command, cwd, timeoutMs));
+
+    [McpServerTool(Name = "deskhand_agent_system_info"), Description("About a fleet PC (read-only): Windows version + BuildLab, uptime, CPU, memory, disks, network, firewall. Not available on RDP agents.")]
+    public static string AgentSystemInfo(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "system_info").SystemInfo());
 }

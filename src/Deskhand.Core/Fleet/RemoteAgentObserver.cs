@@ -49,4 +49,5 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement Zip(string[]? sources, string? dest, bool overwrite) => Call(FleetMethods.ZipPaths, new { sources, dest, overwrite });
     public JsonElement Unzip(string? zipPath, string? dest, bool overwrite) => Call(FleetMethods.UnzipPath, new { zipPath, dest, overwrite });
     public JsonElement RunCommand(string? shell, string? command, string? cwd, int? timeoutMs) => Call(FleetMethods.RunCommand, new { shell, command, cwd, timeoutMs });
+    public JsonElement SystemInfo() => Call(FleetMethods.SystemInfo, null);
 }

@@ -235,6 +235,7 @@ app.MapPost("/agents/{id}/fs/copy", (string id, AgentCopyReq r) => Results.Ok(O(
 app.MapPost("/agents/{id}/fs/zip", (string id, AgentZipReq r) => Results.Ok(O(id).Zip(r.Sources, r.Dest, r.Overwrite ?? false)));
 app.MapPost("/agents/{id}/fs/unzip", (string id, AgentUnzipReq r) => Results.Ok(O(id).Unzip(r.ZipPath, r.Dest, r.Overwrite ?? false)));
 app.MapPost("/agents/{id}/shell/run", (string id, AgentShellReq r) => Results.Ok(O(id).RunCommand(r.Shell, r.Command, r.Cwd, r.TimeoutMs)));
+app.MapGet("/agents/{id}/system", (string id) => Results.Ok(O(id).SystemInfo()));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });

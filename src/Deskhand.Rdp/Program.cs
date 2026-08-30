@@ -26,11 +26,12 @@ if (Opt("--size") is string s && s.Split('x') is { Length: 2 } parts && int.TryP
 string? capture = Opt("--capture");
 string? fleet = Opt("--fleet");
 int timeout = int.TryParse(Opt("--timeout"), out var t) ? t : 15000;
+int port = int.TryParse(Opt("--port"), out var pp) ? pp : 0;   // 0 = RDP default (3389); set for a mock/non-standard port
 
 bool nla = !args.Contains("--no-nla");   // disable CredSSP/NLA for mock/legacy RDP servers (e.g. rdpy)
 using var rdp = new RdpHost(width, height);
-Console.WriteLine($"connecting to {host} as {user} ({width}x{height}){(nla ? "" : " [no-NLA]")}...");
-bool ok = await rdp.ConnectAsync(host, user, domain, password, timeout, nla);
+Console.WriteLine($"connecting to {host}{(port > 0 ? ":" + port : "")} as {user} ({width}x{height}){(nla ? "" : " [no-NLA]")}...");
+bool ok = await rdp.ConnectAsync(host, user, domain, password, timeout, nla, port);
 Console.WriteLine(ok ? "CONNECTED" : $"not connected: {rdp.LastReason}");
 
 if (fleet is not null)

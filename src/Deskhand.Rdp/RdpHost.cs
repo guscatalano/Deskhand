@@ -63,21 +63,35 @@ public sealed class RdpHost : IDisposable
     private T OnUi<T>(Func<T> f) => (T)_form!.Invoke(f);
     private void OnUi(Action a) => _form!.Invoke(a);
 
-    /// <summary>Connect to a host. Returns true on connect, false on disconnect/failure (see LastReason).</summary>
-    public async Task<bool> ConnectAsync(string host, string user, string? domain, string password, int timeoutMs = 15000, bool nla = true)
+    /// <summary>Connect to a host. Returns true on connect, false on disconnect/failure (see LastReason).
+    /// <paramref name="port"/> 0 uses the RDP default (3389); pass a value to reach a non-standard port
+    /// (e.g. a local mock server).</summary>
+    public async Task<bool> ConnectAsync(string host, string user, string? domain, string password, int timeoutMs = 15000, bool nla = true, int port = 0)
     {
         _connected = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // While connecting, a self-signed / untrusted server cert pops a modal "identity cannot be verified"
+        // dialog on the STA thread. Poll for it from a background thread and click Yes (BM_CLICK marshals
+        // cross-thread), so headless connects to TLS servers with untrusted certs don't hang. Nothing is
+        // persisted (no cert store / registry change) — equivalent to FreeRDP's /cert:ignore.
+        using var certWatcher = new System.Threading.Timer(_ => { try { AcceptCertWarningIfPresent(); } catch { } }, null, 250, 300);
         OnUi(() =>
         {
             _rdp!.Server = host;
             _rdp.UserName = user;
+            if (port > 0) _rdp.AdvancedSettings9.RDPPort = port;
             if (!string.IsNullOrEmpty(domain)) _rdp.Domain = domain;
             _rdp.DesktopWidth = Width;
             _rdp.DesktopHeight = Height;
             var secured = (MSTSCLib.IMsTscNonScriptable)_rdp.GetOcx();
             secured.ClearTextPassword = password;
-            _rdp.AdvancedSettings9.EnableCredSspSupport = nla;    // NLA/CredSSP; disable for mock/legacy servers
-            _rdp.AdvancedSettings9.AuthenticationLevel = 0;        // connect even if server auth can't be verified
+            _rdp.AdvancedSettings9.EnableCredSspSupport = nla;         // NLA/CredSSP; disable for mock/legacy servers
+            // Offer the negotiated security layer so the SSL bit is advertised, and warn-then-connect on a
+            // cert we can't verify (AuthenticationLevel 0 would request *standard* RDP and skip TLS entirely,
+            // which faults mstscax against a TLS-only server — that was a real bug).
+            try { _rdp.AdvancedSettings9.NegotiateSecurityLayer = true; } catch { }
+            _rdp.AdvancedSettings9.AuthenticationLevel = 2;
+            try { _rdp.AdvancedSettings9.EnableAutoReconnect = false; } catch { }
+            try { _rdp.AdvancedSettings9.GrabFocusOnConnect = false; } catch { }
             // For the "install native agent over RDP" bootstrap: expose the connector's drives to the
             // remote (\\tsclient\...) and send Windows-key combos to the remote session (KeyboardHookMode=2).
             try { _rdp.AdvancedSettings9.RedirectDrives = true; } catch { }
@@ -88,6 +102,23 @@ public sealed class RdpHost : IDisposable
         var done = await Task.WhenAny(_connected.Task, Task.Delay(timeoutMs));
         if (done != _connected.Task) { LastReason = "timeout"; return false; }
         return _connected.Task.Result;
+    }
+
+    // Dismiss the RDP "The identity of the remote computer cannot be verified" dialog (class #32770,
+    // "Remote Desktop Connection") by clicking its Yes button (control id 14004). Returns true if clicked.
+    private static bool AcceptCertWarningIfPresent()
+    {
+        var dialog = NativeMethods.FindWindow("#32770", "Remote Desktop Connection");
+        if (dialog == IntPtr.Zero) return false;
+        IntPtr yes = IntPtr.Zero;
+        NativeMethods.EnumChildWindows(dialog, (h, _) =>
+        {
+            if (NativeMethods.GetDlgCtrlID(h) == 14004) { yes = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        if (yes == IntPtr.Zero) return false;
+        NativeMethods.SendMessage(yes, NativeMethods.BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+        return true;
     }
 
     public void Disconnect() { try { OnUi(() => { if (_rdp!.Connected != 0) _rdp.Disconnect(); }); } catch { } }
@@ -272,7 +303,7 @@ internal static class NativeMethods
     public const uint PW_RENDERFULLCONTENT = 0x2;
     public const uint WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202,
         WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205, WM_MBUTTONDOWN = 0x0207, WM_MBUTTONUP = 0x0208,
-        WM_KEYDOWN = 0x0100, WM_KEYUP = 0x0101, WM_CHAR = 0x0102;
+        WM_KEYDOWN = 0x0100, WM_KEYUP = 0x0101, WM_CHAR = 0x0102, BM_CLICK = 0x00F5;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
@@ -291,4 +322,7 @@ internal static class NativeMethods
     [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint uCode, uint uMapType);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT pt);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string? className, string? windowTitle);
+    [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 }

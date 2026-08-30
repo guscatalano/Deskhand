@@ -4,15 +4,20 @@ using Deskhand.Core.Services;
 namespace Deskhand.Core;
 
 /// <summary>
-/// The single-machine, in-session backend. All UIA/capture/input work is marshalled onto
-/// one STA thread (<see cref="StaExecutor"/>) so COM apartment rules and UIA's lack of
-/// thread-safety are handled in exactly one place. Covers the Default desktop; the secure
-/// desktop is reported via <see cref="GetDesktopState"/> and is Phase 2 (SYSTEM helper).
+/// The single-machine, in-session backend. <b>UIA</b> (COM, not thread-safe) is marshalled onto one STA
+/// thread (<see cref="StaExecutor"/>) so apartment rules live in one place. <b>Capture</b> (GDI) and
+/// <b>input</b> (SendInput) are thread-agnostic, so they run OFF the STA thread — this lets a screenshot,
+/// an input action, and a UIA query all proceed concurrently instead of queuing behind one another
+/// (ref-based captures still resolve the element on the STA first, then capture off it). Covers the Default
+/// desktop; the secure desktop is reported via <see cref="GetDesktopState"/> and is Phase 2 (SYSTEM helper).
 /// </summary>
 public sealed class LocalAutomationBackend : IAutomationBackend
 {
     private readonly StaExecutor _sta = new();
     private readonly UiaService _uia;
+    // Input is off the STA thread (SendInput is thread-safe), but each action is serialized so two
+    // concurrent Type/click calls can't interleave their SendInput streams into a scrambled sequence.
+    private readonly object _inputGate = new();
 
     public LocalAutomationBackend()
     {
@@ -58,36 +63,64 @@ public sealed class LocalAutomationBackend : IAutomationBackend
         if (!string.IsNullOrEmpty(args)) psi.Arguments = args;
         if (!string.IsNullOrEmpty(workingDir)) psi.WorkingDirectory = workingDir;
 
+        // Snapshot existing top-level windows so we can spot a *new* one — needed because packaged / Store
+        // apps (Win11 Notepad, Terminal, Calculator…) hand the window to a DIFFERENT process than the one we
+        // started, so watching only the launched process reports "no window" when a window did appear.
+        var before = new HashSet<long>();
+        string exeBase = System.IO.Path.GetFileNameWithoutExtension(path) ?? "";
+        if (waitForWindowMs > 0)
+            try { foreach (var w in _sta.Invoke(() => _uia.GetTopLevelWindows())) before.Add(w.NativeWindowHandle); } catch { }
+
         var proc = System.Diagnostics.Process.Start(psi)
                    ?? throw new ArgumentException($"Could not start '{path}' (the shell handled it without a new process).");
 
+        int pid = -1; string name = "";
+        try { pid = proc.Id; name = proc.ProcessName; } catch { }
+
+        ElementInfoDto? window = null;
         IntPtr hwnd = IntPtr.Zero;
         if (waitForWindowMs > 0)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             while (sw.ElapsedMilliseconds < waitForWindowMs)
             {
-                try { proc.Refresh(); if (proc.HasExited) break; hwnd = proc.MainWindowHandle; if (hwnd != IntPtr.Zero) break; }
+                // 1) the launched process's own main window
+                try { proc.Refresh(); if (!proc.HasExited) { hwnd = proc.MainWindowHandle; if (hwnd != IntPtr.Zero) break; } } catch { }
+                // 2) a NEW top-level window that appeared since launch, owned by the launched pid OR by a
+                //    process whose name relates to the launched exe (the Store-app handoff).
+                try
+                {
+                    var cand = _sta.Invoke(() => _uia.GetTopLevelWindows())
+                        .FirstOrDefault(w => !before.Contains(w.NativeWindowHandle) && OwnedByLaunch(w.ProcessId ?? -1, pid, exeBase));
+                    if (cand is not null) { window = cand; break; }
+                }
                 catch { }
                 Thread.Sleep(100);
             }
         }
 
-        ElementInfoDto? window = null;
-        if (hwnd != IntPtr.Zero) { var h = hwnd; window = _sta.Invoke(() => _uia.RegisterHandle(h)); }
-
-        int pid = -1; string name = "";
-        try { pid = proc.Id; name = proc.ProcessName; } catch { }
-
-        // Fallback: MainWindowHandle is 0 for some apps (a launcher/host owns the window). Look for a
-        // top-level window owned by the launched process. (Packaged apps whose window is hosted by a
-        // different process won't match — use list_windows to find those.)
+        if (window is null && hwnd != IntPtr.Zero) { var h = hwnd; window = _sta.Invoke(() => _uia.RegisterHandle(h)); }
+        // Final fallback: any top-level window owned by the launched process.
         if (window is null && waitForWindowMs > 0 && pid > 0)
-        {
-            try { window = _sta.Invoke(() => _uia.GetTopLevelWindows()).FirstOrDefault(w => w.ProcessId == pid); }
-            catch { }
-        }
+            try { window = _sta.Invoke(() => _uia.GetTopLevelWindows()).FirstOrDefault(w => w.ProcessId == pid); } catch { }
+
         return new ProcessLaunchResultDto(pid, name, window is not null, window);
+    }
+
+    // Does a top-level window's owning process belong to what we just launched? True if it's the launched
+    // process, or a different process whose name relates to the launched exe (packaged-app handoff, e.g.
+    // launched "notepad" → the window is owned by the "Notepad" store-app process).
+    private static bool OwnedByLaunch(int windowPid, int launchedPid, string exeBase)
+    {
+        if (windowPid == launchedPid) return true;
+        if (string.IsNullOrEmpty(exeBase)) return false;
+        try
+        {
+            var pn = System.Diagnostics.Process.GetProcessById(windowPid).ProcessName;
+            return pn.Contains(exeBase, StringComparison.OrdinalIgnoreCase)
+                || exeBase.Contains(pn, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     // ---- orientation via UIA ----
@@ -135,44 +168,49 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     public void Select(string reference) => _sta.Invoke(() => _uia.Select(reference));
     public void SetFocus(string reference) => _sta.Invoke(() => _uia.SetFocus(reference));
 
-    // ---- capture ----
+    // ---- capture (GDI: thread-agnostic → runs OFF the STA thread, concurrent with UIA) ----
     public CaptureResultDto CaptureScreen(int? monitor, ImageFormat format, int jpegQuality)
-        => _sta.Invoke(() => ScreenCapture.CaptureScreen(monitor, format, jpegQuality));
+        => ScreenCapture.CaptureScreen(monitor, format, jpegQuality);
 
     public CaptureResultDto CaptureRegion(int x, int y, int width, int height, ImageFormat format, int jpegQuality)
-        => _sta.Invoke(() => ScreenCapture.CaptureRegion(x, y, width, height, format, jpegQuality));
+        => ScreenCapture.CaptureRegion(x, y, width, height, format, jpegQuality);
 
     public CaptureResultDto CaptureWindow(long hwnd, ImageFormat format, int jpegQuality)
-        => _sta.Invoke(() => ScreenCapture.CaptureWindow((IntPtr)hwnd, format, jpegQuality));
+        => ScreenCapture.CaptureWindow((IntPtr)hwnd, format, jpegQuality);
 
     public CaptureResultDto CaptureWindowByRef(string reference, ImageFormat format, int jpegQuality)
-        => _sta.Invoke(() =>
+    {
+        // Resolve the element (UIA) on the STA thread, but do the GDI capture + encode off it.
+        var (hwnd, bounds) = _sta.Invoke(() =>
         {
             var info = _uia.GetElement(reference);
-            if (info.NativeWindowHandle != 0)
-                return ScreenCapture.CaptureWindow((IntPtr)info.NativeWindowHandle, format, jpegQuality);
-            return ScreenCapture.CaptureBounds(_uia.GetBounds(reference), format, jpegQuality);
+            long h = info.NativeWindowHandle;
+            return (h, h != 0 ? default : _uia.GetBounds(reference));
         });
+        return hwnd != 0
+            ? ScreenCapture.CaptureWindow((IntPtr)hwnd, format, jpegQuality)
+            : ScreenCapture.CaptureBounds(bounds, format, jpegQuality);
+    }
 
     public CaptureResultDto CaptureElement(string reference, ImageFormat format, int jpegQuality)
-        => _sta.Invoke(() =>
-        {
-            Rectangle bounds = _uia.GetBounds(reference);
-            return ScreenCapture.CaptureBounds(bounds, format, jpegQuality);
-        });
+    {
+        Rectangle bounds = _sta.Invoke(() => _uia.GetBounds(reference));   // UIA resolve on STA
+        return ScreenCapture.CaptureBounds(bounds, format, jpegQuality);   // capture off it
+    }
 
     // Runs on its own throwaway thread (see SecureCapture) — must NOT use the UIA STA thread.
     public Services.SecureCapture.InputDesktopResult CaptureInputDesktop(ImageFormat format, int jpegQuality)
         => Services.SecureCapture.CaptureInputDesktop(format, jpegQuality);
 
-    // ---- input ----
-    public void MouseMove(int x, int y) => _sta.Invoke(() => InputInjector.MouseMove(x, y));
-    public void MouseClick(string button, int? x, int? y, int count) => _sta.Invoke(() => InputInjector.MouseClick(button, x, y, count));
-    public void MouseDown(string button, int? x, int? y) => _sta.Invoke(() => InputInjector.MouseDown(button, x, y));
-    public void MouseUp(string button, int? x, int? y) => _sta.Invoke(() => InputInjector.MouseUp(button, x, y));
-    public void MouseScroll(int dx, int dy) => _sta.Invoke(() => InputInjector.MouseScroll(dx, dy));
-    public void TypeText(string text) => _sta.Invoke(() => InputInjector.TypeText(text));
-    public void SendKeys(string chord) => _sta.Invoke(() => InputInjector.SendKeys(chord));
+    // ---- input (SendInput: thread-agnostic → OFF the STA thread, serialized on _inputGate so
+    //      concurrent actions stay atomic instead of interleaving keystrokes/clicks) ----
+    public void MouseMove(int x, int y) { lock (_inputGate) InputInjector.MouseMove(x, y); }
+    public void MouseClick(string button, int? x, int? y, int count) { lock (_inputGate) InputInjector.MouseClick(button, x, y, count); }
+    public void MouseDown(string button, int? x, int? y) { lock (_inputGate) InputInjector.MouseDown(button, x, y); }
+    public void MouseUp(string button, int? x, int? y) { lock (_inputGate) InputInjector.MouseUp(button, x, y); }
+    public void MouseScroll(int dx, int dy) { lock (_inputGate) InputInjector.MouseScroll(dx, dy); }
+    public void TypeText(string text) { lock (_inputGate) InputInjector.TypeText(text); }
+    public void SendKeys(string chord) { lock (_inputGate) InputInjector.SendKeys(chord); }
 
     public void Dispose()
     {

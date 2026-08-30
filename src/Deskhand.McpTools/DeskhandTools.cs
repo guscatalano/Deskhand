@@ -26,6 +26,17 @@ public static class DeskhandTools
 
     private static string Json(object? o) => JsonSerializer.Serialize(o, J);
 
+    // Run an element operation with actionable errors: name a missing 'reference', and turn any thrown
+    // exception into its real message (stale element, pattern not supported, …) instead of the MCP SDK's
+    // generic "An error occurred invoking '<tool>'." — so a model can self-correct.
+    private static string ElementOp(string? reference, Func<string> op)
+    {
+        if (string.IsNullOrWhiteSpace(reference))
+            return Json(new { error = "Missing required argument 'reference' — an element ref like \"el_12\", from deskhand_get_tree / deskhand_find_elements / deskhand_element_from_point.", type = "missing_argument" });
+        try { return op(); }
+        catch (Exception ex) { return Json(new { error = ex.Message, type = ex.GetType().Name }); }
+    }
+
     private static ImageFormat Fmt(string? f) =>
         f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
 
@@ -291,10 +302,10 @@ public static class DeskhandTools
     }
 
     [McpServerTool(Name = "deskhand_get_element"), Description("Re-read a single element by ref (summary properties + supported patterns).")]
-    public static string GetElement(IAutomationBackend b, string reference) => Json(b.GetElement(reference));
+    public static string GetElement(IAutomationBackend b, string? reference) => ElementOp(reference, () => Json(b.GetElement(reference!)));
 
     [McpServerTool(Name = "deskhand_get_all_properties"), Description("Every UIA property the element supports, as a name→value map.")]
-    public static string GetAllProperties(IAutomationBackend b, string reference) => Json(b.GetAllProperties(reference));
+    public static string GetAllProperties(IAutomationBackend b, string? reference) => ElementOp(reference, () => Json(b.GetAllProperties(reference!)));
 
     [McpServerTool(Name = "deskhand_element_from_point"), Description("Return the UIA element at a screen coordinate (virtual-desktop pixels). The reliable 'find element' when a window's tree is thin or its refs go stale (Chromium/Electron apps): screenshot the app, pick a pixel on the target, and get the element + a fresh ref to act on.")]
     public static string ElementFromPoint(IAutomationBackend b,
@@ -305,22 +316,22 @@ public static class DeskhandTools
     // ---------- uia act ----------
 
     [McpServerTool(Name = "deskhand_invoke"), Description("Invoke an element (press a button, activate a menu item) via its UIA Invoke pattern.")]
-    public static string Invoke(IAutomationBackend b, string reference) { b.Invoke(reference); return "ok"; }
+    public static string Invoke(IAutomationBackend b, string? reference) => ElementOp(reference, () => { b.Invoke(reference!); return "ok"; });
 
     [McpServerTool(Name = "deskhand_set_value"), Description("Set an element's value (e.g. type into a text box) via the UIA Value pattern.")]
-    public static string SetValue(IAutomationBackend b, string reference, string text) { b.SetValue(reference, text); return "ok"; }
+    public static string SetValue(IAutomationBackend b, string? reference, string text) => ElementOp(reference, () => { b.SetValue(reference!, text ?? ""); return "ok"; });
 
     [McpServerTool(Name = "deskhand_toggle"), Description("Toggle a checkbox or switch via the UIA Toggle pattern.")]
-    public static string Toggle(IAutomationBackend b, string reference) { b.Toggle(reference); return "ok"; }
+    public static string Toggle(IAutomationBackend b, string? reference) => ElementOp(reference, () => { b.Toggle(reference!); return "ok"; });
 
     [McpServerTool(Name = "deskhand_expand_collapse"), Description("Expand or collapse a tree item / combo box via the UIA ExpandCollapse pattern.")]
-    public static string ExpandCollapse(IAutomationBackend b, string reference, bool expand) { b.ExpandCollapse(reference, expand); return "ok"; }
+    public static string ExpandCollapse(IAutomationBackend b, string? reference, bool expand) => ElementOp(reference, () => { b.ExpandCollapse(reference!, expand); return "ok"; });
 
     [McpServerTool(Name = "deskhand_select"), Description("Select a list item / tab via the UIA SelectionItem pattern.")]
-    public static string Select(IAutomationBackend b, string reference) { b.Select(reference); return "ok"; }
+    public static string Select(IAutomationBackend b, string? reference) => ElementOp(reference, () => { b.Select(reference!); return "ok"; });
 
     [McpServerTool(Name = "deskhand_set_focus"), Description("Raise the element's window to the foreground (defeating the foreground lock) and give it keyboard focus.")]
-    public static string SetFocus(IAutomationBackend b, string reference) { b.SetFocus(reference); return "ok"; }
+    public static string SetFocus(IAutomationBackend b, string? reference) => ElementOp(reference, () => { b.SetFocus(reference!); return "ok"; });
 
     // ---------- screen recording (GIF / MJPEG-AVI) ----------
 

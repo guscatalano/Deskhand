@@ -211,7 +211,16 @@ app.MapPost("/agents/{id}/input/record/start", (string id, InputRecReq r) => Res
 app.MapPost("/agents/{id}/input/record/stop", (string id) => Results.Ok(O(id).InputStop()));
 app.MapGet("/agents/{id}/input/record/events", (string id, long since) => Results.Ok(O(id).InputGet(since)));
 app.MapGet("/agents/{id}/registry", (string id, string? path) => Results.Ok(O(id).RegistryBrowse(path)));
-app.MapPost("/agents/{id}/process/dump", (string id, PidReq r) => Results.Ok(O(id).DumpProcess(r.Pid)));   // .dmp stays on the agent
+app.MapPost("/agents/{id}/process/dump", (string id, PidReq r) => Results.Ok(O(id).DumpProcess(r.Pid)));   // .dmp saved on the agent
+app.MapGet("/agents/{id}/dumps", (string id) => Results.Ok(O(id).DumpList()));
+app.MapGet("/agents/{id}/dumps/{name}", (string id, string name) =>
+{
+    var j = O(id).DumpRead(name);
+    if (!j.TryGetProperty("base64", out var b64) || b64.ValueKind != System.Text.Json.JsonValueKind.String)
+        return Results.Json(j, statusCode: 400);
+    var bytes = Convert.FromBase64String(b64.GetString()!);
+    return Results.File(bytes, "application/octet-stream", j.GetProperty("name").GetString() ?? name);
+});
 app.MapGet("/agents/{id}/apps", (string id) => Results.Ok(O(id).ListApps()));
 app.MapGet("/agents/{id}/desktops", (string id) => Results.Ok(O(id).ListDesktops()));
 app.MapPost("/agents/{id}/desktops/move-window", (string id, MoveWinReq r) => Results.Ok(O(id).MoveWindowToDesktop(r.Hwnd, r.DesktopId)));

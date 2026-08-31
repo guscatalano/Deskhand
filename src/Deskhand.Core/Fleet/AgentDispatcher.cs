@@ -50,6 +50,18 @@ public static class AgentDispatcher
                 return (svc.RdpInstallAgent ?? throw new InvalidOperationException("This agent isn't an RDP connector, so it can't install the native agent over RDP."))(a.Str("agentPath"));
             case FleetMethods.DumpProcess:
                 return Req(svc.Dumper, "process dumper").Dump(a.Int("pid"));
+            case FleetMethods.DumpList:
+                return Req(svc.Dumper, "process dumper").List();
+            case FleetMethods.DumpRead:
+            {
+                var path = Req(svc.Dumper, "process dumper").PathFor(a.Str("name")!);
+                if (!System.IO.File.Exists(path)) throw new InvalidOperationException($"Dump not found: {a.Str("name")}");
+                long len = new System.IO.FileInfo(path).Length;
+                // A .dmp can be many GB; base64 over the WS RPC would OOM. Cap it and tell the operator to
+                // pull huge dumps off the agent directly.
+                if (len > 1_500_000_000L) throw new InvalidOperationException($"Dump is {len:N0} bytes — too large to stream through the fleet. Retrieve it from the agent at {path}.");
+                return new { name = System.IO.Path.GetFileName(path), sizeBytes = len, base64 = Convert.ToBase64String(System.IO.File.ReadAllBytes(path)) };
+            }
             case FleetMethods.RegistryBrowse:
                 if (svc.Dumper is null) throw new InvalidOperationException("Registry browsing isn't available on an RDP agent (it would read the connector's machine, not the target).");
                 return Services.RegistryService.Browse(a.Str("path"));

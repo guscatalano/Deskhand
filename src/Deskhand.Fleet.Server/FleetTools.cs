@@ -163,9 +163,13 @@ public static class FleetTools
     public static string AgentRegistryBrowse(AgentRegistry r, FleetAudit audit, string agentId, string? path = null)
         => Raw(O(r, audit, agentId, "registry_browse").RegistryBrowse(path));
 
-    [McpServerTool(Name = "deskhand_agent_dump_process"), Description("Write a full-memory .dmp of a process (by pid) on a fleet PC. The dump is saved ON THAT PC (large + sensitive); returns its path/size. Not available on RDP agents.")]
+    [McpServerTool(Name = "deskhand_agent_dump_process"), Description("Write a full-memory .dmp of a process (by pid) on a fleet PC. The dump is saved ON THAT PC (large + sensitive); returns its path/size. Download it with the fleet HTTP route /agents/{id}/dumps/{name}. Not available on RDP agents.")]
     public static string AgentDumpProcess(AgentRegistry r, FleetAudit audit, string agentId, int pid)
         => Raw(O(r, audit, agentId, $"dump_process {pid}").DumpProcess(pid));
+
+    [McpServerTool(Name = "deskhand_agent_dumps"), Description("List the process dumps saved on a fleet PC: { name, sizeBytes, ts }. Download one via the fleet HTTP route GET /agents/{id}/dumps/{name} (streamed off the agent; refused over ~1.5 GB — pull those directly from the agent).")]
+    public static string AgentDumps(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "dump_list").DumpList());
 
     [McpServerTool(Name = "deskhand_agent_list_apps"), Description("List Start Menu apps on a fleet PC (launch one via deskhand_agent_launch with its path). Not available on RDP agents.")]
     public static string AgentListApps(AgentRegistry r, FleetAudit audit, string agentId)

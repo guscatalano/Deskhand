@@ -2,25 +2,50 @@
   <defs>
     <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#22D3EE"/>
-      <stop offset="1" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F1F5F9"/>
+      <stop offset="1" stop-color="#94A3B8"/>
     </linearGradient>
   </defs>
 
   <!-- self-contained panel so the mark reads on both light and dark README themes -->
   <rect x="0" y="0" width="540" height="160" rx="24" fill="#0F172A"/>
 
-  <!-- icon: an app tile holding a desktop window with a pointer resting on it -->
+  <!-- icon: an app tile — a robotic arm operating a desktop UI -->
   <g>
     <rect x="24" y="24" width="112" height="112" rx="26" fill="url(#badge)"/>
-    <!-- the "desk"/screen: a window glyph -->
-    <rect x="44" y="48" width="72" height="52" rx="9" fill="#FFFFFF" fill-opacity="0.16"
-          stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="4"/>
-    <circle cx="55" cy="59" r="2.4" fill="#FFFFFF" fill-opacity="0.92"/>
-    <circle cx="64" cy="59" r="2.4" fill="#FFFFFF" fill-opacity="0.92"/>
-    <circle cx="73" cy="59" r="2.4" fill="#FFFFFF" fill-opacity="0.92"/>
-    <!-- the "hand": a cursor/pointer controlling the screen -->
-    <polygon points="74,64 74,100 83,91 90.2,105.4 95.6,103.6 88.4,89.2 101,89.2"
-             fill="#FFFFFF" stroke="#0F172A" stroke-width="3" stroke-linejoin="round"/>
+
+    <!-- subtle PCB traces for a machine feel -->
+    <g stroke="#FFFFFF" stroke-opacity="0.20" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="34,46 34,34 46,34"/>
+      <polyline points="126,34 126,46"/>
+      <polyline points="34,118 34,126 46,126"/>
+    </g>
+    <g fill="#FFFFFF" fill-opacity="0.30">
+      <circle cx="46" cy="34" r="2.2"/><circle cx="126" cy="34" r="2.2"/><circle cx="46" cy="126" r="2.2"/>
+    </g>
+
+    <!-- the desktop/screen with a UI: two fields and a highlighted button -->
+    <rect x="42" y="46" width="76" height="56" rx="9" fill="#0B1220" fill-opacity="0.55"
+          stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="3.5"/>
+    <rect x="52" y="57" width="42" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.5"/>
+    <rect x="52" y="68" width="30" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.5"/>
+    <rect x="52" y="82" width="34" height="13" rx="4" fill="#22D3EE"/>
+
+    <!-- the robotic arm: two segments + bolt pivots, a fingertip pressing the button -->
+    <g stroke="#0F172A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+      <line x1="120" y1="118" x2="101" y2="99" stroke="url(#steel)" stroke-width="11"/>
+      <line x1="101" y1="99" x2="82" y2="88" stroke="url(#steel)" stroke-width="9"/>
+    </g>
+    <!-- shoulder + elbow pivots (bolts) -->
+    <circle cx="120" cy="118" r="6.5" fill="url(#steel)" stroke="#0F172A" stroke-width="2.5"/>
+    <circle cx="120" cy="118" r="2" fill="#0F172A"/>
+    <circle cx="101" cy="99" r="5.5" fill="url(#steel)" stroke="#0F172A" stroke-width="2.5"/>
+    <circle cx="101" cy="99" r="1.8" fill="#0F172A"/>
+    <!-- fingertip pressing the button -->
+    <circle cx="82" cy="88" r="4.6" fill="#F1F5F9" stroke="#0F172A" stroke-width="2.5"/>
   </g>
 
   <!-- wordmark -->

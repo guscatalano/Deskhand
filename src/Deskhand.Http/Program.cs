@@ -77,6 +77,7 @@ localBackend.StartEvents(eventHub);                          // UIA events: focu
 var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);  // process_started / process_exited
 var screenRecorder = new Deskhand.Core.Services.ScreenRecorder(auditLog);
 var processDumper = new Deskhand.Core.Services.ProcessDumper(auditLog);
+var screenshotStore = new Deskhand.Core.Services.ScreenshotStore(auditLog);
 // Records the USER's physical input; resolves each click's element via the raw backend (unaudited,
 // so per-click resolution doesn't flood the audit log). While it runs, a persistent on-screen banner
 // (recordingIndicator) + a toast make sure the user knows they're being observed.
@@ -92,6 +93,7 @@ builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton(processWatcher);
 builder.Services.AddSingleton(screenRecorder);
 builder.Services.AddSingleton(processDumper);
+builder.Services.AddSingleton(screenshotStore);
 builder.Services.AddSingleton(inputRecorder);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
@@ -322,7 +324,8 @@ api.MapGet("/processes", (IAutomationBackend b) => Results.Ok(b.GetProcesses()))
 api.MapPost("/process/dump", (Deskhand.Core.Services.ProcessDumper d, ControlState st, PidRequest r) =>
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
-    return Results.Ok(d.Dump(r.Pid));
+    var dmp = d.Dump(r.Pid);   // dumps are huge, so they always save on the box; hand back the download URL.
+    return Results.Ok(new { dmp.ProcessId, dmp.Name, dmp.File, dmp.FileName, dmp.SizeBytes, dmp.Ts, dmp.DurationMs, url = $"/dumps/{dmp.FileName}" });
 });
 api.MapGet("/dumps", (Deskhand.Core.Services.ProcessDumper d) => Results.Ok(d.List()));
 
@@ -532,24 +535,36 @@ api.MapPost("/uia/select", (IAutomationBackend b, RefRequest r) => { b.Select(r.
 api.MapPost("/uia/set-focus", (IAutomationBackend b, RefRequest r) => { b.SetFocus(r.Reference); return Ok(); });
 
 // ---- capture ----
-api.MapPost("/capture/screen", (IAutomationBackend b, HttpContext ctx, ScreenCaptureRequest? r) =>
-    WriteCapture(ctx, b.CaptureScreen(r?.Monitor, ParseFormat(r?.Format), r?.Quality ?? 80)));
+// By default the image is returned to the caller (base64 JSON, or raw bytes with ?raw=true / Accept:image/*).
+// Pass save=true (body or ?save=true) to instead SAVE it on this machine (screenshots dir, audited, 24h
+// auto-delete) and return the file path + a /screenshots/{name} download URL.
+api.MapPost("/capture/screen", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, ScreenCaptureRequest? r) =>
+    WriteCapture(ctx, ss, b.CaptureScreen(r?.Monitor, ParseFormat(r?.Format), r?.Quality ?? 80), r?.Save ?? false));
 
-api.MapPost("/capture/region", (IAutomationBackend b, HttpContext ctx, RegionRequest r) =>
-    WriteCapture(ctx, b.CaptureRegion(r.X, r.Y, r.Width, r.Height, ParseFormat(r.Format), r.Quality ?? 80)));
+api.MapPost("/capture/region", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, RegionRequest r) =>
+    WriteCapture(ctx, ss, b.CaptureRegion(r.X, r.Y, r.Width, r.Height, ParseFormat(r.Format), r.Quality ?? 80), r.Save ?? false));
 
-api.MapPost("/capture/window", (IAutomationBackend b, HttpContext ctx, WindowCaptureRequest r) =>
+api.MapPost("/capture/window", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, WindowCaptureRequest r) =>
 {
     var fmt = ParseFormat(r.Format);
     int q = r.Quality ?? 80;
     var result = r.Reference is not null ? b.CaptureWindowByRef(r.Reference, fmt, q)
                : r.Hwnd is not null ? b.CaptureWindow(r.Hwnd.Value, fmt, q)
                : throw new ArgumentException("Provide either 'reference' or 'hwnd'.");
-    return WriteCapture(ctx, result);
+    return WriteCapture(ctx, ss, result, r.Save ?? false);
 });
 
-api.MapPost("/capture/element", (IAutomationBackend b, HttpContext ctx, ElementCaptureRequest r) =>
-    WriteCapture(ctx, b.CaptureElement(r.Reference, ParseFormat(r.Format), r.Quality ?? 80)));
+api.MapPost("/capture/element", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, ElementCaptureRequest r) =>
+    WriteCapture(ctx, ss, b.CaptureElement(r.Reference, ParseFormat(r.Format), r.Quality ?? 80), r.Save ?? false));
+
+// Saved screenshots: list + download.
+api.MapGet("/screenshots", (Deskhand.Core.Services.ScreenshotStore ss) => Results.Ok(ss.List()));
+api.MapGet("/screenshots/{name}", (Deskhand.Core.Services.ScreenshotStore ss, string name) =>
+{
+    var path = ss.PathFor(name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "not found", type = "not_found" });
+    return Results.File(path, name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ? "image/jpeg" : "image/png", name);
+});
 
 // Phase 2: capture the current input desktop (secure desktop when run as SYSTEM).
 api.MapPost("/capture/input-desktop", (IAutomationBackend b, InputDesktopRequest? r) =>
@@ -615,8 +630,17 @@ static ImageFormat ParseFormat(string? f) =>
     f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
 
 // Return raw image bytes when the client asks (?raw=true or Accept: image/*); otherwise JSON+base64.
-static IResult WriteCapture(HttpContext ctx, CaptureResultDto c)
+static IResult WriteCapture(HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool saveBody)
 {
+    // save = save the file on this machine + return a download URL, instead of the image inline.
+    bool save = saveBody || string.Equals(ctx.Request.Query["save"], "true", StringComparison.OrdinalIgnoreCase);
+    if (save)
+    {
+        var s = ss.Save(c.Bytes, c.Format);
+        return Results.Ok(new { c.Desktop, c.Rect, c.Monitor, c.DpiScale, c.Format,
+            saved = true, file = s.File, sizeBytes = s.SizeBytes, url = $"/screenshots/{s.FileName}" });
+    }
+
     bool wantsRaw = string.Equals(ctx.Request.Query["raw"], "true", StringComparison.OrdinalIgnoreCase)
                     || ctx.Request.Headers.Accept.ToString().Contains("image/", StringComparison.OrdinalIgnoreCase);
     string contentType = c.Format == "jpeg" ? "image/jpeg" : "image/png";
@@ -657,10 +681,10 @@ record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, in
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);
-record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality);
-record RegionRequest(int X, int Y, int Width, int Height, string? Format, int? Quality);
-record WindowCaptureRequest(long? Hwnd, string? Reference, string? Format, int? Quality);
-record ElementCaptureRequest(string Reference, string? Format, int? Quality);
+record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality, bool? Save);
+record RegionRequest(int X, int Y, int Width, int Height, string? Format, int? Quality, bool? Save);
+record WindowCaptureRequest(long? Hwnd, string? Reference, string? Format, int? Quality, bool? Save);
+record ElementCaptureRequest(string Reference, string? Format, int? Quality, bool? Save);
 record InputDesktopRequest(string? Format, int? Quality);
 record ControlRequest(bool? Armed, bool? InputEnabled, bool? CaptureEnabled, bool? NotifyOnCapture);
 record MacroPlayRequest(Deskhand.Core.Macros.Macro? Macro, double? Speed, int? MaxStepDelayMs);

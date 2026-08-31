@@ -25,6 +25,7 @@ localBackend.StartEvents(eventHub);
 var processWatcher = new Deskhand.Core.Events.ProcessWatcher(eventHub);
 var screenRecorder = new Deskhand.Core.Services.ScreenRecorder(auditLog);
 var processDumper = new Deskhand.Core.Services.ProcessDumper(auditLog);
+var screenshotStore = new Deskhand.Core.Services.ScreenshotStore(auditLog);
 var recordingIndicator = new RecordingIndicator();
 var inputRecorder = new Deskhand.Core.Services.InputRecorder(
     (x, y) => { try { return localBackend.GetElementFromPoint(x, y); } catch { return null; } },
@@ -36,6 +37,7 @@ builder.Services.AddSingleton(eventHub);
 builder.Services.AddSingleton(processWatcher);
 builder.Services.AddSingleton(screenRecorder);
 builder.Services.AddSingleton(processDumper);
+builder.Services.AddSingleton(screenshotStore);
 builder.Services.AddSingleton(inputRecorder);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));

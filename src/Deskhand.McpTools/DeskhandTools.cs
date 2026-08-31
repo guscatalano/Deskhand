@@ -281,7 +281,8 @@ public static class DeskhandTools
         [Description("Process id to dump.")] int pid)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\"}";
-        return Json(d.Dump(pid));
+        var dmp = d.Dump(pid);
+        return Json(new { dmp.ProcessId, dmp.Name, dmp.File, dmp.FileName, dmp.SizeBytes, dmp.Ts, dmp.DurationMs, url = $"/dumps/{dmp.FileName}" });
     }
 
     [McpServerTool(Name = "deskhand_launch_process"), Description("Launch a program by path or shell name/URL (e.g. \"notepad\", \"C:\\\\app.exe\", \"https://...\"). Waits up to waitForWindowMs for its main window and returns it if it appears.")]
@@ -446,23 +447,32 @@ public static class DeskhandTools
     public static string UserInputGet(Deskhand.Core.Services.InputRecorder ir, long sinceId = 0)
         => Json(new { lastId = ir.LastId, recording = ir.IsRecording, events = ir.Since(sinceId) });
 
-    // ---------- capture (returns MCP image content) ----------
+    // ---------- capture (returns MCP image content, or a saved-file path when save=true) ----------
 
-    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an image.")]
-    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, int? monitor = null, string? format = null)
-        => AsImage(b.CaptureScreen(monitor, Fmt(format), 80));
+    // Return the image inline (default) OR, when save=true, save it on the machine (screenshots dir,
+    // audited, 24h auto-delete) and return the path + /screenshots/{name} download URL as text.
+    private static IEnumerable<ContentBlock> CaptureOut(Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool save)
+    {
+        if (!save) return AsImage(c);
+        var s = ss.Save(c.Bytes, c.Format);
+        return new ContentBlock[] { new TextContentBlock { Text = Json(new { saved = true, file = s.File, sizeBytes = s.SizeBytes, url = $"/screenshots/{s.FileName}" }) } };
+    }
 
-    [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns an image.")]
-    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, int x, int y, int width, int height, string? format = null)
-        => AsImage(b.CaptureRegion(x, y, width, height, Fmt(format), 80));
+    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns the image inline; pass save=true to instead save it on the machine (screenshots dir, auto-deleted after 24h) and return its path + a /screenshots/{name} download URL.")]
+    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false)
+        => CaptureOut(ss, b.CaptureScreen(monitor, Fmt(format), 80), save);
 
-    [McpServerTool(Name = "deskhand_capture_window"), Description("Screenshot one window by element ref (its host window). Returns an image.")]
-    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, string reference, string? format = null)
-        => AsImage(b.CaptureWindowByRef(reference, Fmt(format), 80));
+    [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns the image inline; save=true saves it on the machine and returns a download URL instead.")]
+    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int x, int y, int width, int height, string? format = null, bool save = false)
+        => CaptureOut(ss, b.CaptureRegion(x, y, width, height, Fmt(format), 80), save);
 
-    [McpServerTool(Name = "deskhand_capture_element"), Description("Screenshot a single element's bounding rectangle. Returns an image.")]
-    public static IEnumerable<ContentBlock> CaptureElement(IAutomationBackend b, string reference, string? format = null)
-        => AsImage(b.CaptureElement(reference, Fmt(format), 80));
+    [McpServerTool(Name = "deskhand_capture_window"), Description("Screenshot one window by element ref (its host window). Returns the image inline; save=true saves it on the machine and returns a download URL instead.")]
+    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false)
+        => CaptureOut(ss, b.CaptureWindowByRef(reference, Fmt(format), 80), save);
+
+    [McpServerTool(Name = "deskhand_capture_element"), Description("Screenshot a single element's bounding rectangle. Returns the image inline; save=true saves it on the machine and returns a download URL instead.")]
+    public static IEnumerable<ContentBlock> CaptureElement(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false)
+        => CaptureOut(ss, b.CaptureElement(reference, Fmt(format), 80), save);
 
     [McpServerTool(Name = "deskhand_capture_input_desktop"), Description("Phase 2: screenshot whichever desktop currently owns input (the secure desktop when running as SYSTEM). Returns an image plus a status line.")]
     public static IEnumerable<ContentBlock> CaptureInputDesktop(IAutomationBackend b, string? format = null)

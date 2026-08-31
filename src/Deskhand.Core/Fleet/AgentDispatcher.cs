@@ -100,6 +100,17 @@ public static class AgentDispatcher
                 if (svc.Dumper is null) throw new InvalidOperationException("Session launch isn't available on an RDP agent (it would run on the connector, not the target).");
                 return Services.SessionLaunchService.Launch(a.Str("path")!, a.Str("args"), a.Str("workingDir"), a.IntN("sessionId"),
                     a.Str("desktop"), Services.SessionLaunchService.ParseAs(a.Str("as")), a.Str("user"), a.Str("domain"), a.Str("password"), a.Bool("noWindow"));
+            case FleetMethods.FirewallRules:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would read the connector's firewall, not the target).");
+                return Services.FirewallService.List(a.Str("direction"), a.IntN("port"), a.Bool("enabledOnly"), a.Str("contains"), a.Bool("managedOnly"), a.Int("max", 200));
+            case FleetMethods.FirewallOpen:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would change the connector's firewall, not the target).");
+                return Services.FirewallService.OpenPort(a.Int("port", 0), a.Str("protocol"), a.Str("direction"), a.Str("remoteAddresses"), a.Str("name"));
+            case FleetMethods.FirewallClose:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would change the connector's firewall, not the target).");
+                return a.Bool("all")
+                    ? Services.FirewallService.CloseAllManaged()
+                    : Services.FirewallService.ClosePort(a.Int("port", 0), a.Str("protocol"), a.Str("direction"));
             case FleetMethods.SystemInfo:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would report the connector's machine, not the target).");
                 return Services.SystemInfoService.Get();

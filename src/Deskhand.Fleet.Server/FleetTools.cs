@@ -234,4 +234,19 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_system_info"), Description("About a fleet PC (read-only): Windows version + BuildLab, uptime, CPU, memory, disks, network, firewall. Not available on RDP agents.")]
     public static string AgentSystemInfo(AgentRegistry r, FleetAudit audit, string agentId)
         => Raw(O(r, audit, agentId, "system_info").SystemInfo());
+
+    [McpServerTool(Name = "deskhand_agent_firewall_rules"), Description("List a fleet PC's Windows Firewall rules (read-only). Filters: direction in/out, port, enabledOnly, contains, managedOnly (rules Deskhand opened), max. Not available on RDP agents.")]
+    public static string AgentFirewallRules(AgentRegistry r, FleetAudit audit, string agentId,
+        string? direction = null, int? port = null, bool? enabledOnly = null, string? contains = null, bool managedOnly = false, int max = 200)
+        => Raw(O(r, audit, agentId, "firewall_rules").FirewallRules(direction, port, enabledOnly, contains, managedOnly, max));
+
+    [McpServerTool(Name = "deskhand_agent_firewall_open_port"), Description("Open a port on a fleet PC: add an inbound/outbound ALLOW rule for a TCP/UDP port, tagged Deskhand-managed for clean removal. The agent must run as Administrator and be started with DESKHAND_ENABLE_FIREWALL_ADMIN. Not available on RDP agents.")]
+    public static string AgentFirewallOpenPort(AgentRegistry r, FleetAudit audit, string agentId,
+        int port, string? protocol = "tcp", string? direction = "in", string? remoteAddresses = null, string? name = null)
+        => Raw(O(r, audit, agentId, "firewall_open").FirewallOpen(port, protocol, direction, remoteAddresses, name));
+
+    [McpServerTool(Name = "deskhand_agent_firewall_close_port"), Description("Close a port DESKHAND opened on a fleet PC (all=true removes every Deskhand-managed rule). Only ever removes rules Deskhand created — never pre-existing ones. Requires Administrator + DESKHAND_ENABLE_FIREWALL_ADMIN. Not available on RDP agents.")]
+    public static string AgentFirewallClosePort(AgentRegistry r, FleetAudit audit, string agentId,
+        int port = 0, string? protocol = "tcp", string? direction = "in", bool all = false)
+        => Raw(O(r, audit, agentId, "firewall_close").FirewallClose(port, protocol, direction, all));
 }

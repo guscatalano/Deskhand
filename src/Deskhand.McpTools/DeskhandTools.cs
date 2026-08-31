@@ -276,6 +276,49 @@ public static class DeskhandTools
     public static string RegistryBrowse([Description("Registry key path, e.g. \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\". Empty lists the hives.")] string? path = null)
         => Json(Deskhand.Core.Services.RegistryService.Browse(path));
 
+    [McpServerTool(Name = "deskhand_firewall_rules"), Description("List Windows Firewall rules (read-only, no elevation). Filters keep the (often hundreds of) rules manageable. Returns { total, returned, rules[{name, direction, action, protocol, localPorts, remotePorts, enabled, profiles, grouping, applicationName, remoteAddresses, managed}], error? }. 'managed' marks rules Deskhand opened.")]
+    public static string FirewallRules(
+        [Description("Filter by direction: \"in\" or \"out\" (optional).")] string? direction = null,
+        [Description("Only rules whose local ports include this port (optional).")] int? port = null,
+        [Description("Only enabled rules (optional).")] bool? enabledOnly = null,
+        [Description("Only rules whose name/grouping contains this text (optional).")] string? contains = null,
+        [Description("Only rules Deskhand opened (optional).")] bool managedOnly = false,
+        [Description("Max rules to return (default 200).")] int max = 200)
+        => Json(Deskhand.Core.Services.FirewallService.List(direction, port, enabledOnly, contains, managedOnly, max));
+
+    [McpServerTool(Name = "deskhand_firewall_open_port"), Description("Open a port: add an inbound (or outbound) ALLOW rule for a TCP/UDP port, tagged as Deskhand-managed so it can be cleanly closed later with deskhand_firewall_close_port. Returns { ok, ruleName, port, protocol, direction, action, error?, hint? }. Requires the agent running as Administrator (else a clear access-denied hint). OFF unless the host sets DESKHAND_ENABLE_FIREWALL_ADMIN; requires the kill switch armed; audited.")]
+    public static string FirewallOpenPort(ControlState state, AuditLog audit,
+        [Description("Port number 1-65535.")] int port,
+        [Description("\"tcp\" (default) or \"udp\".")] string? protocol = "tcp",
+        [Description("\"in\" (default, inbound) or \"out\".")] string? direction = "in",
+        [Description("Scope who may connect, e.g. \"LocalSubnet\" or a CIDR (optional; default any).")] string? remoteAddresses = null,
+        [Description("Friendly name suffix for the rule (optional).")] string? name = null)
+    {
+        if (!Deskhand.Core.Services.FirewallService.AdminEnabled)
+            return "{\"error\":\"Firewall admin is disabled. Set DESKHAND_ENABLE_FIREWALL_ADMIN=1.\",\"type\":\"firewall_admin_disabled\"}";
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FirewallService.OpenPort(port, protocol, direction, remoteAddresses, name);
+        audit.Record("firewall_open", $"{r.Protocol} {r.Port} ({r.Direction})", r.Ok ? $"added '{r.RuleName}'" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_firewall_close_port"), Description("Close a port DESKHAND opened: remove only Deskhand-managed rules matching this port/protocol/direction (set all=true to remove every Deskhand-managed rule). NEVER removes a rule Deskhand didn't create, so it can't take down pre-existing rules (RDP, SSH, etc.). Returns { ok, ruleName, removed, error?, hint? }. Requires Administrator. OFF unless DESKHAND_ENABLE_FIREWALL_ADMIN; requires armed; audited.")]
+    public static string FirewallClosePort(ControlState state, AuditLog audit,
+        [Description("Port number 1-65535 (ignored when all=true).")] int port = 0,
+        [Description("\"tcp\" (default) or \"udp\".")] string? protocol = "tcp",
+        [Description("\"in\" (default) or \"out\".")] string? direction = "in",
+        [Description("Remove ALL Deskhand-managed rules instead of one port.")] bool all = false)
+    {
+        if (!Deskhand.Core.Services.FirewallService.AdminEnabled)
+            return "{\"error\":\"Firewall admin is disabled. Set DESKHAND_ENABLE_FIREWALL_ADMIN=1.\",\"type\":\"firewall_admin_disabled\"}";
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = all
+            ? Deskhand.Core.Services.FirewallService.CloseAllManaged()
+            : Deskhand.Core.Services.FirewallService.ClosePort(port, protocol, direction);
+        audit.Record("firewall_close", all ? "all managed" : $"{r.Protocol} {r.Port} ({r.Direction})", r.Ok ? $"removed {r.Removed}" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)

@@ -247,6 +247,12 @@ app.MapPost("/agents/{id}/shell/run", (string id, AgentShellReq r) => Results.Ok
 app.MapPost("/agents/{id}/process/launch-as", (string id, AgentLaunchAsReq r) =>
     Results.Ok(O(id).LaunchProcessAs(r.Path, r.Args, r.WorkingDir, r.SessionId, r.Desktop, r.As, r.User, r.Domain, r.Password, r.NoWindow ?? false)));
 app.MapGet("/agents/{id}/system", (string id) => Results.Ok(O(id).SystemInfo()));
+app.MapGet("/agents/{id}/firewall/rules", (string id, string? direction, int? port, bool? enabledOnly, string? contains, bool? managedOnly, int? max) =>
+    Results.Ok(O(id).FirewallRules(direction, port, enabledOnly, contains, managedOnly ?? false, max ?? 200)));
+app.MapPost("/agents/{id}/firewall/open", (string id, AgentFwOpenReq r) =>
+    Results.Ok(O(id).FirewallOpen(r.Port, r.Protocol, r.Direction, r.RemoteAddresses, r.Name)));
+app.MapPost("/agents/{id}/firewall/close", (string id, AgentFwCloseReq r) =>
+    Results.Ok(O(id).FirewallClose(r.Port, r.Protocol, r.Direction, r.All ?? false)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -329,3 +335,5 @@ record AgentUnzipReq(string ZipPath, string? Dest, bool? Overwrite);
 record AgentShellReq(string? Shell, string Command, string? Cwd, int? TimeoutMs);
 record AgentLaunchAsReq(string Path, string? Args, string? WorkingDir, int? SessionId, string? Desktop,
     string? As, string? User, string? Domain, string? Password, bool? NoWindow);
+record AgentFwOpenReq(int Port, string? Protocol, string? Direction, string? RemoteAddresses, string? Name);
+record AgentFwCloseReq(int Port, string? Protocol, string? Direction, bool? All);

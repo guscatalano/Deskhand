@@ -54,4 +54,10 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement LaunchProcessAs(string path, string? args, string? workingDir, int? sessionId, string? desktop, string? @as, string? user, string? domain, string? password, bool noWindow)
         => Call(FleetMethods.LaunchAs, new { path, args, workingDir, sessionId, desktop, @as, user, domain, password, noWindow });
     public JsonElement SystemInfo() => Call(FleetMethods.SystemInfo, null);
+    public JsonElement FirewallRules(string? direction, int? port, bool? enabledOnly, string? contains, bool managedOnly, int max)
+        => Call(FleetMethods.FirewallRules, new { direction, port, enabledOnly, contains, managedOnly, max });
+    public JsonElement FirewallOpen(int port, string? protocol, string? direction, string? remoteAddresses, string? name)
+        => Call(FleetMethods.FirewallOpen, new { port, protocol, direction, remoteAddresses, name });
+    public JsonElement FirewallClose(int port, string? protocol, string? direction, bool all)
+        => Call(FleetMethods.FirewallClose, new { port, protocol, direction, all });
 }

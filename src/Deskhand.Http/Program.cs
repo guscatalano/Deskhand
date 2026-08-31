@@ -497,6 +497,34 @@ api.MapPost("/process/launch-as", (ControlState st, AuditLog al, SessionLaunchRe
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
 
+// Windows Firewall. Listing is read-only. Opening/closing ports adds/removes rules TAGGED as Deskhand-managed,
+// and close only ever removes Deskhand's own rules — never a pre-existing one. Write ops need Administrator and
+// are OFF unless DESKHAND_ENABLE_FIREWALL_ADMIN is set, gated on armed, audited.
+api.MapGet("/firewall/rules", (string? direction, int? port, bool? enabledOnly, string? contains, bool? managedOnly, int? max) =>
+    Results.Ok(Deskhand.Core.Services.FirewallService.List(direction, port, enabledOnly, contains, managedOnly ?? false, max ?? 200)));
+api.MapGet("/firewall/managed", () => Results.Ok(Deskhand.Core.Services.FirewallService.ListManaged()));
+api.MapPost("/firewall/open", (ControlState st, AuditLog al, FirewallOpenRequest r) =>
+{
+    if (!Deskhand.Core.Services.FirewallService.AdminEnabled)
+        return Results.Json(new { error = "Firewall admin is disabled. Set DESKHAND_ENABLE_FIREWALL_ADMIN=1.", type = "firewall_admin_disabled" }, statusCode: 403);
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.FirewallService.OpenPort(r.Port, r.Protocol, r.Direction, r.RemoteAddresses, r.Name);
+    al.Record("firewall_open", $"{res.Protocol} {res.Port} ({res.Direction})", res.Ok ? $"added '{res.RuleName}'" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+api.MapPost("/firewall/close", (ControlState st, AuditLog al, FirewallCloseRequest r) =>
+{
+    if (!Deskhand.Core.Services.FirewallService.AdminEnabled)
+        return Results.Json(new { error = "Firewall admin is disabled. Set DESKHAND_ENABLE_FIREWALL_ADMIN=1.", type = "firewall_admin_disabled" }, statusCode: 403);
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = r.All == true
+        ? Deskhand.Core.Services.FirewallService.CloseAllManaged()
+        : Deskhand.Core.Services.FirewallService.ClosePort(r.Port, r.Protocol, r.Direction);
+    al.Record("firewall_close", r.All == true ? "all managed" : $"{res.Protocol} {res.Port} ({res.Direction})",
+        res.Ok ? $"removed {res.Removed}" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 
@@ -695,6 +723,8 @@ record FsUnzipRequest(string ZipPath, string? Dest, bool? Overwrite);
 record ShellRunRequest(string? Shell, string Command, string? Cwd, int? TimeoutMs);
 record SessionLaunchRequest(string Path, string? Args, string? WorkingDir, int? SessionId, string? Desktop,
     string? As, string? User, string? Domain, string? Password, bool? NoWindow);
+record FirewallOpenRequest(int Port, string? Protocol, string? Direction, string? RemoteAddresses, string? Name);
+record FirewallCloseRequest(int Port, string? Protocol, string? Direction, bool? All);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

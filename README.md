@@ -77,6 +77,26 @@ No bearer token is required for the browser dashboard. The server is protected b
 - **Cross-session launch is opt-in** — `/process/launch-as` (`deskhand_launch_process_as`) launches a program
   into a specific TS **session**, on a specific window-station\\**desktop**, as a specific **user**. Off unless
   `DESKHAND_ENABLE_SESSION_LAUNCH=1`; also requires *armed* and is audited (never the password).
+- **Firewall port admin is opt-in** — listing rules (`/firewall/rules`, `deskhand_firewall_rules`) is read-only,
+  but opening/closing ports (`/firewall/open` · `/firewall/close`) is off unless
+  `DESKHAND_ENABLE_FIREWALL_ADMIN=1`; also requires *armed*, is audited, and needs the host running as
+  Administrator. **Deskhand only ever removes rules it opened** (see below).
+
+#### Firewall: show rules, open & close ports (`/firewall/*`)
+
+- **List** — `GET /firewall/rules` enumerates the Windows Firewall (via the `HNetCfg.FwPolicy2` COM API). Filter by
+  `direction` (in/out), `port`, `enabledOnly`, a name/grouping substring (`contains`), or `managedOnly`. Read-only.
+- **Open a port** — `POST /firewall/open {port, protocol?(tcp), direction?(in), remoteAddresses?, name?}` adds an
+  **Allow** rule. Every rule Deskhand creates is tagged (Grouping = `Deskhand (managed)`, name prefixed `Deskhand`),
+  so it's identifiable and cleanly removable. `remoteAddresses` (e.g. `LocalSubnet`) scopes who may connect.
+- **Close a port** — `POST /firewall/close {port, protocol?, direction?}` (or `{all:true}`) removes **only
+  Deskhand-tagged rules** that match. It will **never** delete a rule Deskhand didn't create — ask it to close
+  `3389` and it refuses, because your RDP rule isn't one of Deskhand's. The tag lives in the firewall itself, so
+  it survives restarts.
+
+Opening/closing needs Administrator; without it you get a clear `E_ACCESSDENIED` + "requires Administrator" hint,
+never an opaque failure. Fleet parity: `GET/POST /agents/{id}/firewall/rules|open|close` and the
+`deskhand_agent_firewall_*` tools.
 
 #### Launch into a session / desktop / user (`/process/launch-as`)
 
@@ -154,6 +174,9 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /windows` | — | All top-level windows (the reliable way to enter a specific app) |
 | `POST /process/launch` | `{path, args?, workingDir?, waitForWindowMs?}` | Launch a program; returns its window if it appears |
 | `POST /process/launch-as` | `{path, args?, workingDir?, sessionId?, desktop?, as?, user?, domain?, password?, noWindow?}` | Launch into a specific **session** / **desktop**, as a specific **user** (see below) |
+| `GET /firewall/rules` | `?direction=&port=&enabledOnly=&contains=&managedOnly=&max=` | List Windows Firewall rules (read-only) |
+| `POST /firewall/open` | `{port, protocol?, direction?, remoteAddresses?, name?}` | Open a port (adds a Deskhand-tagged Allow rule) |
+| `POST /firewall/close` | `{port, protocol?, direction?}` or `{all:true}` | Close a port **Deskhand opened** (never touches other rules) |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |
 | `POST /uia/find` | `{rootRef?, name?, automationId?, controlType?, className?, scope?, max?}` | Query elements |
 | `POST /uia/wait` | `{…conditions, timeoutMs?}` | Poll until a matching element appears (or `404 wait_timeout`) |

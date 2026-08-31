@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/deskhand-logo.svg" alt="Deskhand" width="440">
+</p>
+
 # Deskhand — local HTTP automation server
 
 A **localhost-only HTTP server** that exposes Windows **UI Automation**, **screen capture**, and

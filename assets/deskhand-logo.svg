@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 160" width="540" height="160" role="img" aria-label="Deskhand — Windows desktop automation">
+  <defs>
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- self-contained panel so the mark reads on both light and dark README themes -->
+  <rect x="0" y="0" width="540" height="160" rx="24" fill="#0F172A"/>
+
+  <!-- icon: an app tile holding a desktop window with a pointer resting on it -->
+  <g>
+    <rect x="24" y="24" width="112" height="112" rx="26" fill="url(#badge)"/>
+    <!-- the "desk"/screen: a window glyph -->
+    <rect x="44" y="48" width="72" height="52" rx="9" fill="#FFFFFF" fill-opacity="0.16"
+          stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="4"/>
+    <circle cx="55" cy="59" r="2.4" fill="#FFFFFF" fill-opacity="0.92"/>
+    <circle cx="64" cy="59" r="2.4" fill="#FFFFFF" fill-opacity="0.92"/>
+    <circle cx="73" cy="59" r="2.4" fill="#FFFFFF" fill-opacity="0.92"/>
+    <!-- the "hand": a cursor/pointer controlling the screen -->
+    <polygon points="74,64 74,100 83,91 90.2,105.4 95.6,103.6 88.4,89.2 101,89.2"
+             fill="#FFFFFF" stroke="#0F172A" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="160" y="90" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="56" font-weight="800" letter-spacing="-1">
+    <tspan fill="#E2E8F0">Desk</tspan><tspan fill="#22D3EE">hand</tspan>
+  </text>
+  <text x="162" y="120" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="16" font-weight="600" letter-spacing="3.5" fill="#94A3B8">WINDOWS DESKTOP AUTOMATION</text>
+</svg>

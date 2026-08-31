@@ -255,6 +255,7 @@ const openAgent = guard(async(a)=>{
       <button class="subtab active" data-sub="files">Files</button>
       <button class="subtab" data-sub="shell">Shell</button>
       <button class="subtab" data-sub="system">System</button>
+      <button class="subtab" data-sub="firewall">Firewall</button>
     </div>
     <div id="subFiles" class="subpane">
       <div class="ctrls"><input id="afPath" placeholder="C:\\Users" style="flex:1;font-family:var(--mono)"><button class="btn" id="afGo">Go</button><button class="btn" id="afUp">↑ up</button><button class="btn a" id="afUpBtn">⬆ Upload</button><input type="file" id="afUpload" multiple hidden></div>
@@ -269,6 +270,13 @@ const openAgent = guard(async(a)=>{
     <div id="subSystem" class="subpane" style="display:none">
       <button class="btn" id="asysLoad">↻ Load system info</button>
       <div id="asysBody" style="margin-top:10px;font-family:var(--mono);font-size:12px"></div>
+    </div>
+    <div id="subFirewall" class="subpane" style="display:none">
+      <div class="ctrls"><input id="afwPort" type="number" min="1" max="65535" placeholder="port" style="max-width:90px;font-family:var(--mono)"><select id="afwProto"><option value="tcp">TCP</option><option value="udp">UDP</option></select><select id="afwDir"><option value="in">Inbound</option><option value="out">Outbound</option></select><input id="afwName" placeholder="name (optional)" style="max-width:150px"><button class="btn a" id="afwOpen">＋ Open port</button></div>
+      <div class="ctrls" style="margin-top:6px"><select id="afwFltDir"><option value="">All dir</option><option value="in">Inbound</option><option value="out">Outbound</option></select><input id="afwFltPort" type="number" placeholder="port" style="max-width:80px;font-family:var(--mono)"><input id="afwFltText" placeholder="name contains…" style="flex:1"><label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--ink-3)"><input type="checkbox" id="afwFltManaged"> Deskhand only</label><button class="btn" id="afwRefresh">Refresh</button></div>
+      <div class="hint" style="margin:6px 0">Opening/closing needs the agent started with <b>DESKHAND_ENABLE_FIREWALL_ADMIN</b> + Administrator. Deskhand only ever closes rules it opened.</div>
+      <div id="afwMeta" style="font-family:var(--mono);font-size:11px;color:var(--ink-3);margin:4px 0"></div>
+      <div id="afwBody"></div>
     </div>
     <div class="hint" style="margin-top:6px">Files / Shell / System run on this agent PC. Shell needs the agent started with DESKHAND_ENABLE_SHELL. (Not available on RDP connectors.)</div>`}`;
   { const rb=$("#rmRdpBtn"); if(rb) rb.onclick=()=>removeRdp(a.id); }
@@ -290,11 +298,14 @@ const openAgent = guard(async(a)=>{
 
 // Files / Shell / System sub-panels for a native agent (they call /agents/{id}/fs|shell|system).
 function wireAgentPanels(id){
+  let afwLoaded=false;
   document.querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{
     document.querySelectorAll(".subtab").forEach(x=>x.classList.remove("active")); b.classList.add("active");
     $("#subFiles").style.display=b.dataset.sub==="files"?"":"none";
     $("#subShell").style.display=b.dataset.sub==="shell"?"":"none";
     $("#subSystem").style.display=b.dataset.sub==="system"?"":"none";
+    $("#subFirewall").style.display=b.dataset.sub==="firewall"?"":"none";
+    if(b.dataset.sub==="firewall"&&!afwLoaded){ afwLoaded=true; loadAfw(); }
   });
   // ---- files ----
   let afCur="";
@@ -336,6 +347,45 @@ function wireAgentPanels(id){
   $("#asRun").onclick=runAsh; $("#asCmd").addEventListener("keydown",e=>{ if(e.key==="Enter") runAsh(); });
   // ---- system ----
   $("#asysLoad").onclick=guard(async()=>{ $("#asysBody").textContent="loading…"; const s=await api(`/agents/${id}/system`); $("#asysBody").innerHTML=renderAgentSys(s); });
+  // ---- firewall ----
+  const fwEsc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const loadAfw=guard(async()=>{
+    const qs=new URLSearchParams();
+    const dir=$("#afwFltDir").value; if(dir) qs.set("direction",dir);
+    const port=$("#afwFltPort").value.trim(); if(port) qs.set("port",port);
+    const txt=$("#afwFltText").value.trim(); if(txt) qs.set("contains",txt);
+    if($("#afwFltManaged").checked) qs.set("managedOnly","true");
+    qs.set("max","400");
+    const d=await api(`/agents/${id}/firewall/rules?`+qs.toString());
+    $("#afwMeta").textContent=d.error?d.error:`showing ${d.returned} of ${d.total} rules`;
+    const body=$("#afwBody"); body.innerHTML="";
+    if(!(d.rules||[]).length){ body.innerHTML='<div style="color:var(--ink-3);padding:6px">No rules match.</div>'; return; }
+    d.rules.forEach(r=>{
+      const row=elm("div","afrow"); row.style.gridTemplateColumns="1fr auto";
+      const nm=elm("div","an");
+      nm.innerHTML=(r.enabled?"":"<span style='opacity:.45'>○ </span>")+fwEsc(r.name)
+        +' <span style="color:var(--ink-3);font-size:11px">'+r.direction+" · "+fwEsc(r.protocol||"—")+" "+fwEsc(r.localPorts||"")
+        +" · "+(r.action==="Block"?'<span style="color:var(--crit)">Block</span>':'<span style="color:var(--good)">Allow</span>')
+        +(r.managed?' · <b style="color:var(--accent)">Deskhand</b>':"")+"</span>";
+      row.append(nm);
+      if(r.managed && /^\d+$/.test(r.localPorts||"")){
+        const cl=elm("a"); cl.className="danger"; cl.textContent="close";
+        cl.onclick=guard(async()=>{ await api(`/agents/${id}/firewall/close`,"POST",{port:parseInt(r.localPorts,10),protocol:(r.protocol||"tcp").toLowerCase(),direction:r.direction}); toast("closed "+r.protocol+" "+r.localPorts); loadAfw(); });
+        row.append(cl);
+      }
+      body.append(row);
+    });
+  });
+  $("#afwRefresh").onclick=loadAfw;
+  ["afwFltDir","afwFltManaged"].forEach(x=>$("#"+x).addEventListener("change",loadAfw));
+  ["afwFltPort","afwFltText"].forEach(x=>$("#"+x).addEventListener("keydown",e=>{ if(e.key==="Enter") loadAfw(); }));
+  $("#afwOpen").onclick=guard(async()=>{
+    const port=parseInt($("#afwPort").value,10); if(!(port>=1&&port<=65535)){ toast("enter a port (1–65535)",true); return; }
+    const b={port,protocol:$("#afwProto").value,direction:$("#afwDir").value}; const nm=$("#afwName").value.trim(); if(nm) b.name=nm;
+    const r=await api(`/agents/${id}/firewall/open`,"POST",b);
+    toast(r.ok?("opened "+r.protocol+" "+r.port):("failed: "+(r.error||"")+(r.hint?" — "+r.hint:"")),!r.ok);
+    $("#afwPort").value=""; $("#afwName").value=""; $("#afwFltManaged").checked=true; loadAfw();
+  });
 }
 async function agentDownload(id,path,name){
   const h={}; if(AUTH_TOKEN) h["Authorization"]="Bearer "+AUTH_TOKEN;

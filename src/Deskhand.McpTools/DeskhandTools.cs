@@ -449,16 +449,28 @@ public static class DeskhandTools
 
     // ---------- capture (returns MCP image content, or a saved-file path when save=true) ----------
 
-    // Return the image inline (default) OR, when save=true, save it on the machine (screenshots dir,
-    // audited, 24h auto-delete) and return the path + /screenshots/{name} download URL as text.
+    // Default (save=false): return an MCP image content block — image-capable clients render it inline.
+    // save=true: return the image as BASE64 TEXT in a single call (works in clients that don't handle MCP
+    // image blocks) AND save the file on the machine, returning its path + /screenshots/{name} URL. Errors
+    // (e.g. disk full) come back as a clear { error } instead of throwing.
     private static IEnumerable<ContentBlock> CaptureOut(Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool save)
     {
         if (!save) return AsImage(c);
-        var s = ss.Save(c.Bytes, c.Format);
-        return new ContentBlock[] { new TextContentBlock { Text = Json(new { saved = true, file = s.File, sizeBytes = s.SizeBytes, url = $"/screenshots/{s.FileName}" }) } };
+        try
+        {
+            var s = ss.Save(c.Bytes, c.Format);
+            return new ContentBlock[] { new TextContentBlock { Text = Json(new {
+                saved = true, file = s.File, url = $"/screenshots/{s.FileName}", sizeBytes = s.SizeBytes,
+                format = c.Format, width = c.Rect.Width, height = c.Rect.Height,
+                base64 = Convert.ToBase64String(c.Bytes) }) } };
+        }
+        catch (Exception ex)
+        {
+            return new ContentBlock[] { new TextContentBlock { Text = Json(new { error = "capture save failed: " + ex.Message, type = ex.GetType().Name }) } };
+        }
     }
 
-    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns the image inline; pass save=true to instead save it on the machine (screenshots dir, auto-deleted after 24h) and return its path + a /screenshots/{name} download URL.")]
+    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an MCP image block (image-capable clients render it). IF YOUR CLIENT CAN'T DISPLAY MCP IMAGES (you only see metadata, no image): pass save=true — it returns the screenshot as base64 TEXT in one call, plus a saved file + /screenshots/{name} download URL. Tip: use format=jpeg (smaller base64) and pick one monitor to keep the payload small.")]
     public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false)
         => CaptureOut(ss, b.CaptureScreen(monitor, Fmt(format), 80), save);
 
@@ -499,9 +511,24 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_mouse_scroll"), Description("Scroll the wheel. dy positive scrolls up, dx positive scrolls right (in notches).")]
     public static string MouseScroll(IAutomationBackend b, int dx, int dy) { b.MouseScroll(dx, dy); return "ok"; }
 
-    [McpServerTool(Name = "deskhand_type_text"), Description("Type a literal Unicode string via synthetic keyboard input.")]
-    public static string TypeText(IAutomationBackend b, string text) { b.TypeText(text); return "ok"; }
+    [McpServerTool(Name = "deskhand_type_text"), Description("Type a literal Unicode string via synthetic keyboard input. Keystrokes go to whatever window has focus — if input isn't landing, pass reference (an element ref from find/element_from_point) to focus that element's window FIRST, or click the field before typing. For a plain text box, deskhand_set_value is more reliable (it sets the value via UIA, no focus needed).")]
+    public static string TypeText(IAutomationBackend b, string text, string? reference = null)
+        => FocusThen(b, reference, () => b.TypeText(text));
 
-    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord, e.g. \"ctrl+shift+s\", \"alt+F4\", \"enter\", \"tab\".")]
-    public static string SendKeys(IAutomationBackend b, string chord) { b.SendKeys(chord); return "ok"; }
+    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord, e.g. \"ctrl+shift+s\", \"alt+F4\", \"enter\", \"tab\". Goes to the focused window — pass reference (an element ref) to focus that element's window FIRST if the chord isn't reaching the right app.")]
+    public static string SendKeys(IAutomationBackend b, string chord, string? reference = null)
+        => FocusThen(b, reference, () => b.SendKeys(chord));
+
+    // Optionally raise+focus the target element's window before sending input, so keystrokes land where
+    // intended (the #1 cause of "input didn't reach the app" is the wrong window being foreground).
+    private static string FocusThen(IAutomationBackend b, string? reference, Action send)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(reference)) { b.SetFocus(reference); System.Threading.Thread.Sleep(120); }
+            send();
+            return reference is null ? "ok" : Json(new { ok = true, focused = reference });
+        }
+        catch (Exception ex) { return Json(new { error = ex.Message, type = ex.GetType().Name }); }
+    }
 }

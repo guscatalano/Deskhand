@@ -104,7 +104,21 @@ builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithToolsFromAssembly(typeof(Deskhand.McpTools.DeskhandTools).Assembly);
 
+// OpenAPI: a machine-readable description of the HTTP surface at /swagger/v1/swagger.json, with an
+// interactive Swagger UI at /swagger. Loopback browsers reach it without a token (same-origin).
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(o => o.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+{
+    Title = "Deskhand HTTP API",
+    Version = Deskhand.Core.BuildInfo.Version,
+    Description = "Local Windows desktop-automation server: UI Automation, capture, input, OCR, clipboard, "
+                + "windows, files, shell, firewall, and machine info. Many actions require the kill switch armed.",
+}));
+
 var app = builder.Build();
+
+app.UseSwagger();
+app.UseSwaggerUI(o => { o.SwaggerEndpoint("/swagger/v1/swagger.json", "Deskhand v1"); o.DocumentTitle = "Deskhand API"; });
 
 // The dashboard: static files (index.html at "/") are served before auth runs.
 app.UseDefaultFiles();
@@ -313,7 +327,7 @@ api.MapGet("/events", async (HttpContext ctx, Deskhand.Core.Events.EventHub hub)
 });
 
 // ---- health & orientation ----
-api.MapGet("/health", () => Results.Ok(new { ok = true, service = "deskhand-http", version = "0.2.2", requiresToken = requireToken, tls }));
+api.MapGet("/health", () => Results.Ok(new { ok = true, service = "deskhand-http", version = Deskhand.Core.BuildInfo.Version, requiresToken = requireToken, tls }));
 api.MapGet("/machine", (IAutomationBackend b) => Results.Ok(b.GetMachineInfo()));
 api.MapGet("/desktop/state", (IAutomationBackend b) => Results.Ok(b.GetDesktopState()));
 api.MapGet("/foreground", (IAutomationBackend b) => Results.Ok(b.GetForegroundWindow()));
@@ -583,6 +597,19 @@ api.MapPost("/ocr/window", (IAutomationBackend b, ControlState st, WindowCapture
     return Results.Ok(Ocr(cap));
 });
 
+// Self-update: check GitHub Releases; apply downloads the latest zip and relaunches. Apply is opt-in
+// (DESKHAND_ENABLE_SELF_UPDATE), armed, audited — it stops and replaces this running server.
+api.MapGet("/update/check", async () => Results.Ok(await Deskhand.Core.Services.UpdateService.CheckAsync()));
+api.MapPost("/update/apply", async (ControlState st, AuditLog al) =>
+{
+    if (!Deskhand.Core.Services.UpdateService.Enabled)
+        return Results.Json(new { error = "Self-update is disabled. Set DESKHAND_ENABLE_SELF_UPDATE=1.", type = "update_disabled" }, statusCode: 403);
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = await Deskhand.Core.Services.UpdateService.ApplyAsync();
+    al.Record("update_apply", $"{res.From}->{res.To}", res.Ok ? res.Message ?? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 
@@ -691,6 +718,7 @@ api.MapPost("/mouse/click", (IAutomationBackend b, MouseClickRequest r) => { b.M
 api.MapPost("/mouse/down", (IAutomationBackend b, MouseButtonRequest r) => { b.MouseDown(r.Button ?? "left", r.X, r.Y); return Ok(); });
 api.MapPost("/mouse/up", (IAutomationBackend b, MouseButtonRequest r) => { b.MouseUp(r.Button ?? "left", r.X, r.Y); return Ok(); });
 api.MapPost("/mouse/scroll", (IAutomationBackend b, ScrollRequest r) => { b.MouseScroll(r.Dx, r.Dy); return Ok(); });
+api.MapPost("/mouse/drag", (IAutomationBackend b, DragRequest r) => { b.Drag(r.FromX, r.FromY, r.ToX, r.ToY, r.Button ?? "left", r.Steps ?? 20, r.HoldMs ?? 60); return Ok(); });
 
 // ---- input: keyboard ----
 api.MapPost("/keyboard/type", (IAutomationBackend b, TypeRequest r) => { b.TypeText(r.Text); return Ok(); });
@@ -803,6 +831,7 @@ record MouseMoveRequest(int X, int Y);
 record MouseClickRequest(string? Button, int? X, int? Y, int? Count);
 record MouseButtonRequest(string? Button, int? X, int? Y);
 record ScrollRequest(int Dx, int Dy);
+record DragRequest(int FromX, int FromY, int ToX, int ToY, string? Button, int? Steps, int? HoldMs);
 record TypeRequest(string Text);
 record KeysRequest(string Chord);
 record CaptureJson(string Desktop, RectDto Rect, int Monitor, double DpiScale, string Format, string ImageBase64);

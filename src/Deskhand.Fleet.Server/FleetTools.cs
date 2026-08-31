@@ -115,6 +115,10 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_move"), Description("Move the mouse on a fleet PC.")]
     public static string AgentMove(AgentRegistry r, FleetAudit audit, string agentId, int x, int y) { A(r, audit, agentId, $"move {x},{y}").MouseMove(x, y); return "ok"; }
 
+    [McpServerTool(Name = "deskhand_agent_drag"), Description("Drag-and-drop on a fleet PC: press at (fromX,fromY), move to (toX,toY), release. button left|right|middle; steps=smoothness (default 20); holdMs=dwell (default 60). Not available on RDP agents.")]
+    public static string AgentDrag(AgentRegistry r, FleetAudit audit, string agentId, int fromX, int fromY, int toX, int toY, string button = "left", int steps = 20, int holdMs = 60)
+    { A(r, audit, agentId, $"drag {fromX},{fromY}->{toX},{toY}").Drag(fromX, fromY, toX, toY, button, steps, holdMs); return "ok"; }
+
     [McpServerTool(Name = "deskhand_agent_type"), Description("Type text on a fleet PC.")]
     public static string AgentType(AgentRegistry r, FleetAudit audit, string agentId, string text) { A(r, audit, agentId, "type").TypeText(text); return "ok"; }
 

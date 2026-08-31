@@ -199,6 +199,7 @@ public static class AgentDispatcher
             FleetMethods.CaptureWindowByRef => b.CaptureWindowByRef(a.Str("reference")!, Fmt(a), a.Int("quality", 80)),
             FleetMethods.CaptureElement => b.CaptureElement(a.Str("reference")!, Fmt(a), a.Int("quality", 80)),
             FleetMethods.CaptureInputDesktop => b.CaptureInputDesktop(Fmt(a), a.Int("quality", 80)),
+            FleetMethods.Drag => Void(() => b.Drag(a.Int("fromX"), a.Int("fromY"), a.Int("toX"), a.Int("toY"), a.Str("button") ?? "left", a.Int("steps", 20), a.Int("holdMs", 60))),
             FleetMethods.MouseMove => Void(() => b.MouseMove(a.Int("x"), a.Int("y"))),
             FleetMethods.MouseClick => Void(() => b.MouseClick(a.Str("button") ?? "left", a.IntN("x"), a.IntN("y"), a.Int("count", 1))),
             FleetMethods.MouseDown => Void(() => b.MouseDown(a.Str("button") ?? "left", a.IntN("x"), a.IntN("y"))),

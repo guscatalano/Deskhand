@@ -398,6 +398,21 @@ public static class DeskhandTools
         return Json(Deskhand.Core.Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y));
     }
 
+    [McpServerTool(Name = "deskhand_update_check"), Description("Check GitHub Releases for a newer Deskhand. Returns { current, latest, updateAvailable, name, notes, publishedAt, assetName, assetSize, enabled }. Read-only.")]
+    public static string UpdateCheck()
+        => Json(Deskhand.Core.Services.UpdateService.CheckAsync().GetAwaiter().GetResult());
+
+    [McpServerTool(Name = "deskhand_update_apply"), Description("Download the latest release and self-update: stops this server and relaunches it on the new version (a few seconds). Only works on a zip/self-contained install. OFF unless the host sets DESKHAND_ENABLE_SELF_UPDATE; requires the kill switch armed; audited.")]
+    public static string UpdateApply(ControlState state, AuditLog audit)
+    {
+        if (!Deskhand.Core.Services.UpdateService.Enabled)
+            return "{\"error\":\"Self-update is disabled. Set DESKHAND_ENABLE_SELF_UPDATE=1.\",\"type\":\"update_disabled\"}";
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.UpdateService.ApplyAsync().GetAwaiter().GetResult();
+        audit.Record("update_apply", $"{r.From}->{r.To}", r.Ok ? r.Message ?? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)
@@ -655,6 +670,11 @@ public static class DeskhandTools
 
     [McpServerTool(Name = "deskhand_mouse_scroll"), Description("Scroll the wheel. dy positive scrolls up, dx positive scrolls right (in notches).")]
     public static string MouseScroll(IAutomationBackend b, int dx, int dy) { b.MouseScroll(dx, dy); return "ok"; }
+
+    [McpServerTool(Name = "deskhand_drag"), Description("Drag-and-drop: press the mouse at (fromX,fromY), move smoothly to (toX,toY), release. Virtual-desktop pixel coordinates. button left|right|middle (default left); steps = interpolation points for smoothness (default 20); holdMs = dwell after press and before release (default 60) for drop targets that need it. One atomic gesture.")]
+    public static string Drag(IAutomationBackend b, int fromX, int fromY, int toX, int toY,
+        string button = "left", int steps = 20, int holdMs = 60)
+    { b.Drag(fromX, fromY, toX, toY, button, steps, holdMs); return "ok"; }
 
     [McpServerTool(Name = "deskhand_type_text"), Description("Type a literal Unicode string via synthetic keyboard input. Keystrokes go to whatever window has focus — if input isn't landing, pass reference (an element ref from find/element_from_point) to focus that element's window FIRST, or click the field before typing. For a plain text box, deskhand_set_value is more reliable (it sets the value via UIA, no focus needed).")]
     public static string TypeText(IAutomationBackend b, string text, string? reference = null)

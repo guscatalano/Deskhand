@@ -70,6 +70,7 @@ public static class MacroPlayer
             case FleetMethods.MouseDown: b.MouseDown(a.Str("button") ?? "left", a.IntN("x"), a.IntN("y")); break;
             case FleetMethods.MouseUp: b.MouseUp(a.Str("button") ?? "left", a.IntN("x"), a.IntN("y")); break;
             case FleetMethods.MouseScroll: b.MouseScroll(a.Int("dx"), a.Int("dy")); break;
+            case FleetMethods.Drag: b.Drag(a.Int("fromX"), a.Int("fromY"), a.Int("toX"), a.Int("toY"), a.Str("button") ?? "left", a.Int("steps", 20), a.Int("holdMs", 60)); break;
             case FleetMethods.TypeText: b.TypeText(a.Str("text") ?? ""); break;
             case FleetMethods.SendKeys: b.SendKeys(a.Str("chord") ?? ""); break;
             case FleetMethods.Launch: b.LaunchProcess(a.Str("path") ?? "", a.Str("args"), a.Str("workingDir"), a.Int("waitForWindowMs", 4000)); break;

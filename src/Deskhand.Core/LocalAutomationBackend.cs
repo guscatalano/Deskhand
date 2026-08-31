@@ -223,6 +223,26 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     public void MouseDown(string button, int? x, int? y) { lock (_inputGate) InputInjector.MouseDown(button, x, y); }
     public void MouseUp(string button, int? x, int? y) { lock (_inputGate) InputInjector.MouseUp(button, x, y); }
     public void MouseScroll(int dx, int dy) { lock (_inputGate) InputInjector.MouseScroll(dx, dy); }
+    public void Drag(int fromX, int fromY, int toX, int toY, string button, int steps, int holdMs)
+    {
+        steps = Math.Clamp(steps, 1, 500);
+        holdMs = Math.Clamp(holdMs, 0, 5000);
+        button = string.IsNullOrWhiteSpace(button) ? "left" : button;
+        lock (_inputGate)   // whole gesture is atomic so nothing interleaves between press and release
+        {
+            InputInjector.MouseMove(fromX, fromY);
+            InputInjector.MouseDown(button, fromX, fromY);
+            if (holdMs > 0) Thread.Sleep(holdMs);
+            for (int i = 1; i <= steps; i++)
+            {
+                double t = i / (double)steps;
+                InputInjector.MouseMove(fromX + (int)Math.Round((toX - fromX) * t), fromY + (int)Math.Round((toY - fromY) * t));
+                Thread.Sleep(8);
+            }
+            if (holdMs > 0) Thread.Sleep(holdMs);
+            InputInjector.MouseUp(button, toX, toY);
+        }
+    }
     public void TypeText(string text) { lock (_inputGate) InputInjector.TypeText(text); }
     public void SendKeys(string chord) { lock (_inputGate) InputInjector.SendKeys(chord); }
 

@@ -86,6 +86,26 @@ No bearer token is required for the browser dashboard. The server is protected b
   `DESKHAND_ENABLE_FIREWALL_ADMIN=1`; also requires *armed*, is audited, and needs the host running as
   Administrator. **Deskhand only ever removes rules it opened** (see below).
 
+#### Drag-and-drop (`/mouse/drag`, `deskhand_drag`)
+
+A real press → move → release gesture in one atomic call: `{fromX, fromY, toX, toY, button?, steps?, holdMs?}`.
+`steps` interpolates the motion for smoothness (default 20); `holdMs` dwells after the press and before the
+release (default 60) for drop targets that need it. Fleet parity: `/agents/{id}/mouse/drag`, `deskhand_agent_drag`
+(native agents; the RDP backend can't press-and-hold, so it returns a clear "not supported").
+
+#### OpenAPI / Swagger
+
+The whole HTTP surface is described by an OpenAPI document at `/swagger/v1/swagger.json`, with an interactive
+**Swagger UI** at `/swagger`. On loopback the same-origin browser reaches it without a token.
+
+#### Self-update (`/update/*`, `deskhand_update_*`)
+
+`GET /update/check` compares the running version against the latest [GitHub release](https://github.com/guscatalano/Deskhand/releases)
+and reports `{ current, latest, updateAvailable, notes, … }` — read-only. `POST /update/apply` downloads the
+self-contained `deskhand.zip`, stages it, and hands off to a small detached updater that stops the server, copies
+the new files over the install directory, and relaunches. It only works on a zip/self-contained install and runs
+downloaded code, so it's **off unless `DESKHAND_ENABLE_SELF_UPDATE=1`**, requires *armed*, and is audited.
+
 #### OCR — read text off the screen (`/ocr/*`, `deskhand_ocr_*`)
 
 Windows' built-in OCR engine (`Windows.Media.Ocr` — no external dependency, no network) reads on-screen text for
@@ -202,6 +222,9 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /clipboard` · `POST /clipboard` | `{text}` | Read / set the clipboard text (armed) |
 | `POST /window` | `{hwnd, action, x?, y?, width?, height?}` | activate·minimize·maximize·restore·close·move·resize·bounds a window (armed) |
 | `POST /ocr/screen` · `/ocr/region` · `/ocr/window` | `{monitor?}` · `{x,y,width,height}` · `{hwnd?/reference?}` | **OCR** on-screen text; words come back with **screen-coordinate boxes** |
+| `POST /mouse/drag` | `{fromX, fromY, toX, toY, button?, steps?, holdMs?}` | **Drag-and-drop** — press, smooth move, release (one atomic gesture) |
+| `GET /update/check` · `POST /update/apply` | — | Check GitHub Releases / self-update to the latest (apply is opt-in) |
+| `GET /swagger` · `/swagger/v1/swagger.json` | — | **OpenAPI** spec + interactive Swagger UI for this API |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |
 | `POST /uia/find` | `{rootRef?, name?, automationId?, controlType?, className?, scope?, max?}` | Query elements |
 | `POST /uia/wait` | `{…conditions, timeoutMs?}` | Poll until a matching element appears (or `404 wait_timeout`) |

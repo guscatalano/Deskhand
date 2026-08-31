@@ -279,6 +279,7 @@ app.MapPost("/agents/{id}/capture/element", (string id, ElementCapReq r) => Cap(
 app.MapPost("/agents/{id}/mouse/move", (string id, MoveReq r) => { A(id).MouseMove(r.X, r.Y); return Results.Ok(new { ok = true }); });
 app.MapPost("/agents/{id}/mouse/click", (string id, ClickReq r) => { A(id).MouseClick(r.Button ?? "left", r.X, r.Y, r.Count ?? 1); return Results.Ok(new { ok = true }); });
 app.MapPost("/agents/{id}/mouse/scroll", (string id, ScrollReq r) => { A(id).MouseScroll(r.Dx, r.Dy); return Results.Ok(new { ok = true }); });
+app.MapPost("/agents/{id}/mouse/drag", (string id, AgentDragReq r) => { A(id).Drag(r.FromX, r.FromY, r.ToX, r.ToY, r.Button ?? "left", r.Steps ?? 20, r.HoldMs ?? 60); return Results.Ok(new { ok = true }); });
 app.MapPost("/agents/{id}/keyboard/type", (string id, TypeReq r) => { A(id).TypeText(r.Text); return Results.Ok(new { ok = true }); });
 app.MapPost("/agents/{id}/keyboard/keys", (string id, KeysReq r) => { A(id).SendKeys(r.Chord); return Results.Ok(new { ok = true }); });
 
@@ -345,6 +346,7 @@ record AgentLaunchAsReq(string Path, string? Args, string? WorkingDir, int? Sess
 record AgentFwOpenReq(int Port, string? Protocol, string? Direction, string? RemoteAddresses, string? Name);
 record AgentFwCloseReq(int Port, string? Protocol, string? Direction, bool? All);
 record AgentClipReq(string? Text);
+record AgentDragReq(int FromX, int FromY, int ToX, int ToY, string? Button, int? Steps, int? HoldMs);
 record AgentWindowReq(long Hwnd, string Action, int? X, int? Y, int? Width, int? Height);
 record AgentOcrScreenReq(int? Monitor);
 record AgentOcrRegionReq(int X, int Y, int Width, int Height);

@@ -41,6 +41,8 @@ public sealed class RdpBackend(RdpHost host, string hostName) : IAutomationBacke
     }
     public void MouseDown(string button, int? x, int? y) => host.MouseClick(button, x ?? 0, y ?? 0);
     public void MouseUp(string button, int? x, int? y) { /* click covers down+up */ }
+    public void Drag(int fromX, int fromY, int toX, int toY, string button, int steps, int holdMs)
+        => throw new NotSupportedException("Drag isn't supported over the RDP backend (its input path can't press-and-hold).");
     public void MouseScroll(int dx, int dy) { /* wheel-over-RDP not wired in this build */ }
     public void TypeText(string text) => host.TypeText(text);
     public void SendKeys(string chord) => host.SendKey(ResolveVk(chord));

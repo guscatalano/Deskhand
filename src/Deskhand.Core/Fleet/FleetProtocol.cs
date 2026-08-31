@@ -65,6 +65,7 @@ public static class FleetMethods
     public const string MouseDown = "mouse_down";
     public const string MouseUp = "mouse_up";
     public const string MouseScroll = "mouse_scroll";
+    public const string Drag = "drag";
     public const string TypeText = "type_text";
     public const string SendKeys = "send_keys";
 

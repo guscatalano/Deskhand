@@ -68,6 +68,7 @@ public sealed class RemoteAgentBackend(IAgentLink link) : IAutomationBackend
     public void MouseClick(string button, int? x, int? y, int count) => Send(FleetMethods.MouseClick, new { button, x, y, count });
     public void MouseDown(string button, int? x, int? y) => Send(FleetMethods.MouseDown, new { button, x, y });
     public void MouseUp(string button, int? x, int? y) => Send(FleetMethods.MouseUp, new { button, x, y });
+    public void Drag(int fromX, int fromY, int toX, int toY, string button, int steps, int holdMs) => Send(FleetMethods.Drag, new { fromX, fromY, toX, toY, button, steps, holdMs });
     public void MouseScroll(int dx, int dy) => Send(FleetMethods.MouseScroll, new { dx, dy });
     public void TypeText(string text) => Send(FleetMethods.TypeText, new { text });
     public void SendKeys(string chord) => Send(FleetMethods.SendKeys, new { chord });

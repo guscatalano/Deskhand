@@ -64,6 +64,12 @@ public interface IAutomationBackend : IDisposable
     void MouseDown(string button, int? x, int? y);
     void MouseUp(string button, int? x, int? y);
     void MouseScroll(int dx, int dy);
+
+    /// <summary>Press a mouse button at (fromX,fromY), move smoothly through <paramref name="steps"/>
+    /// interpolated points to (toX,toY), then release — a real drag-and-drop. <paramref name="holdMs"/>
+    /// pauses after the press and before the release (some drop targets need the dwell).</summary>
+    void Drag(int fromX, int fromY, int toX, int toY, string button, int steps, int holdMs);
+
     void TypeText(string text);
     void SendKeys(string chord);
 }

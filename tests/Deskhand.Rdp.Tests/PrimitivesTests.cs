@@ -60,4 +60,15 @@ public class PrimitivesTests
         Assert.NotNull(r.Error);
         Assert.Empty(r.Words);
     }
+
+    [Theory]
+    [InlineData("0.2.3", "0.2.2", 1)]
+    [InlineData("0.2.2", "0.2.3", -1)]
+    [InlineData("0.2.2", "0.2.2", 0)]
+    [InlineData("1.0.0", "0.9.9", 1)]
+    [InlineData("0.2.10", "0.2.9", 1)]     // numeric, not lexical
+    [InlineData("0.3", "0.2.9", 1)]         // uneven segment counts
+    [InlineData("0.2.3-beta", "0.2.3", 0)] // pre-release suffix ignored
+    public void Version_compare_is_numeric(string a, string b, int sign)
+        => Assert.Equal(sign, Math.Sign(UpdateService.CompareVersions(a, b)));
 }

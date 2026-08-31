@@ -201,6 +201,7 @@ app.Use(async (ctx, next) =>
             DesktopUnavailableException => (StatusCodes.Status409Conflict, "desktop_unavailable"),
             DisarmedException => (StatusCodes.Status403Forbidden, "disarmed"),
             CapabilityDisabledException => (StatusCodes.Status403Forbidden, "capability_disabled"),
+            BackendTimeoutException => (StatusCodes.Status503ServiceUnavailable, "backend_timeout"),
             ArgumentException => (StatusCodes.Status400BadRequest, "bad_request"),
             _ => (StatusCodes.Status500InternalServerError, "internal"),
         };
@@ -312,7 +313,7 @@ api.MapGet("/events", async (HttpContext ctx, Deskhand.Core.Events.EventHub hub)
 });
 
 // ---- health & orientation ----
-api.MapGet("/health", () => Results.Ok(new { ok = true, service = "deskhand-http", version = "0.1", requiresToken = requireToken, tls }));
+api.MapGet("/health", () => Results.Ok(new { ok = true, service = "deskhand-http", version = "0.2.1", requiresToken = requireToken, tls }));
 api.MapGet("/machine", (IAutomationBackend b) => Results.Ok(b.GetMachineInfo()));
 api.MapGet("/desktop/state", (IAutomationBackend b) => Results.Ok(b.GetDesktopState()));
 api.MapGet("/foreground", (IAutomationBackend b) => Results.Ok(b.GetForegroundWindow()));

@@ -13,20 +13,32 @@ namespace Deskhand.Core;
 /// </summary>
 public sealed class LocalAutomationBackend : IAutomationBackend
 {
-    private readonly StaExecutor _sta = new();
-    private readonly UiaService _uia;
+    private readonly StaExecutor _sta;
+    private UiaService _uia = null!;              // (re)created by the STA worker's onStart, incl. after a restart
+    private Events.EventHub? _hub;                // remembered so events re-attach on a worker restart
     // Input is off the STA thread (SendInput is thread-safe), but each action is serialized so two
     // concurrent Type/click calls can't interleave their SendInput streams into a scrambled sequence.
     private readonly object _inputGate = new();
 
     public LocalAutomationBackend()
     {
-        _uia = _sta.Invoke(() => new UiaService());
+        // The STA worker runs this on every (re)start, so if it self-heals after a hung UIA call it comes back
+        // with a fresh UIA object + re-attached events — no restart of the process needed.
+        _sta = new StaExecutor(onStart: () =>
+        {
+            _uia = new UiaService();
+            var h = _hub;
+            if (h is not null) { try { _uia.StartEvents(h); } catch { } }
+        });
     }
 
     /// <summary>Begin publishing UIA events (focus, window-open) into the hub. Host-level setup,
     /// not part of the per-call tool surface.</summary>
-    public void StartEvents(Events.EventHub hub) => _sta.Invoke(() => _uia.StartEvents(hub));
+    public void StartEvents(Events.EventHub hub)
+    {
+        _hub = hub;
+        _sta.Invoke(() => _uia.StartEvents(hub));
+    }
 
     // ---- orientation (pure P/Invoke; no STA needed) ----
     public DesktopStateDto GetDesktopState() => DesktopInfo.GetDesktopState();

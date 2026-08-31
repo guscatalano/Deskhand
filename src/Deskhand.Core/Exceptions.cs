@@ -38,3 +38,7 @@ public sealed class CapabilityDisabledException(string capability)
 {
     public string Capability { get; } = capability;
 }
+
+/// <summary>A UI Automation operation exceeded the STA-executor timeout and was abandoned; the automation
+/// worker was restarted so subsequent calls work. Transient — retry (after re-finding any element refs).</summary>
+public sealed class BackendTimeoutException(string message) : Exception(message);

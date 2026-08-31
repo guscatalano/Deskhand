@@ -75,8 +75,8 @@ their own strip.
 
 **Tab strip** (`.tabbar`, row 2): the tabs as underline-style buttons (`.tabbtn`, active = accent
 `border-bottom`), grouped by `.tabsep` dividers — **Explorer · Processes · Files · Registry** ¦ **System ·
-Apps** ¦ **Shell · Screen** — with a `.spacer` pushing **Connect** to the right. The strip scrolls
-horizontally on narrow widths (hidden scrollbar) instead of wrapping.
+Apps · Hardware · Software** ¦ **Shell · Screen** — with a `.spacer` pushing **Connect** to the right. The
+strip scrolls horizontally on narrow widths (hidden scrollbar) instead of wrapping.
 
 **Tab model.** `.tabwrap` is `position:relative`; each `.tab` is `position:absolute; inset:0; display:none`,
 and `.tab.active` becomes visible. Crucially, **the visible display mode is opt-in per tab**: the base rule
@@ -168,11 +168,21 @@ a non-current window gets a **→ bring here** button (`/desktops/move-window {h
 **dumps** are not here — they live on the Processes tab (the process detail's "⤓ Full memory dump" button).
 
 ### Hardware — inventory (WMI)
-`loadHardware` (on first open) pulls the fast queries — **disks** (`/hardware/disks`, rendered as a `.syscard`
-per physical disk with a `.syskv` row per partition→volume), **Windows updates** (`/hardware/updates`, KB +
-date), and **audio** (`/hardware/audio`). The slow/large ones are **on demand**: **Devices** has a class-filter
-input + **Load** (`/hardware/devices?class=`), and **Drivers** is behind a **Load drivers** button
-(`/hardware/drivers`, a few seconds). All read-only.
+`loadHardware` (on first open) pulls the fast queries — **disks** (`/hardware/disks`, a `.syscard` per physical
+disk with a `.syskv` row per partition→volume), **Windows updates** (`/hardware/updates`), **audio** (device
+list + **default playback/recording with volume %/mute** from `/audio/default`), and **detail** from
+`/hardware/detail`: **System · BIOS · motherboard** card, **Graphics & displays** (GPUs with true VRAM+shared
+via DXGI, resolution/refresh; monitors make/model/serial), and **Memory** (RAM sticks: slot/capacity/DDR
+type/speed/part). The slow/large lists are **on demand**: **Devices** has a class filter + **Load**
+(`/hardware/devices?class=`), **Drivers** is behind a **Load drivers** button (`/hardware/drivers`, a few
+seconds). All read-only.
+
+### Software — inventory & diagnostics
+New tab (`loadSoftware`, one `Promise.all`): filterable sections for **installed programs**, **services**,
+**scheduled tasks**, and **network connections** (each with a `.swfilter` box, rendered via a shared
+`SW`-config table + `swRender`, capped at 600 rows), plus **startup items**, **recent event errors**
+(`/diagnostics/events`), **printers/shares/disk-health**, and **environment variables**. All `/software/*`,
+`/net/connections`, `/diagnostics/*` — read-only.
 
 ### Connect — MCP client setup
 A copy-paste helper for pointing an MCP client at this server. Shows the **endpoint** (`location.origin + /mcp`)
@@ -191,7 +201,9 @@ DisplayVersion, build, BuildLab, arch, machine/user/domain), **Uptime** (up-for 
 (model, cores, live load with a `.meter` bar), **Memory** (used/total + load meter + page file), **Disks**
 (per drive: used/total + format + a meter), **Network** (per up interface: IPv4/IPv6, gateway, DNS, MAC,
 type, speed), and **Windows Firewall** (Domain/Private/Public on/off, green/red). `.meter` turns amber ≥75%,
-red ≥90%. A **Refresh** button re-pulls. Read-only.
+red ≥90%. Then extra cards fetched alongside: **Sessions (WTS)** (from `/system`), **Power** (`/power` —
+AC/battery/wear/plan), **Security** (`/security` — Secure Boot/TPM/BitLocker/activation/Defender/pending-reboot,
+each yes/no/unknown), and **Local users** (`/users`). A **Refresh** re-pulls. Read-only.
 
 ### Screen & Input — the operator console
 `.inner` is a responsive grid of `.card` sections:

@@ -41,6 +41,7 @@ public static class FleetMethods
     public const string ListWindows = "list_windows";
     public const string ListProcesses = "list_processes";
     public const string Launch = "launch";
+    public const string LaunchAs = "launch_as";
     public const string GetTree = "get_tree";
     public const string Find = "find";
     public const string WaitForElement = "wait_for_element";

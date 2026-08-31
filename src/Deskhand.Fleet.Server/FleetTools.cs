@@ -225,6 +225,12 @@ public static class FleetTools
     public static string AgentRunCommand(AgentRegistry r, FleetAudit audit, string agentId, string command, string? shell = null, string? cwd = null, int? timeoutMs = null)
         => Raw(O(r, audit, agentId, "run_command").RunCommand(shell, command, cwd, timeoutMs));
 
+    [McpServerTool(Name = "deskhand_agent_launch_process_as"), Description("Launch a program on a fleet PC into a SPECIFIC session, on a SPECIFIC window-station\\desktop, as a SPECIFIC user (CreateProcessAsUser). as=\"session\" (default: run as whoever is logged into that session — no password needed), \"credentials\" (user/domain/password), or \"system\". sessionId defaults to the active console session; desktop defaults to \"winsta0\\default\". Returns { ok, processId, sessionId, desktop, as, user, error?, win32?, hint? }. The agent must have been started with DESKHAND_ENABLE_SESSION_LAUNCH. Crossing a session/user boundary needs the agent running as LocalSystem (the Deskhand Fleet Launcher service does) — otherwise a clear ERROR_PRIVILEGE_NOT_HELD + hint. Not available on RDP agents.")]
+    public static string AgentLaunchProcessAs(AgentRegistry r, FleetAudit audit, string agentId, string path,
+        string? args = null, string? workingDir = null, int? sessionId = null, string? desktop = null,
+        string? @as = null, string? user = null, string? domain = null, string? password = null, bool noWindow = false)
+        => Raw(O(r, audit, agentId, "launch_as").LaunchProcessAs(path, args, workingDir, sessionId, desktop, @as, user, domain, password, noWindow));
+
     [McpServerTool(Name = "deskhand_agent_system_info"), Description("About a fleet PC (read-only): Windows version + BuildLab, uptime, CPU, memory, disks, network, firewall. Not available on RDP agents.")]
     public static string AgentSystemInfo(AgentRegistry r, FleetAudit audit, string agentId)
         => Raw(O(r, audit, agentId, "system_info").SystemInfo());

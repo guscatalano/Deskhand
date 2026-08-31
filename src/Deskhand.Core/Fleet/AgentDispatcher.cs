@@ -96,6 +96,10 @@ public static class AgentDispatcher
             case FleetMethods.RunCommand:
                 if (svc.Dumper is null) throw new InvalidOperationException("Shell isn't available on an RDP agent (it would run on the connector, not the target).");
                 return Services.ShellService.Run(a.Str("shell"), a.Str("command"), a.Str("cwd"), a.IntN("timeoutMs"));
+            case FleetMethods.LaunchAs:
+                if (svc.Dumper is null) throw new InvalidOperationException("Session launch isn't available on an RDP agent (it would run on the connector, not the target).");
+                return Services.SessionLaunchService.Launch(a.Str("path")!, a.Str("args"), a.Str("workingDir"), a.IntN("sessionId"),
+                    a.Str("desktop"), Services.SessionLaunchService.ParseAs(a.Str("as")), a.Str("user"), a.Str("domain"), a.Str("password"), a.Bool("noWindow"));
             case FleetMethods.SystemInfo:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would report the connector's machine, not the target).");
                 return Services.SystemInfoService.Get();

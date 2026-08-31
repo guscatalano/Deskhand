@@ -244,6 +244,8 @@ app.MapPost("/agents/{id}/fs/copy", (string id, AgentCopyReq r) => Results.Ok(O(
 app.MapPost("/agents/{id}/fs/zip", (string id, AgentZipReq r) => Results.Ok(O(id).Zip(r.Sources, r.Dest, r.Overwrite ?? false)));
 app.MapPost("/agents/{id}/fs/unzip", (string id, AgentUnzipReq r) => Results.Ok(O(id).Unzip(r.ZipPath, r.Dest, r.Overwrite ?? false)));
 app.MapPost("/agents/{id}/shell/run", (string id, AgentShellReq r) => Results.Ok(O(id).RunCommand(r.Shell, r.Command, r.Cwd, r.TimeoutMs)));
+app.MapPost("/agents/{id}/process/launch-as", (string id, AgentLaunchAsReq r) =>
+    Results.Ok(O(id).LaunchProcessAs(r.Path, r.Args, r.WorkingDir, r.SessionId, r.Desktop, r.As, r.User, r.Domain, r.Password, r.NoWindow ?? false)));
 app.MapGet("/agents/{id}/system", (string id) => Results.Ok(O(id).SystemInfo()));
 
 // ---- uia act ----
@@ -325,3 +327,5 @@ record AgentCopyReq(string Source, string Dest, bool? Overwrite);
 record AgentZipReq(string[]? Sources, string Dest, bool? Overwrite);
 record AgentUnzipReq(string ZipPath, string? Dest, bool? Overwrite);
 record AgentShellReq(string? Shell, string Command, string? Cwd, int? TimeoutMs);
+record AgentLaunchAsReq(string Path, string? Args, string? WorkingDir, int? SessionId, string? Desktop,
+    string? As, string? User, string? Domain, string? Password, bool? NoWindow);

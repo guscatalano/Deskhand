@@ -99,8 +99,9 @@ No bearer token is required for the browser dashboard. The server is protected b
   it survives restarts.
 
 Opening/closing needs Administrator; without it you get a clear `E_ACCESSDENIED` + "requires Administrator" hint,
-never an opaque failure. Fleet parity: `GET/POST /agents/{id}/firewall/rules|open|close` and the
-`deskhand_agent_firewall_*` tools.
+never an opaque failure. The dashboard has a **Firewall** tab — a filterable rules table (Deskhand's own rules are
+tagged and get a one-click **✕ close**) plus an **open-port** form. Fleet parity:
+`GET/POST /agents/{id}/firewall/rules|open|close` and the `deskhand_agent_firewall_*` tools.
 
 #### Launch into a session / desktop / user (`/process/launch-as`)
 

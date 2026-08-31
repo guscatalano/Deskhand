@@ -68,6 +68,17 @@
   .tabbtn.active { color:var(--ink); border-bottom-color:var(--accent); }
   .ghost { color:var(--ink-2); background:var(--surface); border:1px solid var(--line); padding:6px 10px; border-radius:7px; cursor:pointer; font-family:var(--mono); font-size:11px; }
   .ghost:hover { border-color:var(--accent); color:var(--ink); }
+  .fwtable { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .fwtable th { text-align:left; font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--surface); }
+  .fwtable td { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  .fwtable tr:hover td { background:var(--surface-2); }
+  .fwtable tr.fwmine td { background:var(--accent-soft); }
+  .fwtable tr.fwmine:hover td { background:var(--accent-soft); }
+  .fwname { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fwdot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ink-3); opacity:.4; }
+  .fwdot.on { background:var(--good); opacity:1; }
+  .fwtag { font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); border:1px solid var(--accent); border-radius:4px; padding:0 4px; margin-left:6px; }
+  .fwtable td.mono { font-family:var(--mono); font-size:11.5px; }
 
   .tabwrap { flex:1; min-height:0; position:relative; }
   .tab { position:absolute; inset:0; display:none; }
@@ -223,6 +234,7 @@
   <button class="tabbtn" data-tab="apps">Apps</button>
   <button class="tabbtn" data-tab="hardware">Hardware</button>
   <button class="tabbtn" data-tab="software">Software</button>
+  <button class="tabbtn" data-tab="firewall">Firewall</button>
   <span class="tabsep"></span>
   <button class="tabbtn" data-tab="shell">Shell</button>
   <button class="tabbtn" data-tab="screen">Screen</button>
@@ -285,6 +297,34 @@
       </div>
       <div class="coordbar" id="regCrumb" style="margin:10px 0"></div>
       <div id="regBody"></div>
+    </div>
+  </div>
+
+  <!-- FIREWALL -->
+  <div class="tab" id="tab-firewall">
+    <div style="padding:14px 16px 60px;max-width:1100px;width:100%">
+      <div class="sect"><div class="h">Open a port <span class="lbl" style="color:var(--ink-3);font-weight:400">— adds a Deskhand-tagged Allow rule you can close again</span></div></div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap">
+        <input type="number" id="fwPort" min="1" max="65535" placeholder="port" style="max-width:100px;font-family:var(--mono)">
+        <select id="fwProto" style="max-width:100px"><option value="tcp">TCP</option><option value="udp">UDP</option></select>
+        <select id="fwDir" style="max-width:120px"><option value="in">Inbound</option><option value="out">Outbound</option></select>
+        <input type="text" id="fwRemote" placeholder="remote scope (e.g. LocalSubnet) — optional" style="flex:1;min-width:160px;font-family:var(--mono);font-size:12px">
+        <input type="text" id="fwName" placeholder="name — optional" style="max-width:170px;font-size:12px">
+        <button class="btn a" id="fwOpen" title="Add an Allow rule for this port">＋ Open</button>
+      </div>
+      <div class="lbl" style="margin-top:6px;color:var(--ink-3)">Opening/closing is off unless the server has <b>DESKHAND_ENABLE_FIREWALL_ADMIN=1</b>; requires <b>armed</b> + <b>Administrator</b>; audited. Deskhand only ever removes rules it opened.</div>
+
+      <div class="sect" style="margin-top:20px"><div class="h">Firewall rules <span class="count" id="fwCount"></span></div></div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap">
+        <select id="fwFltDir" style="max-width:120px"><option value="">All</option><option value="in">Inbound</option><option value="out">Outbound</option></select>
+        <input type="number" id="fwFltPort" min="1" max="65535" placeholder="port" style="max-width:90px;font-family:var(--mono)">
+        <input type="text" id="fwFltText" placeholder="name / group contains…" style="flex:1;min-width:140px;font-size:12px">
+        <label class="lbl" style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="fwFltEnabled"> enabled only</label>
+        <label class="lbl" style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="fwFltManaged"> Deskhand only</label>
+        <button class="btn p" id="fwRefresh">Refresh</button>
+      </div>
+      <div class="coordbar" id="fwMeta" style="margin:10px 0 6px"></div>
+      <div id="fwBody"></div>
     </div>
   </div>
 
@@ -1131,6 +1171,74 @@ async function runShell(){
 $("#shRun").onclick=runShell;
 $("#shCmd").addEventListener("keydown",e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); runShell(); }});
 
+/* ---------- firewall (rules + open/close ports) ---------- */
+let fwLoaded=false;
+function fwEsc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fwErr(e){ return (e.data&&(e.data.error+(e.data.hint?" — "+e.data.hint:"")))||e.message; }
+const loadFirewall=guard(async()=>{
+  fwLoaded=true;
+  const qs=new URLSearchParams();
+  const dir=$("#fwFltDir").value; if(dir) qs.set("direction",dir);
+  const port=$("#fwFltPort").value.trim(); if(port) qs.set("port",port);
+  const txt=$("#fwFltText").value.trim(); if(txt) qs.set("contains",txt);
+  if($("#fwFltEnabled").checked) qs.set("enabledOnly","true");
+  if($("#fwFltManaged").checked) qs.set("managedOnly","true");
+  qs.set("max","500");
+  const d=await api("/firewall/rules?"+qs.toString());
+  $("#fwCount").textContent=d.returned+" / "+d.total;
+  $("#fwMeta").innerHTML = d.error
+    ? '<span style="color:var(--warn)">'+fwEsc(d.error)+'</span>'
+    : 'showing <b>'+d.returned+'</b> of <b>'+d.total+'</b> rules'+(d.returned<d.total?' <span style="color:var(--ink-3)">(narrow with filters)</span>':'');
+  fwRender(d.rules||[]);
+});
+function fwRender(rules){
+  const body=$("#fwBody"); body.innerHTML="";
+  if(!rules.length){ body.innerHTML='<div class="lbl" style="color:var(--ink-3);padding:8px">No rules match.</div>'; return; }
+  const t=elm("table","fwtable");
+  t.innerHTML='<thead><tr><th></th><th>Name</th><th>Dir</th><th>Action</th><th>Proto</th><th>Local ports</th><th>Profiles</th><th></th></tr></thead>';
+  const tb=elm("tbody");
+  rules.forEach(r=>{
+    const tr=elm("tr"); if(r.managed) tr.className="fwmine";
+    const dot = r.enabled ? '<span class="fwdot on" title="enabled"></span>' : '<span class="fwdot" title="disabled"></span>';
+    const act = r.action==="Block" ? '<span style="color:var(--crit)">Block</span>' : '<span style="color:var(--good)">Allow</span>';
+    tr.innerHTML =
+      '<td>'+dot+'</td>'+
+      '<td class="fwname" title="'+fwEsc(r.name)+'">'+fwEsc(r.name)+(r.managed?' <span class="fwtag">Deskhand</span>':'')+'</td>'+
+      '<td>'+(r.direction==="out"?"out":"in")+'</td>'+
+      '<td>'+act+'</td>'+
+      '<td>'+(fwEsc(r.protocol)||"—")+'</td>'+
+      '<td class="mono">'+(fwEsc(r.localPorts)||"—")+'</td>'+
+      '<td>'+(fwEsc(r.profiles)||"—")+'</td>'+
+      '<td></td>';
+    if(r.managed && /^\d+$/.test(r.localPorts||"")){
+      const btn=elm("button","btn sm a"); btn.textContent="✕ close"; btn.title="Remove this Deskhand-opened rule";
+      btn.onclick=async()=>{ btn.disabled=true;
+        try{ await api("/firewall/close","POST",{port:parseInt(r.localPorts),protocol:(r.protocol||"tcp").toLowerCase(),direction:r.direction});
+             toast("closed "+r.protocol+" "+r.localPorts); loadFirewall(); }
+        catch(e){ btn.disabled=false; toast(fwErr(e),true); } };
+      tr.lastChild.append(btn);
+    }
+    tb.append(tr);
+  });
+  t.append(tb); body.append(t);
+}
+$("#fwOpen").onclick=async()=>{
+  const port=parseInt($("#fwPort").value,10);
+  if(!(port>=1&&port<=65535)){ toast("enter a port (1–65535)",true); return; }
+  const body={ port, protocol:$("#fwProto").value, direction:$("#fwDir").value };
+  const rm=$("#fwRemote").value.trim(); if(rm) body.remoteAddresses=rm;
+  const nm=$("#fwName").value.trim(); if(nm) body.name=nm;
+  $("#fwOpen").disabled=true;
+  try{ const r=await api("/firewall/open","POST",body); toast("opened "+r.protocol+" "+r.port+" ("+r.direction+")");
+       $("#fwPort").value=""; $("#fwName").value=""; $("#fwRemote").value=""; $("#fwFltManaged").checked=true; loadFirewall(); }
+  catch(e){ toast(fwErr(e),true); }
+  finally{ $("#fwOpen").disabled=false; }
+};
+$("#fwRefresh").onclick=loadFirewall;
+["fwFltDir","fwFltEnabled","fwFltManaged"].forEach(id=>$("#"+id).addEventListener("change",()=>{ if(fwLoaded) loadFirewall(); }));
+["fwFltPort","fwFltText"].forEach(id=>$("#"+id).addEventListener("keydown",e=>{ if(e.key==="Enter") loadFirewall(); }));
+$("#fwPort").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#fwOpen").click(); });
+
 /* ---------- system (about this machine) ---------- */
 let sysLoaded=false;
 const loadSystem=guard(async()=>{
@@ -1410,6 +1518,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="apps"&&!appsLoaded) loadApps();
   if(b.dataset.tab==="hardware"&&!hwLoaded) loadHardware();
   if(b.dataset.tab==="software"&&!swLoaded) loadSoftware();
+  if(b.dataset.tab==="firewall"&&!fwLoaded) loadFirewall();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

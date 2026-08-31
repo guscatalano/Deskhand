@@ -83,6 +83,13 @@ public static class FleetMethods
     public const string FirewallRules = "firewall_rules";
     public const string FirewallOpen = "firewall_open";
     public const string FirewallClose = "firewall_close";
+    public const string ClipboardGet = "clipboard_get";
+    public const string ClipboardSet = "clipboard_set";
+    public const string ClipboardClear = "clipboard_clear";
+    public const string WindowAction = "window_action";
+    public const string OcrScreen = "ocr_screen";
+    public const string OcrRegion = "ocr_region";
+    public const string OcrWindow = "ocr_window";
     public const string DumpProcess = "dump_process";
     public const string ListApps = "list_apps";
     public const string ListDesktops = "list_desktops";

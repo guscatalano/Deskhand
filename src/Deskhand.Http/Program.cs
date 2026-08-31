@@ -525,6 +525,64 @@ api.MapPost("/firewall/close", (ControlState st, AuditLog al, FirewallCloseReque
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
 
+// Clipboard (Unicode text). Read/write is gated on armed and audited (it can carry secrets).
+api.MapGet("/clipboard", (ControlState st) =>
+    st.Armed ? Results.Ok(Deskhand.Core.Services.ClipboardService.GetText())
+             : Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403));
+api.MapPost("/clipboard", (ControlState st, AuditLog al, ClipboardSetRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.ClipboardService.SetText(r.Text);
+    al.Record("clipboard_set", $"{res.Length} chars", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+api.MapPost("/clipboard/clear", (ControlState st, AuditLog al) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.ClipboardService.Clear();
+    al.Record("clipboard_clear", "", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Ok(res);
+});
+
+// Window management by native handle (from /windows). Mutating, so gated on armed + audited.
+api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = (r.Action ?? "").Trim().ToLowerInvariant() switch
+    {
+        "activate" or "focus" => Deskhand.Core.Services.WindowService.Activate(r.Hwnd),
+        "minimize" => Deskhand.Core.Services.WindowService.Minimize(r.Hwnd),
+        "maximize" => Deskhand.Core.Services.WindowService.Maximize(r.Hwnd),
+        "restore" => Deskhand.Core.Services.WindowService.Restore(r.Hwnd),
+        "close" => Deskhand.Core.Services.WindowService.Close(r.Hwnd),
+        "move" => Deskhand.Core.Services.WindowService.Move(r.Hwnd, r.X ?? 0, r.Y ?? 0),
+        "resize" => Deskhand.Core.Services.WindowService.Resize(r.Hwnd, r.Width ?? 0, r.Height ?? 0),
+        "bounds" or "set_bounds" => Deskhand.Core.Services.WindowService.SetBounds(r.Hwnd, r.X ?? 0, r.Y ?? 0, r.Width ?? 0, r.Height ?? 0),
+        _ => new Deskhand.Core.Services.WindowActionResultDto(false, r.Hwnd, r.Action ?? "", Error: "Unknown action. Use activate|minimize|maximize|restore|close|move|resize|bounds."),
+    };
+    al.Record("window", $"{res.Action} hwnd={r.Hwnd}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
+// OCR: read text off the screen for apps UIA can't see. Capture (lossless) then recognize; word boxes come
+// back in screen coordinates (click-ready). Capture-class — gated on captureEnabled.
+Deskhand.Core.Services.OcrResultDto Ocr(CaptureResultDto cap) =>
+    Deskhand.Core.Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y);
+api.MapPost("/ocr/screen", (IAutomationBackend b, ControlState st, OcrScreenRequest? r) =>
+    !st.CaptureEnabled ? Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403)
+    : Results.Ok(Ocr(b.CaptureScreen(r?.Monitor, ImageFormat.Png, 100))));
+api.MapPost("/ocr/region", (IAutomationBackend b, ControlState st, RegionRequest r) =>
+    !st.CaptureEnabled ? Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403)
+    : Results.Ok(Ocr(b.CaptureRegion(r.X, r.Y, r.Width, r.Height, ImageFormat.Png, 100))));
+api.MapPost("/ocr/window", (IAutomationBackend b, ControlState st, WindowCaptureRequest r) =>
+{
+    if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
+    var cap = r.Reference is not null ? b.CaptureWindowByRef(r.Reference, ImageFormat.Png, 100)
+            : r.Hwnd is not null ? b.CaptureWindow(r.Hwnd.Value, ImageFormat.Png, 100)
+            : throw new ArgumentException("Provide either 'reference' or 'hwnd'.");
+    return Results.Ok(Ocr(cap));
+});
+
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 
@@ -725,6 +783,9 @@ record SessionLaunchRequest(string Path, string? Args, string? WorkingDir, int? 
     string? As, string? User, string? Domain, string? Password, bool? NoWindow);
 record FirewallOpenRequest(int Port, string? Protocol, string? Direction, string? RemoteAddresses, string? Name);
 record FirewallCloseRequest(int Port, string? Protocol, string? Direction, bool? All);
+record ClipboardSetRequest(string? Text);
+record WindowActionRequest(long Hwnd, string Action, int? X, int? Y, int? Width, int? Height);
+record OcrScreenRequest(int? Monitor);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

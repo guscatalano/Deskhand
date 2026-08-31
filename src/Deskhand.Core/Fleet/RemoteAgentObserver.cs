@@ -60,4 +60,12 @@ public sealed class RemoteAgentObserver(IAgentLink link)
         => Call(FleetMethods.FirewallOpen, new { port, protocol, direction, remoteAddresses, name });
     public JsonElement FirewallClose(int port, string? protocol, string? direction, bool all)
         => Call(FleetMethods.FirewallClose, new { port, protocol, direction, all });
+    public JsonElement ClipboardGet() => Call(FleetMethods.ClipboardGet, null);
+    public JsonElement ClipboardSet(string? text) => Call(FleetMethods.ClipboardSet, new { text });
+    public JsonElement ClipboardClear() => Call(FleetMethods.ClipboardClear, null);
+    public JsonElement WindowAction(long hwnd, string action, int? x, int? y, int? width, int? height)
+        => Call(FleetMethods.WindowAction, new { hwnd, action, x, y, width, height });
+    public JsonElement OcrScreen(int? monitor) => Call(FleetMethods.OcrScreen, new { monitor });
+    public JsonElement OcrRegion(int x, int y, int width, int height) => Call(FleetMethods.OcrRegion, new { x, y, width, height });
+    public JsonElement OcrWindow(long? hwnd, string? reference) => Call(FleetMethods.OcrWindow, new { hwnd, reference });
 }

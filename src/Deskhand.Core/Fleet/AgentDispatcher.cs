@@ -111,6 +111,48 @@ public static class AgentDispatcher
                 return a.Bool("all")
                     ? Services.FirewallService.CloseAllManaged()
                     : Services.FirewallService.ClosePort(a.Int("port", 0), a.Str("protocol"), a.Str("direction"));
+            case FleetMethods.ClipboardGet:
+                if (svc.Dumper is null) throw new InvalidOperationException("Clipboard isn't available on an RDP agent (it would read the connector's clipboard).");
+                return Services.ClipboardService.GetText();
+            case FleetMethods.ClipboardSet:
+                if (svc.Dumper is null) throw new InvalidOperationException("Clipboard isn't available on an RDP agent (it would set the connector's clipboard).");
+                return Services.ClipboardService.SetText(a.Str("text"));
+            case FleetMethods.ClipboardClear:
+                if (svc.Dumper is null) throw new InvalidOperationException("Clipboard isn't available on an RDP agent.");
+                return Services.ClipboardService.Clear();
+            case FleetMethods.WindowAction:
+            {
+                if (svc.Dumper is null) throw new InvalidOperationException("Window management isn't available on an RDP agent (it would act on the connector's windows).");
+                long hwnd = a.Long("hwnd", 0);
+                return (a.Str("action") ?? "").ToLowerInvariant() switch
+                {
+                    "activate" or "focus" => Services.WindowService.Activate(hwnd),
+                    "minimize" => Services.WindowService.Minimize(hwnd),
+                    "maximize" => Services.WindowService.Maximize(hwnd),
+                    "restore" => Services.WindowService.Restore(hwnd),
+                    "close" => Services.WindowService.Close(hwnd),
+                    "move" => Services.WindowService.Move(hwnd, a.Int("x", 0), a.Int("y", 0)),
+                    "resize" => Services.WindowService.Resize(hwnd, a.Int("width", 0), a.Int("height", 0)),
+                    "bounds" or "set_bounds" => Services.WindowService.SetBounds(hwnd, a.Int("x", 0), a.Int("y", 0), a.Int("width", 0), a.Int("height", 0)),
+                    _ => new Services.WindowActionResultDto(false, hwnd, a.Str("action") ?? "", Error: "Unknown action."),
+                };
+            }
+            case FleetMethods.OcrScreen:
+            {
+                var cap = b.CaptureScreen(a.IntN("monitor"), ImageFormat.Png, 100);
+                return Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y);
+            }
+            case FleetMethods.OcrRegion:
+            {
+                var cap = b.CaptureRegion(a.Int("x", 0), a.Int("y", 0), a.Int("width", 0), a.Int("height", 0), ImageFormat.Png, 100);
+                return Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y);
+            }
+            case FleetMethods.OcrWindow:
+            {
+                var cap = a.Str("reference") is { } rf ? b.CaptureWindowByRef(rf, ImageFormat.Png, 100)
+                        : b.CaptureWindow(a.Long("hwnd", 0), ImageFormat.Png, 100);
+                return Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y);
+            }
             case FleetMethods.SystemInfo:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would report the connector's machine, not the target).");
                 return Services.SystemInfoService.Get();

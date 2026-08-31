@@ -253,6 +253,13 @@ app.MapPost("/agents/{id}/firewall/open", (string id, AgentFwOpenReq r) =>
     Results.Ok(O(id).FirewallOpen(r.Port, r.Protocol, r.Direction, r.RemoteAddresses, r.Name)));
 app.MapPost("/agents/{id}/firewall/close", (string id, AgentFwCloseReq r) =>
     Results.Ok(O(id).FirewallClose(r.Port, r.Protocol, r.Direction, r.All ?? false)));
+app.MapGet("/agents/{id}/clipboard", (string id) => Results.Ok(O(id).ClipboardGet()));
+app.MapPost("/agents/{id}/clipboard", (string id, AgentClipReq r) => Results.Ok(O(id).ClipboardSet(r.Text)));
+app.MapPost("/agents/{id}/clipboard/clear", (string id) => Results.Ok(O(id).ClipboardClear()));
+app.MapPost("/agents/{id}/window", (string id, AgentWindowReq r) => Results.Ok(O(id).WindowAction(r.Hwnd, r.Action, r.X, r.Y, r.Width, r.Height)));
+app.MapPost("/agents/{id}/ocr/screen", (string id, AgentOcrScreenReq? r) => Results.Ok(O(id).OcrScreen(r?.Monitor)));
+app.MapPost("/agents/{id}/ocr/region", (string id, AgentOcrRegionReq r) => Results.Ok(O(id).OcrRegion(r.X, r.Y, r.Width, r.Height)));
+app.MapPost("/agents/{id}/ocr/window", (string id, AgentOcrWindowReq r) => Results.Ok(O(id).OcrWindow(r.Hwnd, r.Reference)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -337,3 +344,8 @@ record AgentLaunchAsReq(string Path, string? Args, string? WorkingDir, int? Sess
     string? As, string? User, string? Domain, string? Password, bool? NoWindow);
 record AgentFwOpenReq(int Port, string? Protocol, string? Direction, string? RemoteAddresses, string? Name);
 record AgentFwCloseReq(int Port, string? Protocol, string? Direction, bool? All);
+record AgentClipReq(string? Text);
+record AgentWindowReq(long Hwnd, string Action, int? X, int? Y, int? Width, int? Height);
+record AgentOcrScreenReq(int? Monitor);
+record AgentOcrRegionReq(int X, int Y, int Width, int Height);
+record AgentOcrWindowReq(long? Hwnd, string? Reference);

@@ -319,6 +319,85 @@ public static class DeskhandTools
         return Json(r);
     }
 
+    [McpServerTool(Name = "deskhand_clipboard_get"), Description("Read the Windows clipboard text. Returns { ok, text, length, hasText, error? }. Requires the kill switch armed (the clipboard may hold secrets).")]
+    public static string ClipboardGet(ControlState state)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        return Json(Deskhand.Core.Services.ClipboardService.GetText());
+    }
+
+    [McpServerTool(Name = "deskhand_clipboard_set"), Description("Set the Windows clipboard text (use before a paste). Returns { ok, length, error? }. Requires armed; audited.")]
+    public static string ClipboardSet(ControlState state, AuditLog audit, [Description("Text to place on the clipboard.")] string text)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.ClipboardService.SetText(text);
+        audit.Record("clipboard_set", $"{r.Length} chars", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_clipboard_clear"), Description("Clear the Windows clipboard. Requires armed; audited.")]
+    public static string ClipboardClear(ControlState state, AuditLog audit)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.ClipboardService.Clear();
+        audit.Record("clipboard_clear", "", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_window"), Description("Manage a top-level window by its nativeWindowHandle (from deskhand_list_windows): action = activate|minimize|maximize|restore|close|move|resize|bounds. move needs x,y; resize needs width,height; bounds needs all four (screen pixels). Returns { ok, hwnd, action, title, state, bounds, error? }. Requires armed; audited.")]
+    public static string Window(ControlState state, AuditLog audit,
+        [Description("Native window handle (nativeWindowHandle from list_windows).")] long hwnd,
+        [Description("activate|minimize|maximize|restore|close|move|resize|bounds")] string action,
+        [Description("X (screen px) for move/bounds.")] int? x = null,
+        [Description("Y (screen px) for move/bounds.")] int? y = null,
+        [Description("Width (px) for resize/bounds.")] int? width = null,
+        [Description("Height (px) for resize/bounds.")] int? height = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = (action ?? "").Trim().ToLowerInvariant() switch
+        {
+            "activate" or "focus" => Deskhand.Core.Services.WindowService.Activate(hwnd),
+            "minimize" => Deskhand.Core.Services.WindowService.Minimize(hwnd),
+            "maximize" => Deskhand.Core.Services.WindowService.Maximize(hwnd),
+            "restore" => Deskhand.Core.Services.WindowService.Restore(hwnd),
+            "close" => Deskhand.Core.Services.WindowService.Close(hwnd),
+            "move" => Deskhand.Core.Services.WindowService.Move(hwnd, x ?? 0, y ?? 0),
+            "resize" => Deskhand.Core.Services.WindowService.Resize(hwnd, width ?? 0, height ?? 0),
+            "bounds" or "set_bounds" => Deskhand.Core.Services.WindowService.SetBounds(hwnd, x ?? 0, y ?? 0, width ?? 0, height ?? 0),
+            _ => new Deskhand.Core.Services.WindowActionResultDto(false, hwnd, action ?? "", Error: "Unknown action. Use activate|minimize|maximize|restore|close|move|resize|bounds."),
+        };
+        audit.Record("window", $"{res.Action} hwnd={hwnd}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_ocr_screen"), Description("OCR the screen: read on-screen text with the built-in Windows OCR engine — the way to read apps UI Automation can't see (custom-drawn, canvas, games, RDP pixels). Returns { ok, text, words[{text,x,y,width,height}], wordCount, lineCount, error? }. Each word box is in SCREEN coordinates, ready to click. Requires capture enabled.")]
+    public static string OcrScreen(IAutomationBackend b, ControlState state, [Description("Monitor index (optional; default the whole virtual desktop / primary).")] int? monitor = null)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        var cap = b.CaptureScreen(monitor, ImageFormat.Png, 100);
+        return Json(Deskhand.Core.Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y));
+    }
+
+    [McpServerTool(Name = "deskhand_ocr_region"), Description("OCR a screen rectangle (screen pixels). Returns { ok, text, words[{text,x,y,width,height}], wordCount, lineCount }. Word boxes are in SCREEN coordinates. Requires capture enabled.")]
+    public static string OcrRegion(IAutomationBackend b, ControlState state, int x, int y, int width, int height)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        var cap = b.CaptureRegion(x, y, width, height, ImageFormat.Png, 100);
+        return Json(Deskhand.Core.Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y));
+    }
+
+    [McpServerTool(Name = "deskhand_ocr_window"), Description("OCR a window by its nativeWindowHandle (hwnd) or element reference. Returns { ok, text, words[{text,x,y,width,height}], wordCount, lineCount }. Word boxes are in SCREEN coordinates. Requires capture enabled.")]
+    public static string OcrWindow(IAutomationBackend b, ControlState state,
+        [Description("Native window handle (optional if reference given).")] long? hwnd = null,
+        [Description("Element reference of a window (optional if hwnd given).")] string? reference = null)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        var cap = reference is not null ? b.CaptureWindowByRef(reference, ImageFormat.Png, 100)
+                : hwnd is not null ? b.CaptureWindow(hwnd.Value, ImageFormat.Png, 100)
+                : throw new ArgumentException("Provide either hwnd or reference.");
+        return Json(Deskhand.Core.Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y));
+    }
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)

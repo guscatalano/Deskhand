@@ -86,6 +86,23 @@ No bearer token is required for the browser dashboard. The server is protected b
   `DESKHAND_ENABLE_FIREWALL_ADMIN=1`; also requires *armed*, is audited, and needs the host running as
   Administrator. **Deskhand only ever removes rules it opened** (see below).
 
+#### OCR — read text off the screen (`/ocr/*`, `deskhand_ocr_*`)
+
+Windows' built-in OCR engine (`Windows.Media.Ocr` — no external dependency, no network) reads on-screen text for
+apps UI Automation **can't** see: custom-drawn UIs, Chromium/Electron canvases, games, remote-desktop pixels.
+Capture the screen / a region / a window, get back `{ text, words[{text,x,y,width,height}], wordCount, lineCount }`
+— and every word box is in **screen coordinates**, so you can hand it straight to a mouse-move/click. Needs an OCR
+language pack installed (most Windows installs have one). Fleet parity works on RDP agents too (it OCRs the remote
+target's pixels).
+
+#### Clipboard & window management
+
+- **Clipboard** — `GET/POST /clipboard`, `deskhand_clipboard_get/set/clear`. Unicode text; runs on an STA thread
+  with retry so a momentary lock doesn't fail the call. Gated on *armed* (the clipboard can hold secrets).
+- **Windows** — `POST /window`, `deskhand_window`: `activate` (defeats the foreground lock), `minimize`,
+  `maximize`, `restore`, `close`, `move`, `resize`, `bounds` — addressed by the `nativeWindowHandle` from
+  `/windows`. Handle-based, so it works for any HWND. Gated on *armed*.
+
 #### Firewall: show rules, open & close ports (`/firewall/*`)
 
 - **List** — `GET /firewall/rules` enumerates the Windows Firewall (via the `HNetCfg.FwPolicy2` COM API). Filter by
@@ -182,6 +199,9 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /firewall/rules` | `?direction=&port=&enabledOnly=&contains=&managedOnly=&max=` | List Windows Firewall rules (read-only) |
 | `POST /firewall/open` | `{port, protocol?, direction?, remoteAddresses?, name?}` | Open a port (adds a Deskhand-tagged Allow rule) |
 | `POST /firewall/close` | `{port, protocol?, direction?}` or `{all:true}` | Close a port **Deskhand opened** (never touches other rules) |
+| `GET /clipboard` · `POST /clipboard` | `{text}` | Read / set the clipboard text (armed) |
+| `POST /window` | `{hwnd, action, x?, y?, width?, height?}` | activate·minimize·maximize·restore·close·move·resize·bounds a window (armed) |
+| `POST /ocr/screen` · `/ocr/region` · `/ocr/window` | `{monitor?}` · `{x,y,width,height}` · `{hwnd?/reference?}` | **OCR** on-screen text; words come back with **screen-coordinate boxes** |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |
 | `POST /uia/find` | `{rootRef?, name?, automationId?, controlType?, className?, scope?, max?}` | Query elements |
 | `POST /uia/wait` | `{…conditions, timeoutMs?}` | Poll until a matching element appears (or `404 wait_timeout`) |

@@ -249,4 +249,29 @@ public static class FleetTools
     public static string AgentFirewallClosePort(AgentRegistry r, FleetAudit audit, string agentId,
         int port = 0, string? protocol = "tcp", string? direction = "in", bool all = false)
         => Raw(O(r, audit, agentId, "firewall_close").FirewallClose(port, protocol, direction, all));
+
+    [McpServerTool(Name = "deskhand_agent_clipboard_get"), Description("Read a fleet PC's clipboard text. Not available on RDP agents.")]
+    public static string AgentClipboardGet(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "clipboard_get").ClipboardGet());
+
+    [McpServerTool(Name = "deskhand_agent_clipboard_set"), Description("Set a fleet PC's clipboard text. Not available on RDP agents.")]
+    public static string AgentClipboardSet(AgentRegistry r, FleetAudit audit, string agentId, string text)
+        => Raw(O(r, audit, agentId, "clipboard_set").ClipboardSet(text));
+
+    [McpServerTool(Name = "deskhand_agent_window"), Description("Manage a window on a fleet PC by nativeWindowHandle: action = activate|minimize|maximize|restore|close|move|resize|bounds (move needs x,y; resize needs width,height; bounds all four). Not available on RDP agents.")]
+    public static string AgentWindow(AgentRegistry r, FleetAudit audit, string agentId, long hwnd, string action,
+        int? x = null, int? y = null, int? width = null, int? height = null)
+        => Raw(O(r, audit, agentId, "window").WindowAction(hwnd, action, x, y, width, height));
+
+    [McpServerTool(Name = "deskhand_agent_ocr_screen"), Description("OCR a fleet PC's screen: read on-screen text (built-in Windows OCR) for apps UIA can't see. Returns text + word boxes in screen coordinates. Works on native and RDP agents.")]
+    public static string AgentOcrScreen(AgentRegistry r, FleetAudit audit, string agentId, int? monitor = null)
+        => Raw(O(r, audit, agentId, "ocr_screen").OcrScreen(monitor));
+
+    [McpServerTool(Name = "deskhand_agent_ocr_region"), Description("OCR a screen rectangle on a fleet PC. Returns text + word boxes in screen coordinates.")]
+    public static string AgentOcrRegion(AgentRegistry r, FleetAudit audit, string agentId, int x, int y, int width, int height)
+        => Raw(O(r, audit, agentId, "ocr_region").OcrRegion(x, y, width, height));
+
+    [McpServerTool(Name = "deskhand_agent_ocr_window"), Description("OCR a window on a fleet PC by nativeWindowHandle or element reference. Returns text + word boxes in screen coordinates.")]
+    public static string AgentOcrWindow(AgentRegistry r, FleetAudit audit, string agentId, long? hwnd = null, string? reference = null)
+        => Raw(O(r, audit, agentId, "ocr_window").OcrWindow(hwnd, reference));
 }

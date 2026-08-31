@@ -4,8 +4,8 @@
       <stop offset="0" stop-color="#22D3EE"/>
       <stop offset="1" stop-color="#4F46E5"/>
     </linearGradient>
-    <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#F1F5F9"/>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8FAFC"/>
       <stop offset="1" stop-color="#94A3B8"/>
     </linearGradient>
   </defs>
@@ -13,39 +13,52 @@
   <!-- self-contained panel so the mark reads on both light and dark README themes -->
   <rect x="0" y="0" width="540" height="160" rx="24" fill="#0F172A"/>
 
-  <!-- icon: an app tile — a robotic arm operating a desktop UI -->
+  <!-- icon: an app tile holding a mechanical/robot hand -->
   <g>
     <rect x="24" y="24" width="112" height="112" rx="26" fill="url(#badge)"/>
 
-    <!-- subtle PCB traces for a machine feel -->
-    <g stroke="#FFFFFF" stroke-opacity="0.20" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="34,46 34,34 46,34"/>
-      <polyline points="126,34 126,46"/>
-      <polyline points="34,118 34,126 46,126"/>
-    </g>
-    <g fill="#FFFFFF" fill-opacity="0.30">
-      <circle cx="46" cy="34" r="2.2"/><circle cx="126" cy="34" r="2.2"/><circle cx="46" cy="126" r="2.2"/>
+    <!-- faint corner brackets for a machine-panel feel -->
+    <g stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2" fill="none" stroke-linecap="round">
+      <polyline points="36,44 36,36 44,36"/>
+      <polyline points="116,36 124,36 124,44"/>
+      <polyline points="36,116 36,124 44,124"/>
+      <polyline points="124,116 124,124 116,124"/>
     </g>
 
-    <!-- the desktop/screen with a UI: two fields and a highlighted button -->
-    <rect x="42" y="46" width="76" height="56" rx="9" fill="#0B1220" fill-opacity="0.55"
-          stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="3.5"/>
-    <rect x="52" y="57" width="42" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.5"/>
-    <rect x="52" y="68" width="30" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.5"/>
-    <rect x="52" y="82" width="34" height="13" rx="4" fill="#22D3EE"/>
+    <g stroke="#0F172A" stroke-width="2.6" stroke-linejoin="round">
+      <!-- thumb (jointed, angled off the palm) -->
+      <rect x="41" y="80" width="10" height="26" rx="5" fill="url(#steel)" transform="rotate(-42 46 99)"/>
 
-    <!-- the robotic arm: two segments + bolt pivots, a fingertip pressing the button -->
-    <g stroke="#0F172A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
-      <line x1="120" y1="118" x2="101" y2="99" stroke="url(#steel)" stroke-width="11"/>
-      <line x1="101" y1="99" x2="82" y2="88" stroke="url(#steel)" stroke-width="9"/>
+      <!-- four fingers: segmented capsules of a natural hand height -->
+      <rect x="57.5" y="52" width="9"  height="40" rx="4.5" fill="url(#steel)"/>
+      <rect x="69.5" y="45" width="9"  height="47" rx="4.5" fill="url(#steel)"/>
+      <rect x="81.5" y="49" width="9"  height="43" rx="4.5" fill="url(#steel)"/>
+      <rect x="93"   y="57" width="9"  height="35" rx="4.5" fill="url(#steel)"/>
+
+      <!-- palm plate covering the finger bases -->
+      <rect x="52" y="84" width="52" height="28" rx="11" fill="url(#steel)"/>
     </g>
-    <!-- shoulder + elbow pivots (bolts) -->
-    <circle cx="120" cy="118" r="6.5" fill="url(#steel)" stroke="#0F172A" stroke-width="2.5"/>
-    <circle cx="120" cy="118" r="2" fill="#0F172A"/>
-    <circle cx="101" cy="99" r="5.5" fill="url(#steel)" stroke="#0F172A" stroke-width="2.5"/>
-    <circle cx="101" cy="99" r="1.8" fill="#0F172A"/>
-    <!-- fingertip pressing the button -->
-    <circle cx="82" cy="88" r="4.6" fill="#F1F5F9" stroke="#0F172A" stroke-width="2.5"/>
+
+    <!-- finger joint lines (knuckle segments) -->
+    <g stroke="#0F172A" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round">
+      <line x1="58.5" y1="70" x2="65.5" y2="70"/><line x1="58.5" y1="60" x2="65.5" y2="60"/>
+      <line x1="70.5" y1="70" x2="77.5" y2="70"/><line x1="70.5" y1="59" x2="77.5" y2="59"/>
+      <line x1="82.5" y1="70" x2="89.5" y2="70"/><line x1="82.5" y1="61" x2="89.5" y2="61"/>
+      <line x1="94"   y1="72" x2="101"  y2="72"/>
+      <line x1="43"   y1="92" x2="50"   y2="88"/>
+    </g>
+
+    <!-- cyan fingertip sensors -->
+    <g fill="#22D3EE" stroke="#0F172A" stroke-width="1.4">
+      <circle cx="62" cy="57" r="2.6"/><circle cx="74" cy="50" r="2.6"/>
+      <circle cx="86" cy="54" r="2.6"/><circle cx="97.5" cy="61" r="2.6"/>
+    </g>
+
+    <!-- palm detail: inset panel + two bolts -->
+    <rect x="59" y="90" width="38" height="16" rx="6" fill="none" stroke="#0F172A" stroke-opacity="0.55" stroke-width="2"/>
+    <g fill="#0F172A" fill-opacity="0.7">
+      <circle cx="66" cy="98" r="2.2"/><circle cx="90" cy="98" r="2.2"/>
+    </g>
   </g>
 
   <!-- wordmark -->

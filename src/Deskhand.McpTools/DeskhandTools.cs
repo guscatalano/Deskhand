@@ -289,6 +289,29 @@ public static class DeskhandTools
     public static string LaunchProcess(IAutomationBackend b, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 10000)
         => Try(() => Json(b.LaunchProcess(path, args, workingDir, waitForWindowMs)));
 
+    [McpServerTool(Name = "deskhand_launch_process_as"), Description("Launch a program into a SPECIFIC Terminal-Services session, on a SPECIFIC window-station\\desktop, running as a SPECIFIC user (CreateProcessAsUser). as=\"session\" (default: run as whoever is logged into the target session), \"credentials\" (run as user/domain/password), or \"system\" (NT AUTHORITY\\SYSTEM in that session). sessionId defaults to the active console session; desktop defaults to \"winsta0\\default\". Returns { ok, processId, sessionId, desktop, as, user, error?, win32?, hint? }. POWER TOOL: OFF unless the host sets DESKHAND_ENABLE_SESSION_LAUNCH, requires the kill switch armed, audited. Crossing a session/user boundary requires the host to run as LocalSystem (e.g. the Deskhand Fleet Launcher service) — otherwise you get a clear ERROR_PRIVILEGE_NOT_HELD with a hint; the same-session desktop switch works without elevation.")]
+    public static string LaunchProcessAs(ControlState state, AuditLog audit,
+        [Description("Program path or name, e.g. \"notepad.exe\" or \"C:\\\\app.exe\".")] string path,
+        [Description("Command-line arguments (optional).")] string? args = null,
+        [Description("Working directory (optional; defaults to the program's folder).")] string? workingDir = null,
+        [Description("Target TS session id. Omit for the active console session; find ids via deskhand_list_sessions.")] int? sessionId = null,
+        [Description("Window-station\\desktop, e.g. \"winsta0\\\\default\". Default winsta0\\default.")] string? desktop = null,
+        [Description("User context: \"session\" (default), \"credentials\", or \"system\".")] string? @as = null,
+        [Description("Username for as=credentials.")] string? user = null,
+        [Description("Domain for as=credentials (\".\" for local).")] string? domain = null,
+        [Description("Password for as=credentials. Never logged/audited.")] string? password = null,
+        [Description("Create with no console window (default false, so GUI apps appear on the desktop).")] bool noWindow = false)
+    {
+        if (!Deskhand.Core.Services.SessionLaunchService.Enabled)
+            return "{\"error\":\"Session launch is disabled. Set DESKHAND_ENABLE_SESSION_LAUNCH=1.\",\"type\":\"session_launch_disabled\"}";
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var asUser = Deskhand.Core.Services.SessionLaunchService.ParseAs(@as);
+        var r = Deskhand.Core.Services.SessionLaunchService.Launch(path, args, workingDir, sessionId, desktop, asUser, user, domain, password, noWindow);
+        audit.Record("launch_as", $"{path} | session={r.SessionId} desktop={r.Desktop} as={r.As} user={r.User}",
+            r.Ok ? $"pid {r.ProcessId}" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
     // ---------- governance ----------
 
     [McpServerTool(Name = "deskhand_control_status"), Description("Report the kill-switch/capability state: armed, inputEnabled, captureEnabled.")]

@@ -481,6 +481,22 @@ api.MapPost("/shell/run", (ControlState st, AuditLog al, ShellRunRequest r) =>
     return Results.Ok(res);
 });
 
+// Launch a process into a specific SESSION, on a specific DESKTOP, as a specific USER (CreateProcessAsUser).
+// Crossing a session/user boundary needs the host running as LocalSystem; same-session desktop switch does not.
+// OFF unless DESKHAND_ENABLE_SESSION_LAUNCH is set, gated on armed, audited (never the password).
+api.MapPost("/process/launch-as", (ControlState st, AuditLog al, SessionLaunchRequest r) =>
+{
+    if (!Deskhand.Core.Services.SessionLaunchService.Enabled)
+        return Results.Json(new { error = "Session launch is disabled. Set DESKHAND_ENABLE_SESSION_LAUNCH=1.", type = "session_launch_disabled" }, statusCode: 403);
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var asUser = Deskhand.Core.Services.SessionLaunchService.ParseAs(r.As);
+    var res = Deskhand.Core.Services.SessionLaunchService.Launch(
+        r.Path, r.Args, r.WorkingDir, r.SessionId, r.Desktop, asUser, r.User, r.Domain, r.Password, r.NoWindow ?? false);
+    al.Record("launch_as", $"{Trunc(r.Path, 120)} | session={res.SessionId} desktop={res.Desktop} as={res.As} user={res.User}",
+        res.Ok ? $"pid {res.ProcessId}" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 
@@ -677,6 +693,8 @@ record FsCopyRequest(string Source, string Dest, bool? Overwrite);
 record FsZipRequest(IReadOnlyList<string>? Sources, string Dest, bool? Overwrite);
 record FsUnzipRequest(string ZipPath, string? Dest, bool? Overwrite);
 record ShellRunRequest(string? Shell, string Command, string? Cwd, int? TimeoutMs);
+record SessionLaunchRequest(string Path, string? Args, string? WorkingDir, int? SessionId, string? Desktop,
+    string? As, string? User, string? Domain, string? Password, bool? NoWindow);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

@@ -74,6 +74,28 @@ No bearer token is required for the browser dashboard. The server is protected b
   tab) is **disabled unless you start the server with `DESKHAND_ENABLE_SHELL=1`**, and even then requires
   the kill switch to be *armed* and audits every command. Off by default because it runs arbitrary code as
   the current user.
+- **Cross-session launch is opt-in** — `/process/launch-as` (`deskhand_launch_process_as`) launches a program
+  into a specific TS **session**, on a specific window-station\\**desktop**, as a specific **user**. Off unless
+  `DESKHAND_ENABLE_SESSION_LAUNCH=1`; also requires *armed* and is audited (never the password).
+
+#### Launch into a session / desktop / user (`/process/launch-as`)
+
+Consolidates the three axes over `CreateProcessAsUser`:
+
+- **`sessionId`** — target Terminal-Services session. Omit for the active console session; list ids with
+  `deskhand_list_sessions` / `GET /sessions`.
+- **`desktop`** — `winsta\desktop`, default `winsta0\default`.
+- **`as`** — user context:
+  - `"session"` *(default)* — run as **whoever is interactively logged into that session** (`WTSQueryUserToken`).
+    You don't need their password; the caller usually doesn't know it.
+  - `"credentials"` — run as an explicit `user` / `domain` / `password` (`LogonUser`).
+  - `"system"` — run as `NT AUTHORITY\SYSTEM` in that session.
+
+**Privilege:** crossing a session boundary or changing user needs `SeTcbPrivilege` — in practice the host must
+run as **LocalSystem** (e.g. via the Deskhand Fleet Launcher service, or a SYSTEM-hosted agent). When it isn't,
+you get a crisp `ERROR_PRIVILEGE_NOT_HELD` (or `ERROR_LOGON_FAILURE`, …) with a `hint`, never an opaque failure.
+The one case that needs no elevation is **same-session, same-user, different desktop** — that path uses a plain
+`CreateProcess` with `STARTUPINFO.lpDesktop` and works from an ordinary user process.
 
 ### Opening the port to the network (`DESKHAND_BIND`)
 
@@ -131,6 +153,7 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /focused` | — | Focused element |
 | `GET /windows` | — | All top-level windows (the reliable way to enter a specific app) |
 | `POST /process/launch` | `{path, args?, workingDir?, waitForWindowMs?}` | Launch a program; returns its window if it appears |
+| `POST /process/launch-as` | `{path, args?, workingDir?, sessionId?, desktop?, as?, user?, domain?, password?, noWindow?}` | Launch into a specific **session** / **desktop**, as a specific **user** (see below) |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |
 | `POST /uia/find` | `{rootRef?, name?, automationId?, controlType?, className?, scope?, max?}` | Query elements |
 | `POST /uia/wait` | `{…conditions, timeoutMs?}` | Poll until a matching element appears (or `404 wait_timeout`) |

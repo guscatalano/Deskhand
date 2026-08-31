@@ -12,10 +12,10 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             9.0.x
@@ -81,7 +81,7 @@ jobs:
           Write-Host "deskhand.zip -> $([int]((Get-Item installer/out/deskhand.zip).Length/1MB)) MB (self-contained)"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: deskhand-installers
           path: |
@@ -98,7 +98,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: deskhand-installers
           path: dist

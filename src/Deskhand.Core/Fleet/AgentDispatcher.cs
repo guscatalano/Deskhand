@@ -178,6 +178,75 @@ public static class AgentDispatcher
                 return Services.VisionOps.ClickText(b, a.Str("text") ?? "", SpecOf(a), a.Str("button") ?? "left", a.Int("count", 1), a.Int("timeoutMs", 0));
             case FleetMethods.GetPixel:
                 return Services.VisionOps.GetPixel(b, a.Int("x"), a.Int("y"));
+            case FleetMethods.Paste:
+            {
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                var set = Services.ClipboardService.SetText(a.Str("text") ?? "");
+                if (set.Ok) b.SendKeys("ctrl+v");
+                return set;
+            }
+            case FleetMethods.ProcessControl:
+            {
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                int pid = a.Int("pid");
+                return (a.Str("action") ?? "").ToLowerInvariant() switch
+                {
+                    "kill" or "terminate" => Services.ProcessControlService.Kill(pid, a.Bool("tree", true)),
+                    "suspend" => Services.ProcessControlService.Suspend(pid),
+                    "resume" => Services.ProcessControlService.Resume(pid),
+                    "priority" => Services.ProcessControlService.SetPriority(pid, a.Str("level") ?? ""),
+                    _ => new Services.ProcControlDto(false, pid, null, a.Str("action") ?? "", Error: "action must be kill|suspend|resume|priority."),
+                };
+            }
+            case FleetMethods.ServiceControl:
+            {
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                var n = a.Str("name") ?? "";
+                return (a.Str("action") ?? "").ToLowerInvariant() switch
+                {
+                    "start" => Services.ServiceControlService.Start(n),
+                    "stop" => Services.ServiceControlService.Stop(n),
+                    "restart" => Services.ServiceControlService.Restart(n),
+                    _ => new Services.ServiceControlDto(false, n, a.Str("action") ?? "", Error: "action must be start|stop|restart."),
+                };
+            }
+            case FleetMethods.EnvGet:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.EnvironmentService.Get(a.Str("name") ?? "", a.Str("scope"));
+            case FleetMethods.EnvSet:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.EnvironmentService.Set(a.Str("name") ?? "", a.Str("value"), a.Str("scope"));
+            case FleetMethods.TaskAction:
+            {
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                var tk = a.Str("task") ?? "";
+                return (a.Str("action") ?? "").ToLowerInvariant() switch
+                {
+                    "run" => Services.ScheduledTaskService.Run(tk),
+                    "end" => Services.ScheduledTaskService.End(tk),
+                    "enable" => Services.ScheduledTaskService.Enable(tk),
+                    "disable" => Services.ScheduledTaskService.Disable(tk),
+                    _ => new Services.TaskActionDto(false, tk, a.Str("action") ?? "", -1, Error: "action must be run|end|enable|disable."),
+                };
+            }
+            case FleetMethods.UacStatus:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.UacService.Status();
+            case FleetMethods.UacConfig:
+            {
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return a.BoolN("enabled") is bool en ? Services.UacService.SetEnabled(en)
+                    : a.BoolN("promptOnSecureDesktop") is bool sd ? Services.UacService.SetSecureDesktop(sd)
+                    : a.BoolN("autoApprove") is bool aa ? Services.UacService.SetAutoApprove(aa)
+                    : a.IntN("adminBehavior") is int lvl ? Services.UacService.SetAdminBehavior(lvl)
+                    : new Services.UacConfigDto(false, "none", null, false, "Provide one of: enabled, promptOnSecureDesktop, autoApprove, adminBehavior.");
+            }
+            case FleetMethods.UacRespond:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.UacService.Respond(a.Bool("accept", true), a.Int("timeoutMs", 5000));
+            case FleetMethods.Fetch:
+                if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
+                return Services.FetchService.DownloadAsync(a.Str("url"), a.Str("path"), a.LongN("maxBytes")).GetAwaiter().GetResult();
             case FleetMethods.SystemInfo:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would report the connector's machine, not the target).");
                 return Services.SystemInfoService.Get();
@@ -273,6 +342,12 @@ internal static class JsonArgs
 
     public static double? DblN(this JsonElement e, string name) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
+
+    public static long? LongN(this JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : null;
+
+    public static bool? BoolN(this JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : null;
 
     public static T? Obj<T>(this JsonElement e, string name) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) ? FleetJson.Deserialize<T>(v.GetRawText()) : default;

@@ -273,6 +273,17 @@ app.MapPost("/agents/{id}/vision/click-image", (string id, AgentClickImageReq r)
 app.MapPost("/agents/{id}/vision/click-text", (string id, AgentClickTextReq r) =>
     Results.Ok(O(id).ClickText(r.Text ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Button, r.Count, r.TimeoutMs)));
 app.MapGet("/agents/{id}/vision/pixel", (string id, int x, int y) => Results.Ok(O(id).GetPixel(x, y)));
+app.MapPost("/agents/{id}/input/paste", (string id, AgentClipReq r) => Results.Ok(O(id).Paste(r.Text ?? "")));
+app.MapPost("/agents/{id}/process/control", (string id, AgentProcCtrlReq r) => Results.Ok(O(id).ProcessControl(r.Pid, r.Action, r.Tree, r.Level)));
+app.MapGet("/agents/{id}/service/state", (string id, string name) => Results.Ok(new { name, state = "" }));
+app.MapPost("/agents/{id}/service/control", (string id, AgentSvcCtrlReq r) => Results.Ok(O(id).ServiceControl(r.Name, r.Action)));
+app.MapGet("/agents/{id}/env", (string id, string name, string? scope) => Results.Ok(O(id).EnvGet(name, scope)));
+app.MapPost("/agents/{id}/env", (string id, AgentEnvSetReq r) => Results.Ok(O(id).EnvSet(r.Name, r.Value, r.Scope)));
+app.MapPost("/agents/{id}/task", (string id, AgentTaskReq r) => Results.Ok(O(id).TaskAction(r.Task, r.Action)));
+app.MapGet("/agents/{id}/uac", (string id) => Results.Ok(O(id).UacStatus()));
+app.MapPost("/agents/{id}/uac/config", (string id, AgentUacCfgReq r) => Results.Ok(O(id).UacConfig(r.Enabled, r.PromptOnSecureDesktop, r.AutoApprove, r.AdminBehavior)));
+app.MapPost("/agents/{id}/uac/respond", (string id, AgentUacRespReq r) => Results.Ok(O(id).UacRespond(r.Accept ?? true, r.TimeoutMs ?? 5000)));
+app.MapPost("/agents/{id}/fetch", (string id, AgentFetchReq r) => Results.Ok(O(id).Fetch(r.Url ?? "", r.Path, r.MaxBytes)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -376,3 +387,10 @@ record AgentClickImageReq(string? TemplateBase64, string? Target, int? Monitor, 
     long? Hwnd, string? Reference, double? Threshold, string? Button, int? Count, int? TimeoutMs);
 record AgentClickTextReq(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
     long? Hwnd, string? Reference, string? Button, int? Count, int? TimeoutMs);
+record AgentProcCtrlReq(int Pid, string Action, bool? Tree, string? Level);
+record AgentSvcCtrlReq(string Name, string Action);
+record AgentEnvSetReq(string Name, string? Value, string? Scope);
+record AgentTaskReq(string Task, string Action);
+record AgentUacCfgReq(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
+record AgentUacRespReq(bool? Accept, int? TimeoutMs);
+record AgentFetchReq(string? Url, string? Path, long? MaxBytes);

@@ -318,4 +318,44 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_get_pixel"), Description("Read the RGB color of a pixel on a fleet PC's screen. Returns { ok, x, y, r, g, b, hex }.")]
     public static string AgentGetPixel(AgentRegistry r, FleetAudit audit, string agentId, int x, int y)
         => Raw(O(r, audit, agentId, "get_pixel").GetPixel(x, y));
+
+    [McpServerTool(Name = "deskhand_agent_paste_text"), Description("Paste text on a fleet PC (clipboard + Ctrl+V). Not available on RDP agents.")]
+    public static string AgentPasteText(AgentRegistry r, FleetAudit audit, string agentId, string text)
+        => Raw(O(r, audit, agentId, "paste").Paste(text));
+
+    [McpServerTool(Name = "deskhand_agent_process_control"), Description("Control a process on a fleet PC: action = kill|suspend|resume|priority (level idle..realtime). Not available on RDP agents.")]
+    public static string AgentProcessControl(AgentRegistry r, FleetAudit audit, string agentId, int pid, string action, bool tree = true, string? level = null)
+        => Raw(O(r, audit, agentId, "process_control").ProcessControl(pid, action, tree, level));
+
+    [McpServerTool(Name = "deskhand_agent_service_control"), Description("Start/stop/restart a Windows service on a fleet PC. Not available on RDP agents.")]
+    public static string AgentServiceControl(AgentRegistry r, FleetAudit audit, string agentId, string name, string action)
+        => Raw(O(r, audit, agentId, "service_control").ServiceControl(name, action));
+
+    [McpServerTool(Name = "deskhand_agent_env_get"), Description("Read an environment variable on a fleet PC (scope process|user|machine).")]
+    public static string AgentEnvGet(AgentRegistry r, FleetAudit audit, string agentId, string name, string? scope = null)
+        => Raw(O(r, audit, agentId, "env_get").EnvGet(name, scope));
+
+    [McpServerTool(Name = "deskhand_agent_env_set"), Description("Set (or delete, value omitted) an environment variable on a fleet PC (scope process|user|machine; machine needs elevation).")]
+    public static string AgentEnvSet(AgentRegistry r, FleetAudit audit, string agentId, string name, string? value = null, string? scope = null)
+        => Raw(O(r, audit, agentId, "env_set").EnvSet(name, value, scope));
+
+    [McpServerTool(Name = "deskhand_agent_task_action"), Description("Run/end/enable/disable a Scheduled Task on a fleet PC. Not available on RDP agents.")]
+    public static string AgentTaskAction(AgentRegistry r, FleetAudit audit, string agentId, string task, string action)
+        => Raw(O(r, audit, agentId, "task_action").TaskAction(task, action));
+
+    [McpServerTool(Name = "deskhand_agent_uac_status"), Description("Read UAC configuration on a fleet PC.")]
+    public static string AgentUacStatus(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "uac_status").UacStatus());
+
+    [McpServerTool(Name = "deskhand_agent_uac_config"), Description("Configure UAC on a fleet PC (needs elevation): one of enabled, promptOnSecureDesktop, autoApprove (silent elevation), or adminBehavior 0..5.")]
+    public static string AgentUacConfig(AgentRegistry r, FleetAudit audit, string agentId, bool? enabled = null, bool? promptOnSecureDesktop = null, bool? autoApprove = null, int? adminBehavior = null)
+        => Raw(O(r, audit, agentId, "uac_config").UacConfig(enabled, promptOnSecureDesktop, autoApprove, adminBehavior));
+
+    [McpServerTool(Name = "deskhand_agent_uac_respond"), Description("Best-effort answer a UAC prompt on a fleet PC (accept=Yes/false=No). Only reaches prompts on the normal desktop with an elevated agent.")]
+    public static string AgentUacRespond(AgentRegistry r, FleetAudit audit, string agentId, bool accept = true, int timeoutMs = 5000)
+        => Raw(O(r, audit, agentId, "uac_respond").UacRespond(accept, timeoutMs));
+
+    [McpServerTool(Name = "deskhand_agent_fetch_url"), Description("Download a URL to a file on a fleet PC (path or folder; omit for temp). Size-capped. Not available on RDP agents.")]
+    public static string AgentFetchUrl(AgentRegistry r, FleetAudit audit, string agentId, string url, string? path = null, long? maxBytes = null)
+        => Raw(O(r, audit, agentId, "fetch").Fetch(url, path, maxBytes));
 }

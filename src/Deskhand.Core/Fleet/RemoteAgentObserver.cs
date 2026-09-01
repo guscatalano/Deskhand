@@ -81,4 +81,14 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement ClickText(string text, string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, string? button, int? count, int? timeoutMs)
         => Call(FleetMethods.ClickText, new { text, target, monitor, x, y, width, height, hwnd, reference, button, count, timeoutMs });
     public JsonElement GetPixel(int x, int y) => Call(FleetMethods.GetPixel, new { x, y });
+    public JsonElement Paste(string text) => Call(FleetMethods.Paste, new { text });
+    public JsonElement ProcessControl(int pid, string action, bool? tree, string? level) => Call(FleetMethods.ProcessControl, new { pid, action, tree, level });
+    public JsonElement ServiceControl(string name, string action) => Call(FleetMethods.ServiceControl, new { name, action });
+    public JsonElement EnvGet(string name, string? scope) => Call(FleetMethods.EnvGet, new { name, scope });
+    public JsonElement EnvSet(string name, string? value, string? scope) => Call(FleetMethods.EnvSet, new { name, value, scope });
+    public JsonElement TaskAction(string task, string action) => Call(FleetMethods.TaskAction, new { task, action });
+    public JsonElement UacStatus() => Call(FleetMethods.UacStatus, null);
+    public JsonElement UacConfig(bool? enabled, bool? promptOnSecureDesktop, bool? autoApprove, int? adminBehavior) => Call(FleetMethods.UacConfig, new { enabled, promptOnSecureDesktop, autoApprove, adminBehavior });
+    public JsonElement UacRespond(bool accept, int timeoutMs) => Call(FleetMethods.UacRespond, new { accept, timeoutMs });
+    public JsonElement Fetch(string url, string? path, long? maxBytes) => Call(FleetMethods.Fetch, new { url, path, maxBytes });
 }

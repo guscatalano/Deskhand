@@ -98,6 +98,16 @@ public static class FleetMethods
     public const string ClickImage = "click_image";
     public const string ClickText = "click_text";
     public const string GetPixel = "get_pixel";
+    public const string Paste = "paste";
+    public const string ProcessControl = "process_control";
+    public const string ServiceControl = "service_control";
+    public const string EnvGet = "env_get";
+    public const string EnvSet = "env_set";
+    public const string TaskAction = "task_action";
+    public const string UacStatus = "uac_status";
+    public const string UacConfig = "uac_config";
+    public const string UacRespond = "uac_respond";
+    public const string Fetch = "fetch";
     public const string DumpProcess = "dump_process";
     public const string ListApps = "list_apps";
     public const string ListDesktops = "list_desktops";

@@ -91,6 +91,7 @@ public static class FleetMethods
     public const string OcrScreen = "ocr_screen";
     public const string OcrRegion = "ocr_region";
     public const string OcrWindow = "ocr_window";
+    public const string FindImage = "find_image";
     public const string DumpProcess = "dump_process";
     public const string ListApps = "list_apps";
     public const string ListDesktops = "list_desktops";

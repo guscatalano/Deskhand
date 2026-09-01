@@ -153,6 +153,19 @@ public static class AgentDispatcher
                         : b.CaptureWindow(a.Long("hwnd", 0), ImageFormat.Png, 100);
                 return Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y);
             }
+            case FleetMethods.FindImage:
+            {
+                byte[] needle;
+                try { needle = Convert.FromBase64String(a.Str("templateBase64") ?? ""); }
+                catch { throw new ArgumentException("templateBase64 is not valid base64."); }
+                var cap = (a.Str("target") ?? "screen").ToLowerInvariant() switch
+                {
+                    "region" => b.CaptureRegion(a.Int("x", 0), a.Int("y", 0), a.Int("width", 0), a.Int("height", 0), ImageFormat.Png, 100),
+                    "window" => a.Str("reference") is { } wr ? b.CaptureWindowByRef(wr, ImageFormat.Png, 100) : b.CaptureWindow(a.Long("hwnd", 0), ImageFormat.Png, 100),
+                    _ => b.CaptureScreen(a.IntN("monitor"), ImageFormat.Png, 100),
+                };
+                return Services.TemplateMatchService.Find(cap.Bytes, needle, a.DblN("threshold") ?? 0.85, a.Int("maxResults", 10), cap.Rect.X, cap.Rect.Y);
+            }
             case FleetMethods.SystemInfo:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would report the connector's machine, not the target).");
                 return Services.SystemInfoService.Get();
@@ -236,6 +249,9 @@ internal static class JsonArgs
 
     public static bool Bool(this JsonElement e, string name, bool def = false) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : def;
+
+    public static double? DblN(this JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
 
     public static T? Obj<T>(this JsonElement e, string name) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) ? FleetJson.Deserialize<T>(v.GetRawText()) : default;

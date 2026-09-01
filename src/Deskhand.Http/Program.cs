@@ -597,6 +597,25 @@ api.MapPost("/ocr/window", (IAutomationBackend b, ControlState st, WindowCapture
     return Results.Ok(Ocr(cap));
 });
 
+// Vision: find a template image (icon/button) on the screen and return click-ready screen coordinates.
+// Capture-class (gated on captureEnabled). Capture the target, then normalized-cross-correlation match.
+api.MapPost("/vision/find", (IAutomationBackend b, ControlState st, VisionFindRequest r) =>
+{
+    if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
+    byte[] needle;
+    try { needle = Convert.FromBase64String(r.TemplateBase64 ?? ""); }
+    catch { return Results.Json(new { error = "templateBase64 is not valid base64", type = "bad_request" }, statusCode: 400); }
+    var cap = (r.Target ?? "screen").ToLowerInvariant() switch
+    {
+        "region" => b.CaptureRegion(r.X ?? 0, r.Y ?? 0, r.Width ?? 0, r.Height ?? 0, ImageFormat.Png, 100),
+        "window" => r.Reference is not null ? b.CaptureWindowByRef(r.Reference, ImageFormat.Png, 100)
+                                            : b.CaptureWindow(r.Hwnd ?? 0, ImageFormat.Png, 100),
+        _ => b.CaptureScreen(r.Monitor, ImageFormat.Png, 100),
+    };
+    var res = Deskhand.Core.Services.TemplateMatchService.Find(cap.Bytes, needle, r.Threshold ?? 0.85, r.MaxResults ?? 10, cap.Rect.X, cap.Rect.Y);
+    return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
 // Self-update: check GitHub Releases; apply downloads the latest zip and relaunches. Apply is opt-in
 // (DESKHAND_ENABLE_SELF_UPDATE), armed, audited — it stops and replaces this running server.
 api.MapGet("/update/check", async () => Results.Ok(await Deskhand.Core.Services.UpdateService.CheckAsync()));
@@ -814,6 +833,8 @@ record FirewallCloseRequest(int Port, string? Protocol, string? Direction, bool?
 record ClipboardSetRequest(string? Text);
 record WindowActionRequest(long Hwnd, string Action, int? X, int? Y, int? Width, int? Height);
 record OcrScreenRequest(int? Monitor);
+record VisionFindRequest(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, double? Threshold, int? MaxResults);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

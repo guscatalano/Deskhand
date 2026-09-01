@@ -413,6 +413,33 @@ public static class DeskhandTools
         return Json(r);
     }
 
+    [McpServerTool(Name = "deskhand_find_image"), Description("Find a template image (an icon/button/cursor — the 'needle', passed as a base64 PNG) on the screen by normalized cross-correlation — the visual way to locate things with no text and no UIA. target: \"screen\" (default), \"region\" (needs x,y,width,height), or \"window\" (needs hwnd or reference). Returns { ok, count, matches[{x,y,width,height,centerX,centerY,score}], threshold, haystackWidth, haystackHeight } sorted best-first, with boxes in SCREEN coordinates — click/drag to centerX,centerY. threshold 0.1–1.0 (default 0.85); NCC tolerates brightness/contrast changes but NOT scaling/rotation of the template. Requires capture enabled.")]
+    public static string FindImage(IAutomationBackend b, ControlState state,
+        [Description("The template to find, as a base64-encoded PNG.")] string templateBase64,
+        [Description("\"screen\" (default), \"region\", or \"window\".")] string target = "screen",
+        [Description("Monitor index for target=screen (optional).")] int? monitor = null,
+        [Description("Region left (target=region).")] int? x = null,
+        [Description("Region top (target=region).")] int? y = null,
+        [Description("Region width (target=region).")] int? width = null,
+        [Description("Region height (target=region).")] int? height = null,
+        [Description("Window handle (target=window).")] long? hwnd = null,
+        [Description("Window element reference (target=window).")] string? reference = null,
+        [Description("Match threshold 0.1–1.0 (default 0.85).")] double threshold = 0.85,
+        [Description("Max matches to return (default 10).")] int maxResults = 10)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        byte[] needle;
+        try { needle = Convert.FromBase64String(templateBase64 ?? ""); }
+        catch { return "{\"error\":\"templateBase64 is not valid base64\",\"type\":\"bad_request\"}"; }
+        var cap = (target ?? "screen").ToLowerInvariant() switch
+        {
+            "region" => b.CaptureRegion(x ?? 0, y ?? 0, width ?? 0, height ?? 0, ImageFormat.Png, 100),
+            "window" => reference is not null ? b.CaptureWindowByRef(reference, ImageFormat.Png, 100) : b.CaptureWindow(hwnd ?? 0, ImageFormat.Png, 100),
+            _ => b.CaptureScreen(monitor, ImageFormat.Png, 100),
+        };
+        return Json(Deskhand.Core.Services.TemplateMatchService.Find(cap.Bytes, needle, threshold, maxResults, cap.Rect.X, cap.Rect.Y));
+    }
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)

@@ -68,4 +68,6 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement OcrScreen(int? monitor) => Call(FleetMethods.OcrScreen, new { monitor });
     public JsonElement OcrRegion(int x, int y, int width, int height) => Call(FleetMethods.OcrRegion, new { x, y, width, height });
     public JsonElement OcrWindow(long? hwnd, string? reference) => Call(FleetMethods.OcrWindow, new { hwnd, reference });
+    public JsonElement FindImage(string templateBase64, string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, double? threshold, int? maxResults)
+        => Call(FleetMethods.FindImage, new { templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, maxResults });
 }

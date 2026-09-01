@@ -260,6 +260,8 @@ app.MapPost("/agents/{id}/window", (string id, AgentWindowReq r) => Results.Ok(O
 app.MapPost("/agents/{id}/ocr/screen", (string id, AgentOcrScreenReq? r) => Results.Ok(O(id).OcrScreen(r?.Monitor)));
 app.MapPost("/agents/{id}/ocr/region", (string id, AgentOcrRegionReq r) => Results.Ok(O(id).OcrRegion(r.X, r.Y, r.Width, r.Height)));
 app.MapPost("/agents/{id}/ocr/window", (string id, AgentOcrWindowReq r) => Results.Ok(O(id).OcrWindow(r.Hwnd, r.Reference)));
+app.MapPost("/agents/{id}/vision/find", (string id, AgentFindImageReq r) =>
+    Results.Ok(O(id).FindImage(r.TemplateBase64 ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Threshold, r.MaxResults)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -351,3 +353,5 @@ record AgentWindowReq(long Hwnd, string Action, int? X, int? Y, int? Width, int?
 record AgentOcrScreenReq(int? Monitor);
 record AgentOcrRegionReq(int X, int Y, int Width, int Height);
 record AgentOcrWindowReq(long? Hwnd, string? Reference);
+record AgentFindImageReq(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, double? Threshold, int? MaxResults);

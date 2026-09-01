@@ -86,6 +86,17 @@ No bearer token is required for the browser dashboard. The server is protected b
   `DESKHAND_ENABLE_FIREWALL_ADMIN=1`; also requires *armed*, is audited, and needs the host running as
   Administrator. **Deskhand only ever removes rules it opened** (see below).
 
+#### Find an image on screen (`/vision/find`, `deskhand_find_image`)
+
+The visual complement to OCR: locate a small template image (an icon, button, cursor — passed as a base64 PNG)
+inside a screenshot by grayscale **normalized cross-correlation**, then click/drag to the result. `target` is
+`screen` (default), `region` (`x,y,width,height`), or `window` (`hwnd`/`reference`). Returns matches sorted
+best-first, each with a `score` and a **screen-coordinate** box + `centerX,centerY`, plus a `best` shortcut.
+Search is coarse-to-fine (a downscaled pass finds candidates, each refined at full resolution) — a full 2880×1920
+screen scans in about a second — and overlapping hits are de-duplicated. NCC tolerates brightness/contrast
+shifts but **not** scaling or rotation of the template. Requires capture enabled. Fleet parity:
+`deskhand_agent_find_image`, `/agents/{id}/vision/find`.
+
 #### Drag-and-drop (`/mouse/drag`, `deskhand_drag`)
 
 A real press → move → release gesture in one atomic call: `{fromX, fromY, toX, toY, button?, steps?, holdMs?}`.
@@ -223,6 +234,7 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `POST /window` | `{hwnd, action, x?, y?, width?, height?}` | activate·minimize·maximize·restore·close·move·resize·bounds a window (armed) |
 | `POST /ocr/screen` · `/ocr/region` · `/ocr/window` | `{monitor?}` · `{x,y,width,height}` · `{hwnd?/reference?}` | **OCR** on-screen text; words come back with **screen-coordinate boxes** |
 | `POST /mouse/drag` | `{fromX, fromY, toX, toY, button?, steps?, holdMs?}` | **Drag-and-drop** — press, smooth move, release (one atomic gesture) |
+| `POST /vision/find` | `{templateBase64, target?, …, threshold?, maxResults?}` | **Find an image** on screen; matches carry **screen-coordinate centers** |
 | `GET /update/check` · `POST /update/apply` | — | Check GitHub Releases / self-update to the latest (apply is opt-in) |
 | `GET /swagger` · `/swagger/v1/swagger.json` | — | **OpenAPI** spec + interactive Swagger UI for this API |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |

@@ -278,4 +278,10 @@ public static class FleetTools
     [McpServerTool(Name = "deskhand_agent_ocr_window"), Description("OCR a window on a fleet PC by nativeWindowHandle or element reference. Returns text + word boxes in screen coordinates.")]
     public static string AgentOcrWindow(AgentRegistry r, FleetAudit audit, string agentId, long? hwnd = null, string? reference = null)
         => Raw(O(r, audit, agentId, "ocr_window").OcrWindow(hwnd, reference));
+
+    [McpServerTool(Name = "deskhand_agent_find_image"), Description("Find a template image (base64 PNG) on a fleet PC's screen by normalized cross-correlation. target: screen (default) / region (x,y,width,height) / window (hwnd or reference). Returns matches with SCREEN-coordinate centers, sorted best-first. threshold 0.1-1.0 (default 0.85).")]
+    public static string AgentFindImage(AgentRegistry r, FleetAudit audit, string agentId, string templateBase64,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, double threshold = 0.85, int maxResults = 10)
+        => Raw(O(r, audit, agentId, "find_image").FindImage(templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, maxResults));
 }

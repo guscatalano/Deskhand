@@ -593,6 +593,17 @@ public static class DeskhandTools
         return Json(res);
     }
 
+    [McpServerTool(Name = "deskhand_fetch_url"), Description("Download an http/https URL to a file ON THIS MACHINE (e.g. pull an installer/asset onto the target). path is a full destination path or a folder (URL filename kept); omit for a temp file. Size-capped. Returns { ok, url, path, bytes, contentType, error? }. Outbound network request. Requires armed; audited.")]
+    public static string FetchUrl(ControlState state, AuditLog audit, string url,
+        [Description("Destination path or folder (optional; default a temp file).")] string? path = null,
+        [Description("Max bytes to download (optional; default/cap 500 MB).")] long? maxBytes = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = Deskhand.Core.Services.FetchService.DownloadAsync(url, path, maxBytes).GetAwaiter().GetResult();
+        audit.Record("fetch", $"{url} -> {res.Path}", res.Ok ? $"{res.Bytes} bytes" : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)

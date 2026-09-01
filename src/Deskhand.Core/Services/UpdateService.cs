@@ -33,6 +33,9 @@ public static class UpdateService
         }
     }
 
+    /// <summary>The most recent check result, cached for a fast /update/status (populated at startup).</summary>
+    public static UpdateCheckDto? Cached { get; private set; }
+
     public static async Task<UpdateCheckDto> CheckAsync()
     {
         string cur = BuildInfo.Version;
@@ -40,15 +43,17 @@ public static class UpdateService
         {
             var rel = await LatestReleaseAsync();
             if (rel is null)
-                return new UpdateCheckDto(cur, null, false, null, null, null, null, 0, Enabled, "Could not reach GitHub Releases.");
+                return Cache(new UpdateCheckDto(cur, null, false, null, null, null, null, 0, Enabled, "Could not reach GitHub Releases."));
 
             var (tag, name, notes, published, assetName, assetSize) = rel.Value;
             string latest = tag.TrimStart('v', 'V');
             bool newer = CompareVersions(latest, cur) > 0;
-            return new UpdateCheckDto(cur, latest, newer, name, notes, published, assetName, assetSize, Enabled);
+            return Cache(new UpdateCheckDto(cur, latest, newer, name, notes, published, assetName, assetSize, Enabled));
         }
-        catch (Exception ex) { return new UpdateCheckDto(cur, null, false, null, null, null, null, 0, Enabled, ex.Message); }
+        catch (Exception ex) { return Cache(new UpdateCheckDto(cur, null, false, null, null, null, null, 0, Enabled, ex.Message)); }
     }
+
+    private static UpdateCheckDto Cache(UpdateCheckDto d) { Cached = d; return d; }
 
     public static async Task<UpdateApplyDto> ApplyAsync()
     {

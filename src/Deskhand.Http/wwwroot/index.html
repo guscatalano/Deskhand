@@ -238,9 +238,11 @@
   <span class="tabsep"></span>
   <button class="tabbtn" data-tab="shell">Shell</button>
   <button class="tabbtn" data-tab="screen">Screen</button>
+  <button class="tabbtn" data-tab="audit">Audit</button>
   <span class="spacer"></span>
   <button class="tabbtn" data-tab="connect">Connect</button>
 </nav>
+<a id="updBanner" href="https://github.com/guscatalano/Deskhand/releases" target="_blank" rel="noopener" style="display:none;text-decoration:none"></a>
 
 <div class="tabwrap">
   <!-- EXPLORER -->
@@ -325,6 +327,19 @@
       </div>
       <div class="coordbar" id="fwMeta" style="margin:10px 0 6px"></div>
       <div id="fwBody"></div>
+    </div>
+  </div>
+
+  <!-- AUDIT -->
+  <div class="tab" id="tab-audit">
+    <div style="padding:14px 16px 60px;max-width:1100px;width:100%">
+      <div class="sect"><div class="h">Audit log <span class="count" id="auditCount"></span></div></div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="auditFilter" placeholder="filter action/detail…" style="flex:1;font-size:12px">
+        <button class="btn p" id="auditRefresh">Refresh</button>
+      </div>
+      <div class="coordbar" id="auditMeta" style="margin:10px 0 6px"></div>
+      <div id="auditBody"></div>
     </div>
   </div>
 
@@ -1239,6 +1254,46 @@ $("#fwRefresh").onclick=loadFirewall;
 ["fwFltPort","fwFltText"].forEach(id=>$("#"+id).addEventListener("keydown",e=>{ if(e.key==="Enter") loadFirewall(); }));
 $("#fwPort").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#fwOpen").click(); });
 
+/* ---------- audit log viewer ---------- */
+let auditLoaded=false;
+function shortTs(ts){ try{ return new Date(ts).toLocaleString(); }catch{ return ts; } }
+const loadAudit=guard(async()=>{
+  auditLoaded=true;
+  const d=await api("/audit/recent?limit=300");
+  const f=($("#auditFilter").value||"").toLowerCase();
+  $("#auditCount").textContent=(d.count||0);
+  const body=$("#auditBody"); body.innerHTML="";
+  const t=elm("table","fwtable");
+  t.innerHTML='<thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th><th>Status</th></tr></thead>';
+  const tb=elm("tbody"); let shown=0;
+  (d.entries||[]).forEach(r=>{
+    const ts=r.ts||"", user=r.user||"", action=r.action||"", detail=r.detail||"", status=r.status||"";
+    if(f && !((action+" "+detail+" "+status+" "+user).toLowerCase().includes(f))) return;
+    shown++;
+    const bad=/fail|error|timeout|denied/i.test(status);
+    const tr=elm("tr");
+    tr.innerHTML='<td class="mono" style="white-space:nowrap">'+fwEsc(shortTs(ts))+'</td><td>'+fwEsc(user)+'</td><td>'+fwEsc(action)+'</td><td class="fwname" title="'+fwEsc(detail)+'">'+fwEsc(detail)+'</td><td style="color:'+(bad?'var(--crit)':'var(--good)')+'">'+fwEsc(status)+'</td>';
+    tb.append(tr);
+  });
+  t.append(tb); body.append(t);
+  $("#auditMeta").innerHTML=d.error?('<span style="color:var(--warn)">'+fwEsc(d.error)+'</span>'):('showing <b>'+shown+'</b>'+(f?' (filtered)':'')+' of '+(d.count||0)+' recent');
+  if(!shown && !d.error) body.innerHTML='<div class="lbl" style="color:var(--ink-3);padding:8px">No entries.</div>';
+});
+$("#auditRefresh").onclick=loadAudit;
+$("#auditFilter").addEventListener("input",()=>{ if(auditLoaded) loadAudit(); });
+
+/* ---------- update banner ---------- */
+(async()=>{
+  try{
+    const u=await api("/update/status");
+    if(u && u.updateAvailable){
+      const b=$("#updBanner");
+      b.textContent="⬆ Deskhand "+u.latest+" is available (you have "+u.current+"). "+(u.enabled?"Self-update is enabled — POST /update/apply.":"Click for release notes.");
+      b.style.cssText="display:block;background:var(--accent-soft);color:var(--accent);padding:7px 16px;font-size:12.5px;border-bottom:1px solid var(--line);text-decoration:none";
+    }
+  }catch{}
+})();
+
 /* ---------- system (about this machine) ---------- */
 let sysLoaded=false;
 const loadSystem=guard(async()=>{
@@ -1519,6 +1574,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="hardware"&&!hwLoaded) loadHardware();
   if(b.dataset.tab==="software"&&!swLoaded) loadSoftware();
   if(b.dataset.tab==="firewall"&&!fwLoaded) loadFirewall();
+  if(b.dataset.tab==="audit"&&!auditLoaded) loadAudit();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

@@ -20,6 +20,7 @@
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
     <ProjectReference Include="..\Deskhand.Core\Deskhand.Core.csproj" />
     <ProjectReference Include="..\Deskhand.Ui\Deskhand.Ui.csproj" />
     <ProjectReference Include="..\Deskhand.McpTools\Deskhand.McpTools.csproj" />

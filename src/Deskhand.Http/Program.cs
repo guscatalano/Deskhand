@@ -16,6 +16,10 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 
+// Allow running as a Windows Service (integrates with the SCM). No-op when launched normally, so the same exe
+// still runs as a console app / dashboard. Install with installer/install-service.ps1.
+builder.Host.UseWindowsService(o => o.ServiceName = "Deskhand");
+
 int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_PORT"), out var p) ? p : 8791;
 
 // Token is OPTIONAL. The browser dashboard never needs one (it is same-origin).
@@ -95,6 +99,8 @@ builder.Services.AddSingleton(screenRecorder);
 builder.Services.AddSingleton(processDumper);
 builder.Services.AddSingleton(screenshotStore);
 builder.Services.AddSingleton(inputRecorder);
+builder.Services.AddSingleton(new Deskhand.Core.Services.WebhookService());
+builder.Services.AddHostedService<WebhookForwarder>();
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
@@ -116,6 +122,10 @@ builder.Services.AddSwaggerGen(o => o.SwaggerDoc("v1", new Microsoft.OpenApi.Mod
 }));
 
 var app = builder.Build();
+
+// Kick off a one-shot update check in the background so the dashboard can show an "update available" banner
+// (served fast from the cache at /update/status). Never blocks startup; failures are swallowed.
+_ = Deskhand.Core.Services.UpdateService.CheckAsync();
 
 app.UseSwagger();
 app.UseSwaggerUI(o => { o.SwaggerEndpoint("/swagger/v1/swagger.json", "Deskhand v1"); o.DocumentTitle = "Deskhand API"; });
@@ -143,7 +153,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path.Value ?? "";
-    if (path is "/health") { await next(); return; }
+    if (path is "/health" or "/metrics") { await next(); return; }   // liveness + Prometheus scrape: no token
     if (path.StartsWith("/mcp", StringComparison.Ordinal))
     {
         // MCP has no same-origin browser; when the port is exposed it must carry the token.
@@ -757,6 +767,40 @@ api.MapPost("/update/apply", async (ControlState st, AuditLog al) =>
     al.Record("update_apply", $"{res.From}->{res.To}", res.Ok ? res.Message ?? "ok" : $"FAIL {res.Error}");
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
+// Fast cached update status (from the startup check) — for the dashboard banner.
+api.MapGet("/update/status", () => Results.Ok(Deskhand.Core.Services.UpdateService.Cached ?? new Deskhand.Core.Services.UpdateCheckDto(Deskhand.Core.BuildInfo.Version, null, false, null, null, null, null, 0, Deskhand.Core.Services.UpdateService.Enabled, "not checked yet")));
+
+// Prometheus metrics (text/plain). No token needed for scraping on loopback; harmless read-only gauges.
+api.MapGet("/metrics", (ControlState st) => Results.Text(Deskhand.Core.Services.MetricsService.Render(st.Armed, st.CaptureEnabled, Deskhand.Core.BuildInfo.Version), "text/plain; version=0.0.4"));
+
+// Fetch a URL to a file on this machine (outbound). Armed + audited.
+api.MapPost("/fetch", async (ControlState st, AuditLog al, FetchRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = await Deskhand.Core.Services.FetchService.DownloadAsync(r.Url, r.Path, r.MaxBytes);
+    al.Record("fetch", $"{r.Url} -> {res.Path}", res.Ok ? $"{res.Bytes} bytes" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+
+// Audit log viewer: tail today's JSONL. Read-only.
+api.MapGet("/audit/recent", (AuditLog al, int? limit) => Results.Ok(ReadAudit(al, limit ?? 200)));
+
+// Webhooks: register outbound sinks for UI events. List is read; add/remove armed + audited.
+api.MapGet("/webhooks", (Deskhand.Core.Services.WebhookService wh) => Results.Ok(new { urls = wh.List() }));
+api.MapPost("/webhooks", (ControlState st, AuditLog al, Deskhand.Core.Services.WebhookService wh, WebhookRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    bool ok = wh.Add(r.Url);
+    al.Record("webhook_add", r.Url ?? "", ok ? "ok" : "invalid/duplicate");
+    return ok ? Results.Ok(new { ok = true, urls = wh.List() }) : Results.Json(new { error = "invalid or duplicate URL (http/https required)", type = "bad_request" }, statusCode: 400);
+});
+api.MapDelete("/webhooks", (ControlState st, AuditLog al, Deskhand.Core.Services.WebhookService wh, string url) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    bool ok = wh.Remove(url);
+    al.Record("webhook_remove", url, ok ? "ok" : "not found");
+    return Results.Ok(new { ok, urls = wh.List() });
+});
 
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
@@ -908,6 +952,40 @@ static IResult Ok() => Results.Ok(new { ok = true });
 static Deskhand.Core.Services.CaptureSpec Spec(string? target, int? mon, int? x, int? y, int? w, int? h, long? hwnd, string? reference)
     => new(target, mon, x, y, w, h, hwnd, reference);
 
+static object ReadAudit(AuditLog al, int limit)
+{
+    limit = Math.Clamp(limit, 1, 2000);
+    try
+    {
+        var files = System.IO.Directory.GetFiles(al.Directory, "audit-*.jsonl").OrderByDescending(f => f).ToList();
+        var lines = new List<string>();
+        foreach (var f in files)
+        {
+            var all = ReadLinesShared(f);
+            for (int i = all.Count - 1; i >= 0 && lines.Count < limit; i--)
+                if (all[i].Trim().Length > 0) lines.Add(all[i]);
+            if (lines.Count >= limit) break;
+        }
+        var entries = lines.Select(l =>
+        {
+            try { return (object)JsonSerializer.Deserialize<JsonElement>(l); }
+            catch { return new { raw = l }; }
+        }).ToList();
+        return new { count = entries.Count, entries };
+    }
+    catch (Exception ex) { return new { error = ex.Message, entries = Array.Empty<object>() }; }
+}
+
+static List<string> ReadLinesShared(string path)
+{
+    using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    using var sr = new StreamReader(fs);
+    var list = new List<string>();
+    string? line;
+    while ((line = sr.ReadLine()) is not null) list.Add(line);
+    return list;
+}
+
 static ImageFormat ParseFormat(string? f) =>
     f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
 
@@ -984,6 +1062,21 @@ record EnvSetRequest(string Name, string? Value, string? Scope);
 record TaskActionRequest(string Task, string Action);
 record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
 record UacRespondRequest(bool? Accept, int? TimeoutMs);
+record FetchRequest(string? Url, string? Path, long? MaxBytes);
+record WebhookRequest(string? Url);
+
+// Forwards live UI events to registered webhook subscribers (outbound event push).
+sealed class WebhookForwarder(Deskhand.Core.Events.EventHub hub, Deskhand.Core.Services.WebhookService hooks)
+    : Microsoft.Extensions.Hosting.BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        var (reader, dispose) = hub.Subscribe();
+        try { await foreach (var e in reader.ReadAllAsync(ct)) await hooks.Deliver(new { type = "ui_event", @event = e }); }
+        catch (OperationCanceledException) { }
+        finally { dispose(); }
+    }
+}
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

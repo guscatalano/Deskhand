@@ -86,6 +86,41 @@ No bearer token is required for the browser dashboard. The server is protected b
   `DESKHAND_ENABLE_FIREWALL_ADMIN=1`; also requires *armed*, is audited, and needs the host running as
   Administrator. **Deskhand only ever removes rules it opened** (see below).
 
+#### Reliable automation: wait, then act (`/vision/wait-*`, `/vision/click-*`, `/vision/pixel`)
+
+The lookups above become *reliable* when you can wait on them and act in one shot:
+- **`wait_for_image` / `wait_for_text`** — poll until a template or OCR string appears (`absent:true` → until it
+  disappears), with a timeout. The visual twin of `wait_for_element`.
+- **`wait_stable`** — block until a screen region stops changing (`waitForChange:true` → until it starts). Kills
+  `sleep`-based flakiness after a click or navigation.
+- **`click_image` / `click_text`** — find and click in one call (optionally waiting first).
+- **`get_pixel`** — the RGB of one pixel, for cheap state checks.
+
+#### System control (`/input/paste`, `/process/control`, `/service/control`, `/env`, `/task`)
+
+Turns the read-only inventory into control: **paste** text fast via the clipboard + Ctrl+V; **process** kill /
+suspend / resume / reprioritize; **service** start / stop / restart; **environment variables** get/set at
+process/user/machine scope; **scheduled task** run / end / enable / disable. All mutations require *armed* and are
+audited; privileged ones surface a clean access error when not elevated.
+
+#### UAC (`/uac`, `/uac/config`, `/uac/respond`, `deskhand_uac_*`)
+
+When elevation prompts get in an agent's way:
+- **`/uac`** reports whether UAC is on, the admin consent behavior, and whether prompts are *automatable* (on the
+  normal desktop).
+- **`/uac/config`** (needs elevation) sets `EnableLUA` on/off (reboot), moves prompts off the **secure desktop**
+  (`promptOnSecureDesktop:false`) so they can be answered, or sets `adminBehavior` — where **`autoApprove:true`
+  (behavior 0) makes admins elevate silently with no prompt at all**, the most reliable "accept everything".
+- **`/uac/respond`** best-effort presses Yes/No on a live prompt — which only works when the prompt is on the
+  normal desktop *and* Deskhand runs elevated (Windows isolates the secure desktop by design).
+
+#### Observability & integration (`/metrics`, `/audit/recent`, `/webhooks`, `/fetch`, self-update banner)
+
+Prometheus **`/metrics`** (scrape without a token on loopback); an **Audit** dashboard tab over `/audit/recent`;
+outbound **webhooks** that POST UI events to registered URLs; **`/fetch`** to pull a URL onto the box; and a
+dashboard **banner** when a newer release exists (from the startup update check). Run the server itself as a
+Windows service with `installer/install-service.ps1` (Session-0 caveats noted in the script).
+
 #### Find an image on screen (`/vision/find`, `deskhand_find_image`)
 
 The visual complement to OCR: locate a small template image (an icon, button, cursor — passed as a base64 PNG)
@@ -235,6 +270,21 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `POST /ocr/screen` · `/ocr/region` · `/ocr/window` | `{monitor?}` · `{x,y,width,height}` · `{hwnd?/reference?}` | **OCR** on-screen text; words come back with **screen-coordinate boxes** |
 | `POST /mouse/drag` | `{fromX, fromY, toX, toY, button?, steps?, holdMs?}` | **Drag-and-drop** — press, smooth move, release (one atomic gesture) |
 | `POST /vision/find` | `{templateBase64, target?, …, threshold?, maxResults?}` | **Find an image** on screen; matches carry **screen-coordinate centers** |
+| `POST /vision/wait-image` · `/vision/wait-text` | `{…, timeoutMs?, absent?}` | Poll until a template / OCR string appears (or disappears) |
+| `POST /vision/wait-stable` | `{…region, settleMs?, waitForChange?}` | Block until a region settles (or starts changing) |
+| `POST /vision/click-image` · `/vision/click-text` | `{…, button?, count?, timeoutMs?}` | Find-then-click an image / OCR word in one call |
+| `GET /vision/pixel` | `?x=&y=` | RGB of one screen pixel |
+| `POST /input/paste` | `{text}` | Set clipboard + Ctrl+V (fast exact Unicode entry) |
+| `POST /process/control` | `{pid, action, tree?, level?}` | kill · suspend · resume · priority |
+| `POST /service/control` · `GET /service/state` | `{name, action}` | start · stop · restart a Windows service (WMI) |
+| `GET /env` · `POST /env` | `{name, value?, scope?}` | Read/set env vars (process·user·machine) |
+| `POST /task` | `{task, action}` | Scheduled task run · end · enable · disable |
+| `GET /uac` · `POST /uac/config` · `POST /uac/respond` | see below | Read/configure UAC; answer a live consent prompt |
+| `POST /fetch` | `{url, path?, maxBytes?}` | Download a URL to a file on the box |
+| `GET /metrics` | — | Prometheus gauges (no token; loopback scrape) |
+| `GET /audit/recent` | `?limit=` | Tail the audit log (also the dashboard **Audit** tab) |
+| `GET/POST/DELETE /webhooks` | `{url}` | Register outbound sinks for UI events |
+| `GET /update/status` | — | Cached update check (drives the dashboard banner) |
 | `GET /update/check` · `POST /update/apply` | — | Check GitHub Releases / self-update to the latest (apply is opt-in) |
 | `GET /swagger` · `/swagger/v1/swagger.json` | — | **OpenAPI** spec + interactive Swagger UI for this API |
 | `POST /uia/tree` | `{rootRef?, depth?, maxChildren?}` | Element subtree |

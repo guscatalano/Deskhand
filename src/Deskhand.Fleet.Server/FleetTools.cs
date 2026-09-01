@@ -284,4 +284,38 @@ public static class FleetTools
         string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
         long? hwnd = null, string? reference = null, double threshold = 0.85, int maxResults = 10)
         => Raw(O(r, audit, agentId, "find_image").FindImage(templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, maxResults));
+
+    [McpServerTool(Name = "deskhand_agent_wait_for_image"), Description("On a fleet PC, poll until a template image (base64 PNG) appears (absent=true → disappears) or timeoutMs elapses. target screen|region|window. Returns { found, waitedMs, result }.")]
+    public static string AgentWaitForImage(AgentRegistry r, FleetAudit audit, string agentId, string templateBase64,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, double threshold = 0.85, int timeoutMs = 5000, bool absent = false, int pollMs = 250)
+        => Raw(O(r, audit, agentId, "wait_for_image").WaitForImage(templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, timeoutMs, absent, pollMs));
+
+    [McpServerTool(Name = "deskhand_agent_wait_for_text"), Description("On a fleet PC, poll with OCR until text appears (absent=true → disappears) or timeoutMs. Returns { found, waitedMs, matchText, centerX, centerY }.")]
+    public static string AgentWaitForText(AgentRegistry r, FleetAudit audit, string agentId, string text,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, int timeoutMs = 5000, bool absent = false, int pollMs = 250)
+        => Raw(O(r, audit, agentId, "wait_for_text").WaitForText(text, target, monitor, x, y, width, height, hwnd, reference, timeoutMs, absent, pollMs));
+
+    [McpServerTool(Name = "deskhand_agent_wait_stable"), Description("On a fleet PC, block until a screen area settles (waitForChange=true → until it starts changing) or timeoutMs. Returns { ok, waitedMs, lastDiff, mode }.")]
+    public static string AgentWaitStable(AgentRegistry r, FleetAudit audit, string agentId,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, int settleMs = 700, int timeoutMs = 8000, int pollMs = 250, double epsilon = 0.01, bool waitForChange = false)
+        => Raw(O(r, audit, agentId, "wait_stable").WaitStable(target, monitor, x, y, width, height, hwnd, reference, settleMs, timeoutMs, pollMs, epsilon, waitForChange));
+
+    [McpServerTool(Name = "deskhand_agent_click_image"), Description("On a fleet PC, find a template image and click its best match (optionally wait timeoutMs). button left|right|middle; count 2=double. Returns { clicked, x, y, score }.")]
+    public static string AgentClickImage(AgentRegistry r, FleetAudit audit, string agentId, string templateBase64,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, double threshold = 0.85, string button = "left", int count = 1, int timeoutMs = 0)
+        => Raw(O(r, audit, agentId, "click_image").ClickImage(templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, button, count, timeoutMs));
+
+    [McpServerTool(Name = "deskhand_agent_click_text"), Description("On a fleet PC, find on-screen text with OCR and click it (optionally wait timeoutMs). Returns { clicked, x, y }.")]
+    public static string AgentClickText(AgentRegistry r, FleetAudit audit, string agentId, string text,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, string button = "left", int count = 1, int timeoutMs = 0)
+        => Raw(O(r, audit, agentId, "click_text").ClickText(text, target, monitor, x, y, width, height, hwnd, reference, button, count, timeoutMs));
+
+    [McpServerTool(Name = "deskhand_agent_get_pixel"), Description("Read the RGB color of a pixel on a fleet PC's screen. Returns { ok, x, y, r, g, b, hex }.")]
+    public static string AgentGetPixel(AgentRegistry r, FleetAudit audit, string agentId, int x, int y)
+        => Raw(O(r, audit, agentId, "get_pixel").GetPixel(x, y));
 }

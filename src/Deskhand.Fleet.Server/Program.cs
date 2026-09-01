@@ -262,6 +262,17 @@ app.MapPost("/agents/{id}/ocr/region", (string id, AgentOcrRegionReq r) => Resul
 app.MapPost("/agents/{id}/ocr/window", (string id, AgentOcrWindowReq r) => Results.Ok(O(id).OcrWindow(r.Hwnd, r.Reference)));
 app.MapPost("/agents/{id}/vision/find", (string id, AgentFindImageReq r) =>
     Results.Ok(O(id).FindImage(r.TemplateBase64 ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Threshold, r.MaxResults)));
+app.MapPost("/agents/{id}/vision/wait-image", (string id, AgentWaitImageReq r) =>
+    Results.Ok(O(id).WaitForImage(r.TemplateBase64 ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Threshold, r.TimeoutMs, r.Absent ?? false, r.PollMs)));
+app.MapPost("/agents/{id}/vision/wait-text", (string id, AgentWaitTextReq r) =>
+    Results.Ok(O(id).WaitForText(r.Text ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.TimeoutMs, r.Absent ?? false, r.PollMs)));
+app.MapPost("/agents/{id}/vision/wait-stable", (string id, AgentStableReq r) =>
+    Results.Ok(O(id).WaitStable(r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.SettleMs, r.TimeoutMs, r.PollMs, r.Epsilon, r.WaitForChange ?? false)));
+app.MapPost("/agents/{id}/vision/click-image", (string id, AgentClickImageReq r) =>
+    Results.Ok(O(id).ClickImage(r.TemplateBase64 ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Threshold, r.Button, r.Count, r.TimeoutMs)));
+app.MapPost("/agents/{id}/vision/click-text", (string id, AgentClickTextReq r) =>
+    Results.Ok(O(id).ClickText(r.Text ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Button, r.Count, r.TimeoutMs)));
+app.MapGet("/agents/{id}/vision/pixel", (string id, int x, int y) => Results.Ok(O(id).GetPixel(x, y)));
 
 // ---- uia act ----
 app.MapPost("/agents/{id}/uia/invoke", (string id, RefReq r) => { A(id).Invoke(r.Reference); return Results.Ok(new { ok = true }); });
@@ -355,3 +366,13 @@ record AgentOcrRegionReq(int X, int Y, int Width, int Height);
 record AgentOcrWindowReq(long? Hwnd, string? Reference);
 record AgentFindImageReq(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
     long? Hwnd, string? Reference, double? Threshold, int? MaxResults);
+record AgentWaitImageReq(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, double? Threshold, int? TimeoutMs, bool? Absent, int? PollMs);
+record AgentWaitTextReq(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, int? TimeoutMs, bool? Absent, int? PollMs);
+record AgentStableReq(string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, int? SettleMs, int? TimeoutMs, int? PollMs, double? Epsilon, bool? WaitForChange);
+record AgentClickImageReq(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, double? Threshold, string? Button, int? Count, int? TimeoutMs);
+record AgentClickTextReq(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, string? Button, int? Count, int? TimeoutMs);

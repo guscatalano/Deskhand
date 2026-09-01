@@ -616,6 +616,44 @@ api.MapPost("/vision/find", (IAutomationBackend b, ControlState st, VisionFindRe
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
 
+// Vision waits + click-on-match + pixel probe. Waits/pixel are capture-class; click-* also drive input, so the
+// governed backend enforces armed on the click itself.
+IResult CapGate(ControlState st) => Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
+api.MapPost("/vision/wait-image", (IAutomationBackend b, ControlState st, VisionWaitImageRequest r) =>
+{
+    if (!st.CaptureEnabled) return CapGate(st);
+    byte[] needle; try { needle = Convert.FromBase64String(r.TemplateBase64 ?? ""); } catch { return Results.Json(new { error = "bad base64", type = "bad_request" }, statusCode: 400); }
+    var res = Deskhand.Core.Services.VisionOps.WaitForImage(b, needle, Spec(r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference), r.Threshold ?? 0.85, r.TimeoutMs ?? 5000, !(r.Absent ?? false), r.PollMs ?? 250);
+    return Results.Json(res, statusCode: res.Found ? 200 : 408);
+});
+api.MapPost("/vision/wait-text", (IAutomationBackend b, ControlState st, VisionWaitTextRequest r) =>
+{
+    if (!st.CaptureEnabled) return CapGate(st);
+    var res = Deskhand.Core.Services.VisionOps.WaitForText(b, r.Text ?? "", Spec(r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference), r.TimeoutMs ?? 5000, !(r.Absent ?? false), r.PollMs ?? 250);
+    return Results.Json(res, statusCode: res.Found ? 200 : 408);
+});
+api.MapPost("/vision/wait-stable", (IAutomationBackend b, ControlState st, VisionStableRequest r) =>
+{
+    if (!st.CaptureEnabled) return CapGate(st);
+    var res = Deskhand.Core.Services.VisionOps.WaitStable(b, Spec(r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference), r.SettleMs ?? 700, r.TimeoutMs ?? 8000, r.PollMs ?? 250, r.Epsilon ?? 0.01, r.WaitForChange ?? false);
+    return Results.Json(res, statusCode: res.Ok ? 200 : 408);
+});
+api.MapPost("/vision/click-image", (IAutomationBackend b, ControlState st, VisionClickImageRequest r) =>
+{
+    if (!st.CaptureEnabled) return CapGate(st);
+    byte[] needle; try { needle = Convert.FromBase64String(r.TemplateBase64 ?? ""); } catch { return Results.Json(new { error = "bad base64", type = "bad_request" }, statusCode: 400); }
+    var res = Deskhand.Core.Services.VisionOps.ClickImage(b, needle, Spec(r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference), r.Threshold ?? 0.85, r.Button ?? "left", r.Count ?? 1, r.TimeoutMs ?? 0);
+    return Results.Json(res, statusCode: res.Clicked ? 200 : 404);
+});
+api.MapPost("/vision/click-text", (IAutomationBackend b, ControlState st, VisionClickTextRequest r) =>
+{
+    if (!st.CaptureEnabled) return CapGate(st);
+    var res = Deskhand.Core.Services.VisionOps.ClickText(b, r.Text ?? "", Spec(r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference), r.Button ?? "left", r.Count ?? 1, r.TimeoutMs ?? 0);
+    return Results.Json(res, statusCode: res.Clicked ? 200 : 404);
+});
+api.MapGet("/vision/pixel", (IAutomationBackend b, ControlState st, int x, int y) =>
+    st.CaptureEnabled ? Results.Ok(Deskhand.Core.Services.VisionOps.GetPixel(b, x, y)) : CapGate(st));
+
 // Self-update: check GitHub Releases; apply downloads the latest zip and relaunches. Apply is opt-in
 // (DESKHAND_ENABLE_SELF_UPDATE), armed, audited — it stops and replaces this running server.
 api.MapGet("/update/check", async () => Results.Ok(await Deskhand.Core.Services.UpdateService.CheckAsync()));
@@ -776,6 +814,9 @@ return;
 
 static IResult Ok() => Results.Ok(new { ok = true });
 
+static Deskhand.Core.Services.CaptureSpec Spec(string? target, int? mon, int? x, int? y, int? w, int? h, long? hwnd, string? reference)
+    => new(target, mon, x, y, w, h, hwnd, reference);
+
 static ImageFormat ParseFormat(string? f) =>
     f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
 
@@ -835,6 +876,16 @@ record WindowActionRequest(long Hwnd, string Action, int? X, int? Y, int? Width,
 record OcrScreenRequest(int? Monitor);
 record VisionFindRequest(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
     long? Hwnd, string? Reference, double? Threshold, int? MaxResults);
+record VisionWaitImageRequest(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, double? Threshold, int? TimeoutMs, bool? Absent, int? PollMs);
+record VisionWaitTextRequest(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, int? TimeoutMs, bool? Absent, int? PollMs);
+record VisionStableRequest(string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, int? SettleMs, int? TimeoutMs, int? PollMs, double? Epsilon, bool? WaitForChange);
+record VisionClickImageRequest(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, double? Threshold, string? Button, int? Count, int? TimeoutMs);
+record VisionClickTextRequest(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
+    long? Hwnd, string? Reference, string? Button, int? Count, int? TimeoutMs);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

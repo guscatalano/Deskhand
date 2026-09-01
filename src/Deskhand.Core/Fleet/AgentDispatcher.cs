@@ -166,6 +166,18 @@ public static class AgentDispatcher
                 };
                 return Services.TemplateMatchService.Find(cap.Bytes, needle, a.DblN("threshold") ?? 0.85, a.Int("maxResults", 10), cap.Rect.X, cap.Rect.Y);
             }
+            case FleetMethods.WaitForImage:
+                return Services.VisionOps.WaitForImage(b, B64(a, "templateBase64"), SpecOf(a), a.DblN("threshold") ?? 0.85, a.Int("timeoutMs", 5000), !a.Bool("absent"), a.Int("pollMs", 250));
+            case FleetMethods.WaitForText:
+                return Services.VisionOps.WaitForText(b, a.Str("text") ?? "", SpecOf(a), a.Int("timeoutMs", 5000), !a.Bool("absent"), a.Int("pollMs", 250));
+            case FleetMethods.WaitStable:
+                return Services.VisionOps.WaitStable(b, SpecOf(a), a.Int("settleMs", 700), a.Int("timeoutMs", 8000), a.Int("pollMs", 250), a.DblN("epsilon") ?? 0.01, a.Bool("waitForChange"));
+            case FleetMethods.ClickImage:
+                return Services.VisionOps.ClickImage(b, B64(a, "templateBase64"), SpecOf(a), a.DblN("threshold") ?? 0.85, a.Str("button") ?? "left", a.Int("count", 1), a.Int("timeoutMs", 0));
+            case FleetMethods.ClickText:
+                return Services.VisionOps.ClickText(b, a.Str("text") ?? "", SpecOf(a), a.Str("button") ?? "left", a.Int("count", 1), a.Int("timeoutMs", 0));
+            case FleetMethods.GetPixel:
+                return Services.VisionOps.GetPixel(b, a.Int("x"), a.Int("y"));
             case FleetMethods.SystemInfo:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would report the connector's machine, not the target).");
                 return Services.SystemInfoService.Get();
@@ -228,6 +240,15 @@ public static class AgentDispatcher
         svc ?? throw new InvalidOperationException($"This agent has no {name} service.");
 
     private static object Void(Action act) { act(); return new { ok = true }; }
+
+    private static byte[] B64(JsonElement a, string name)
+    {
+        try { return Convert.FromBase64String(a.Str(name) ?? ""); }
+        catch { throw new ArgumentException($"{name} is not valid base64."); }
+    }
+
+    private static Services.CaptureSpec SpecOf(JsonElement a) =>
+        new(a.Str("target"), a.IntN("monitor"), a.IntN("x"), a.IntN("y"), a.IntN("width"), a.IntN("height"), a.Long("hwnd", 0), a.Str("reference"));
 
     private static ImageFormat Fmt(JsonElement a) =>
         a.Str("format")?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;

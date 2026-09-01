@@ -70,4 +70,15 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement OcrWindow(long? hwnd, string? reference) => Call(FleetMethods.OcrWindow, new { hwnd, reference });
     public JsonElement FindImage(string templateBase64, string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, double? threshold, int? maxResults)
         => Call(FleetMethods.FindImage, new { templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, maxResults });
+    public JsonElement WaitForImage(string templateBase64, string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, double? threshold, int? timeoutMs, bool absent, int? pollMs)
+        => Call(FleetMethods.WaitForImage, new { templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, timeoutMs, absent, pollMs });
+    public JsonElement WaitForText(string text, string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, int? timeoutMs, bool absent, int? pollMs)
+        => Call(FleetMethods.WaitForText, new { text, target, monitor, x, y, width, height, hwnd, reference, timeoutMs, absent, pollMs });
+    public JsonElement WaitStable(string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, int? settleMs, int? timeoutMs, int? pollMs, double? epsilon, bool waitForChange)
+        => Call(FleetMethods.WaitStable, new { target, monitor, x, y, width, height, hwnd, reference, settleMs, timeoutMs, pollMs, epsilon, waitForChange });
+    public JsonElement ClickImage(string templateBase64, string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, double? threshold, string? button, int? count, int? timeoutMs)
+        => Call(FleetMethods.ClickImage, new { templateBase64, target, monitor, x, y, width, height, hwnd, reference, threshold, button, count, timeoutMs });
+    public JsonElement ClickText(string text, string? target, int? monitor, int? x, int? y, int? width, int? height, long? hwnd, string? reference, string? button, int? count, int? timeoutMs)
+        => Call(FleetMethods.ClickText, new { text, target, monitor, x, y, width, height, hwnd, reference, button, count, timeoutMs });
+    public JsonElement GetPixel(int x, int y) => Call(FleetMethods.GetPixel, new { x, y });
 }

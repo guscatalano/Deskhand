@@ -440,6 +440,63 @@ public static class DeskhandTools
         return Json(Deskhand.Core.Services.TemplateMatchService.Find(cap.Bytes, needle, threshold, maxResults, cap.Rect.X, cap.Rect.Y));
     }
 
+    [McpServerTool(Name = "deskhand_wait_for_image"), Description("Poll the screen until a template image (base64 PNG) appears (or, with absent=true, disappears), or the timeout elapses — the visual twin of wait_for_element. target screen|region|window. Returns { found, waitedMs, result:{matches[],best} } with SCREEN-coordinate boxes. Requires capture enabled.")]
+    public static string WaitForImage(IAutomationBackend b, ControlState state, string templateBase64,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, double threshold = 0.85, int timeoutMs = 5000, bool absent = false, int pollMs = 250)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        byte[] needle; try { needle = Convert.FromBase64String(templateBase64 ?? ""); } catch { return "{\"error\":\"templateBase64 is not valid base64\",\"type\":\"bad_request\"}"; }
+        return Json(Deskhand.Core.Services.VisionOps.WaitForImage(b, needle, Spec(target, monitor, x, y, width, height, hwnd, reference), threshold, timeoutMs, !absent, pollMs));
+    }
+
+    [McpServerTool(Name = "deskhand_wait_for_text"), Description("Poll the screen with OCR until text appears (or, with absent=true, disappears), or timeout. Matches a word containing the query (case-insensitive). Returns { found, waitedMs, matchText, centerX, centerY } — centerX/Y is the matched word (click-ready). target screen|region|window. Requires capture enabled.")]
+    public static string WaitForText(IAutomationBackend b, ControlState state, string text,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, int timeoutMs = 5000, bool absent = false, int pollMs = 250)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        return Json(Deskhand.Core.Services.VisionOps.WaitForText(b, text, Spec(target, monitor, x, y, width, height, hwnd, reference), timeoutMs, !absent, pollMs));
+    }
+
+    [McpServerTool(Name = "deskhand_wait_stable"), Description("Block until a screen area stops changing (settles) — kills sleep-based flakiness after a click/navigation. With waitForChange=true, returns as soon as it STARTS changing instead. target screen|region|window. Returns { ok, waitedMs, lastDiff, mode }. Requires capture enabled.")]
+    public static string WaitStable(IAutomationBackend b, ControlState state,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, int settleMs = 700, int timeoutMs = 8000, int pollMs = 250, double epsilon = 0.01, bool waitForChange = false)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        return Json(Deskhand.Core.Services.VisionOps.WaitStable(b, Spec(target, monitor, x, y, width, height, hwnd, reference), settleMs, timeoutMs, pollMs, epsilon, waitForChange));
+    }
+
+    [McpServerTool(Name = "deskhand_click_image"), Description("Find a template image on screen and click its best match in one call (optionally wait up to timeoutMs for it to appear). button left|right|middle; count 2=double. Returns { clicked, x, y, score, error? }. Requires capture enabled + the kill switch armed (it clicks).")]
+    public static string ClickImage(IAutomationBackend b, ControlState state, string templateBase64,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, double threshold = 0.85, string button = "left", int count = 1, int timeoutMs = 0)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        byte[] needle; try { needle = Convert.FromBase64String(templateBase64 ?? ""); } catch { return "{\"error\":\"templateBase64 is not valid base64\",\"type\":\"bad_request\"}"; }
+        return Try(() => Json(Deskhand.Core.Services.VisionOps.ClickImage(b, needle, Spec(target, monitor, x, y, width, height, hwnd, reference), threshold, button, count, timeoutMs)));
+    }
+
+    [McpServerTool(Name = "deskhand_click_text"), Description("Find on-screen text with OCR and click it in one call (optionally wait up to timeoutMs). Clicks the matched word's center. button left|right|middle; count 2=double. Returns { clicked, x, y, error? }. Requires capture enabled + armed.")]
+    public static string ClickText(IAutomationBackend b, ControlState state, string text,
+        string target = "screen", int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, string? reference = null, string button = "left", int count = 1, int timeoutMs = 0)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        return Try(() => Json(Deskhand.Core.Services.VisionOps.ClickText(b, text, Spec(target, monitor, x, y, width, height, hwnd, reference), button, count, timeoutMs)));
+    }
+
+    [McpServerTool(Name = "deskhand_get_pixel"), Description("Read the RGB color of a single screen pixel at (x,y) virtual-desktop coordinates. Returns { ok, x, y, r, g, b, hex }. Cheap state check (is the indicator green yet?). Requires capture enabled.")]
+    public static string GetPixel(IAutomationBackend b, ControlState state, int x, int y)
+    {
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        return Json(Deskhand.Core.Services.VisionOps.GetPixel(b, x, y));
+    }
+
+    private static Deskhand.Core.Services.CaptureSpec Spec(string? target, int? mon, int? x, int? y, int? w, int? h, long? hwnd, string? reference)
+        => new(target, mon, x, y, w, h, hwnd, reference);
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)

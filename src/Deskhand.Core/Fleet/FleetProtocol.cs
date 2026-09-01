@@ -92,6 +92,12 @@ public static class FleetMethods
     public const string OcrRegion = "ocr_region";
     public const string OcrWindow = "ocr_window";
     public const string FindImage = "find_image";
+    public const string WaitForImage = "wait_for_image";
+    public const string WaitForText = "wait_for_text";
+    public const string WaitStable = "wait_stable";
+    public const string ClickImage = "click_image";
+    public const string ClickText = "click_text";
+    public const string GetPixel = "get_pixel";
     public const string DumpProcess = "dump_process";
     public const string ListApps = "list_apps";
     public const string ListDesktops = "list_desktops";

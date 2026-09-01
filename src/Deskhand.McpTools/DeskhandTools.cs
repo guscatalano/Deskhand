@@ -48,17 +48,19 @@ public static class DeskhandTools
     private static ImageFormat Fmt(string? f) =>
         f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
 
-    private static IEnumerable<ContentBlock> AsImage(CaptureResultDto c)
+    private static IEnumerable<ContentBlock> AsImage(CaptureResultDto c, int? maxWidth = null, int? maxBytes = null)
     {
+        var s = Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, maxWidth, maxBytes);
+        string scaleNote = s.Scale < 1.0 ? $" image={s.Width}x{s.Height} scale={s.Scale} (map image px→screen: x/{s.Scale}+{c.Rect.X}, y/{s.Scale}+{c.Rect.Y})" : "";
         yield return new TextContentBlock
         {
             Text = $"desktop={c.Desktop} rect={c.Rect.Width}x{c.Rect.Height}@({c.Rect.X},{c.Rect.Y}) " +
-                   $"monitor={c.Monitor} dpi={c.DpiScale} format={c.Format}",
+                   $"monitor={c.Monitor} dpi={c.DpiScale} format={s.Format} bytes={s.Bytes.Length}{scaleNote}",
         };
         yield return new ImageContentBlock
         {
-            Data = c.Bytes,
-            MimeType = c.Format == "jpeg" ? "image/jpeg" : "image/png",
+            Data = s.Bytes,
+            MimeType = s.Format == "jpeg" ? "image/jpeg" : "image/png",
         };
     }
 
@@ -804,16 +806,18 @@ public static class DeskhandTools
     // save=true: return the image as BASE64 TEXT in a single call (works in clients that don't handle MCP
     // image blocks) AND save the file on the machine, returning its path + /screenshots/{name} URL. Errors
     // (e.g. disk full) come back as a clear { error } instead of throwing.
-    private static IEnumerable<ContentBlock> CaptureOut(Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool save)
+    private static IEnumerable<ContentBlock> CaptureOut(Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool save, int? maxWidth = null, int? maxBytes = null)
     {
-        if (!save) return AsImage(c);
+        if (!save) return AsImage(c, maxWidth, maxBytes);
         try
         {
-            var s = ss.Save(c.Bytes, c.Format);
+            var img = Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, maxWidth, maxBytes);
+            var s = ss.Save(img.Bytes, img.Format);
             return new ContentBlock[] { new TextContentBlock { Text = Json(new {
                 saved = true, file = s.File, url = $"/screenshots/{s.FileName}", sizeBytes = s.SizeBytes,
-                format = c.Format, width = c.Rect.Width, height = c.Rect.Height,
-                base64 = Convert.ToBase64String(c.Bytes) }) } };
+                format = img.Format, screenRect = new { c.Rect.Width, c.Rect.Height, c.Rect.X, c.Rect.Y },
+                imageWidth = img.Scale < 1.0 ? img.Width : c.Rect.Width, imageHeight = img.Scale < 1.0 ? img.Height : c.Rect.Height, scale = img.Scale,
+                base64 = Convert.ToBase64String(img.Bytes) }) } };
         }
         catch (Exception ex)
         {
@@ -821,21 +825,21 @@ public static class DeskhandTools
         }
     }
 
-    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an MCP image block (image-capable clients render it). IF YOUR CLIENT CAN'T DISPLAY MCP IMAGES (you only see metadata, no image): pass save=true — it returns the screenshot as base64 TEXT in one call, plus a saved file + /screenshots/{name} download URL. Tip: use format=jpeg (smaller base64) and pick one monitor to keep the payload small.")]
-    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false)
-        => CaptureOut(ss, b.CaptureScreen(monitor, Fmt(format), 80), save);
+    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an MCP image block (image-capable clients render it). IF YOUR CLIENT CAN'T DISPLAY MCP IMAGES (you only see metadata, no image): pass save=true — it returns the screenshot as base64 TEXT in one call, plus a saved file + /screenshots/{name} download URL. TO FIT A SIZE BUDGET: pass maxWidth (cap the resolution) and/or maxBytes (cap the encoded payload; PNG is auto-switched to JPEG and downscaled to fit). The metadata reports the returned image's dimensions + scale so you can map image pixels back to screen coordinates.")]
+    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
+        => CaptureOut(ss, b.CaptureScreen(monitor, Fmt(format), 80), save, maxWidth, maxBytes);
 
-    [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns the image inline; save=true saves it on the machine and returns a download URL instead.")]
-    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int x, int y, int width, int height, string? format = null, bool save = false)
-        => CaptureOut(ss, b.CaptureRegion(x, y, width, height, Fmt(format), 80), save);
+    [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget (see capture_screen).")]
+    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int x, int y, int width, int height, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
+        => CaptureOut(ss, b.CaptureRegion(x, y, width, height, Fmt(format), 80), save, maxWidth, maxBytes);
 
-    [McpServerTool(Name = "deskhand_capture_window"), Description("Screenshot one window by element ref (its host window). Returns the image inline; save=true saves it on the machine and returns a download URL instead.")]
-    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false)
-        => CaptureOut(ss, b.CaptureWindowByRef(reference, Fmt(format), 80), save);
+    [McpServerTool(Name = "deskhand_capture_window"), Description("Screenshot one window by element ref (its host window). Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget (see capture_screen).")]
+    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
+        => CaptureOut(ss, b.CaptureWindowByRef(reference, Fmt(format), 80), save, maxWidth, maxBytes);
 
-    [McpServerTool(Name = "deskhand_capture_element"), Description("Screenshot a single element's bounding rectangle. Returns the image inline; save=true saves it on the machine and returns a download URL instead.")]
-    public static IEnumerable<ContentBlock> CaptureElement(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false)
-        => CaptureOut(ss, b.CaptureElement(reference, Fmt(format), 80), save);
+    [McpServerTool(Name = "deskhand_capture_element"), Description("Screenshot a single element's bounding rectangle. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget (see capture_screen).")]
+    public static IEnumerable<ContentBlock> CaptureElement(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
+        => CaptureOut(ss, b.CaptureElement(reference, Fmt(format), 80), save, maxWidth, maxBytes);
 
     [McpServerTool(Name = "deskhand_capture_input_desktop"), Description("Phase 2: screenshot whichever desktop currently owns input (the secure desktop when running as SYSTEM). Returns an image plus a status line.")]
     public static IEnumerable<ContentBlock> CaptureInputDesktop(IAutomationBackend b, string? format = null)

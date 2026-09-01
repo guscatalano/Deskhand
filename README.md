@@ -298,7 +298,7 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `POST /uia/expand-collapse` | `{reference, expand}` | Expand/collapse a tree item |
 | `POST /uia/select` | `{reference}` | Select a list/tab item |
 | `POST /uia/set-focus` | `{reference}` | Focus an element |
-| `POST /capture/screen` | `{monitor?, format?, quality?}` | Whole virtual desktop, or one monitor |
+| `POST /capture/screen` | `{monitor?, format?, quality?, maxWidth?, maxBytes?}` | Whole virtual desktop, or one monitor. **`maxWidth`** caps resolution; **`maxBytes`** caps the encoded payload (PNG auto-switches to JPEG + downscales to fit) — the response reports the `scale` so image pixels map back to screen coords |
 | `POST /capture/region` | `{x, y, width, height, format?, quality?}` | Arbitrary rectangle |
 | `POST /capture/window` | `{reference? \| hwnd?, format?, quality?}` | One window (PrintWindow) |
 | `POST /capture/element` | `{reference, format?, quality?}` | One element's bounds |

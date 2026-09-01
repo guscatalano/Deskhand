@@ -861,10 +861,10 @@ api.MapPost("/uia/set-focus", (IAutomationBackend b, RefRequest r) => { b.SetFoc
 // Pass save=true (body or ?save=true) to instead SAVE it on this machine (screenshots dir, audited, 24h
 // auto-delete) and return the file path + a /screenshots/{name} download URL.
 api.MapPost("/capture/screen", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, ScreenCaptureRequest? r) =>
-    WriteCapture(ctx, ss, b.CaptureScreen(r?.Monitor, ParseFormat(r?.Format), r?.Quality ?? 80), r?.Save ?? false));
+    WriteCapture(ctx, ss, b.CaptureScreen(r?.Monitor, ParseFormat(r?.Format), r?.Quality ?? 80), r?.Save ?? false, r?.MaxWidth, r?.MaxBytes));
 
 api.MapPost("/capture/region", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, RegionRequest r) =>
-    WriteCapture(ctx, ss, b.CaptureRegion(r.X, r.Y, r.Width, r.Height, ParseFormat(r.Format), r.Quality ?? 80), r.Save ?? false));
+    WriteCapture(ctx, ss, b.CaptureRegion(r.X, r.Y, r.Width, r.Height, ParseFormat(r.Format), r.Quality ?? 80), r.Save ?? false, r.MaxWidth, r.MaxBytes));
 
 api.MapPost("/capture/window", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, WindowCaptureRequest r) =>
 {
@@ -873,11 +873,11 @@ api.MapPost("/capture/window", (IAutomationBackend b, HttpContext ctx, Deskhand.
     var result = r.Reference is not null ? b.CaptureWindowByRef(r.Reference, fmt, q)
                : r.Hwnd is not null ? b.CaptureWindow(r.Hwnd.Value, fmt, q)
                : throw new ArgumentException("Provide either 'reference' or 'hwnd'.");
-    return WriteCapture(ctx, ss, result, r.Save ?? false);
+    return WriteCapture(ctx, ss, result, r.Save ?? false, r.MaxWidth, r.MaxBytes);
 });
 
 api.MapPost("/capture/element", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, ElementCaptureRequest r) =>
-    WriteCapture(ctx, ss, b.CaptureElement(r.Reference, ParseFormat(r.Format), r.Quality ?? 80), r.Save ?? false));
+    WriteCapture(ctx, ss, b.CaptureElement(r.Reference, ParseFormat(r.Format), r.Quality ?? 80), r.Save ?? false, r.MaxWidth, r.MaxBytes));
 
 // Saved screenshots: list + download.
 api.MapGet("/screenshots", (Deskhand.Core.Services.ScreenshotStore ss) => Results.Ok(ss.List()));
@@ -990,24 +990,27 @@ static ImageFormat ParseFormat(string? f) =>
     f?.ToLowerInvariant() is "jpeg" or "jpg" ? ImageFormat.Jpeg : ImageFormat.Png;
 
 // Return raw image bytes when the client asks (?raw=true or Accept: image/*); otherwise JSON+base64.
-static IResult WriteCapture(HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool saveBody)
+static IResult WriteCapture(HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool saveBody, int? maxWidth = null, int? maxBytes = null)
 {
+    // Fit to the caller's size/resolution budget (no-op when neither is set); keeps c.Rect (screen coords).
+    var img = Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, maxWidth, maxBytes);
+
     // save = save the file on this machine + return a download URL, instead of the image inline.
     bool save = saveBody || string.Equals(ctx.Request.Query["save"], "true", StringComparison.OrdinalIgnoreCase);
     if (save)
     {
-        var s = ss.Save(c.Bytes, c.Format);
-        return Results.Ok(new { c.Desktop, c.Rect, c.Monitor, c.DpiScale, c.Format,
+        var s = ss.Save(img.Bytes, img.Format);
+        return Results.Ok(new { c.Desktop, c.Rect, c.Monitor, c.DpiScale, format = img.Format, scale = img.Scale,
             saved = true, file = s.File, sizeBytes = s.SizeBytes, url = $"/screenshots/{s.FileName}" });
     }
 
     bool wantsRaw = string.Equals(ctx.Request.Query["raw"], "true", StringComparison.OrdinalIgnoreCase)
                     || ctx.Request.Headers.Accept.ToString().Contains("image/", StringComparison.OrdinalIgnoreCase);
-    string contentType = c.Format == "jpeg" ? "image/jpeg" : "image/png";
-    if (wantsRaw) return Results.Bytes(c.Bytes, contentType);
+    string contentType = img.Format == "jpeg" ? "image/jpeg" : "image/png";
+    if (wantsRaw) return Results.Bytes(img.Bytes, contentType);
 
     return Results.Ok(new CaptureJson(
-        c.Desktop, c.Rect, c.Monitor, c.DpiScale, c.Format, Convert.ToBase64String(c.Bytes)));
+        c.Desktop, c.Rect, c.Monitor, c.DpiScale, img.Format, Convert.ToBase64String(img.Bytes), img.Scale));
 }
 
 static bool FixedEquals(string a, string b)
@@ -1082,10 +1085,10 @@ record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, in
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);
-record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality, bool? Save);
-record RegionRequest(int X, int Y, int Width, int Height, string? Format, int? Quality, bool? Save);
-record WindowCaptureRequest(long? Hwnd, string? Reference, string? Format, int? Quality, bool? Save);
-record ElementCaptureRequest(string Reference, string? Format, int? Quality, bool? Save);
+record ScreenCaptureRequest(int? Monitor, string? Format, int? Quality, bool? Save, int? MaxWidth, int? MaxBytes);
+record RegionRequest(int X, int Y, int Width, int Height, string? Format, int? Quality, bool? Save, int? MaxWidth, int? MaxBytes);
+record WindowCaptureRequest(long? Hwnd, string? Reference, string? Format, int? Quality, bool? Save, int? MaxWidth, int? MaxBytes);
+record ElementCaptureRequest(string Reference, string? Format, int? Quality, bool? Save, int? MaxWidth, int? MaxBytes);
 record InputDesktopRequest(string? Format, int? Quality);
 record ControlRequest(bool? Armed, bool? InputEnabled, bool? CaptureEnabled, bool? NotifyOnCapture);
 record MacroPlayRequest(Deskhand.Core.Macros.Macro? Macro, double? Speed, int? MaxStepDelayMs);
@@ -1097,4 +1100,4 @@ record ScrollRequest(int Dx, int Dy);
 record DragRequest(int FromX, int FromY, int ToX, int ToY, string? Button, int? Steps, int? HoldMs);
 record TypeRequest(string Text);
 record KeysRequest(string Chord);
-record CaptureJson(string Desktop, RectDto Rect, int Monitor, double DpiScale, string Format, string ImageBase64);
+record CaptureJson(string Desktop, RectDto Rect, int Monitor, double DpiScale, string Format, string ImageBase64, double Scale = 1.0);

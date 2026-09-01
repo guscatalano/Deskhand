@@ -497,6 +497,102 @@ public static class DeskhandTools
     private static Deskhand.Core.Services.CaptureSpec Spec(string? target, int? mon, int? x, int? y, int? w, int? h, long? hwnd, string? reference)
         => new(target, mon, x, y, w, h, hwnd, reference);
 
+    [McpServerTool(Name = "deskhand_paste_text"), Description("Type text fast and exactly by setting the clipboard and sending Ctrl+V (better than key-by-key for long or non-ASCII text). Pastes into the focused control. Requires the kill switch armed; audited.")]
+    public static string PasteText(IAutomationBackend b, ControlState state, AuditLog audit, string text)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var set = Deskhand.Core.Services.ClipboardService.SetText(text ?? "");
+        if (!set.Ok) return Json(set);
+        b.SendKeys("ctrl+v");
+        audit.Record("paste", $"{set.Length} chars", "ok");
+        return "{\"ok\":true}";
+    }
+
+    [McpServerTool(Name = "deskhand_process_control"), Description("Control a process by pid: action = kill (terminate; tree=true kills children too) | suspend | resume | priority (level idle|belownormal|normal|abovenormal|high|realtime). Returns { ok, pid, name, action, error? }. Protected/other-user processes need elevation. Requires armed; audited.")]
+    public static string ProcessControl(ControlState state, AuditLog audit, int pid, string action, bool tree = true, string? level = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = (action ?? "").Trim().ToLowerInvariant() switch
+        {
+            "kill" or "terminate" => Deskhand.Core.Services.ProcessControlService.Kill(pid, tree),
+            "suspend" => Deskhand.Core.Services.ProcessControlService.Suspend(pid),
+            "resume" => Deskhand.Core.Services.ProcessControlService.Resume(pid),
+            "priority" => Deskhand.Core.Services.ProcessControlService.SetPriority(pid, level ?? ""),
+            _ => new Deskhand.Core.Services.ProcControlDto(false, pid, null, action ?? "", Error: "action must be kill|suspend|resume|priority."),
+        };
+        audit.Record("process_control", $"{res.Action} pid={pid}", res.Ok ? "ok" : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_service_control"), Description("Start / stop / restart a Windows service by name (via WMI). Returns { ok, name, action, state, error? }. Most service changes need elevation. Requires armed; audited.")]
+    public static string ServiceControl(ControlState state, AuditLog audit, string name, string action)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = (action ?? "").Trim().ToLowerInvariant() switch
+        {
+            "start" => Deskhand.Core.Services.ServiceControlService.Start(name),
+            "stop" => Deskhand.Core.Services.ServiceControlService.Stop(name),
+            "restart" => Deskhand.Core.Services.ServiceControlService.Restart(name),
+            _ => new Deskhand.Core.Services.ServiceControlDto(false, name, action ?? "", Error: "action must be start|stop|restart."),
+        };
+        audit.Record("service_control", $"{res.Action} {name}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_env_get"), Description("Read an environment variable at scope process (default) | user | machine. Returns { ok, name, value, scope }.")]
+    public static string EnvGet(string name, string? scope = null) => Json(Deskhand.Core.Services.EnvironmentService.Get(name, scope));
+
+    [McpServerTool(Name = "deskhand_env_set"), Description("Set (or, with value omitted/null, delete) an environment variable. scope process | user | machine (machine needs elevation). User/machine changes persist but the running server won't see them until restart. Requires armed; audited.")]
+    public static string EnvSet(ControlState state, AuditLog audit, string name, string? value = null, string? scope = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = Deskhand.Core.Services.EnvironmentService.Set(name, value, scope);
+        audit.Record("env_set", $"{res.Scope}:{name}", res.Ok ? "ok" : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_task_action"), Description("Run / end / enable / disable a Windows Scheduled Task by name (path), via schtasks. Returns { ok, task, action, exitCode, output, error? }. Requires armed; audited.")]
+    public static string TaskAction(ControlState state, AuditLog audit, string task, string action)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = (action ?? "").Trim().ToLowerInvariant() switch
+        {
+            "run" => Deskhand.Core.Services.ScheduledTaskService.Run(task),
+            "end" => Deskhand.Core.Services.ScheduledTaskService.End(task),
+            "enable" => Deskhand.Core.Services.ScheduledTaskService.Enable(task),
+            "disable" => Deskhand.Core.Services.ScheduledTaskService.Disable(task),
+            _ => new Deskhand.Core.Services.TaskActionDto(false, task, action ?? "", -1, Error: "action must be run|end|enable|disable."),
+        };
+        audit.Record("task", $"{res.Action} {task}", res.Ok ? "ok" : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_uac_status"), Description("Read UAC configuration: { enabled, adminConsentBehavior(+description), promptOnSecureDesktop, automatable, summary }. 'automatable' means prompts are on the normal desktop so they can be answered (if Deskhand is elevated).")]
+    public static string UacStatus() => Json(Deskhand.Core.Services.UacService.Status());
+
+    [McpServerTool(Name = "deskhand_uac_config"), Description("Configure UAC (registry, needs elevation): pass ONE of enabled (EnableLUA on/off — reboot required), promptOnSecureDesktop (false moves prompts to the normal desktop so they're automatable), autoApprove (true = admins elevate silently with NO prompt), or adminBehavior (0..5; 0=silent, 5=default prompt). Returns { ok, setting, value, rebootRequired, error? }. Requires armed; audited.")]
+    public static string UacConfig(ControlState state, AuditLog audit, bool? enabled = null, bool? promptOnSecureDesktop = null, bool? autoApprove = null, int? adminBehavior = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        Deskhand.Core.Services.UacConfigDto res =
+            enabled is bool en ? Deskhand.Core.Services.UacService.SetEnabled(en)
+            : promptOnSecureDesktop is bool sd ? Deskhand.Core.Services.UacService.SetSecureDesktop(sd)
+            : autoApprove is bool aa ? Deskhand.Core.Services.UacService.SetAutoApprove(aa)
+            : adminBehavior is int lvl ? Deskhand.Core.Services.UacService.SetAdminBehavior(lvl)
+            : new Deskhand.Core.Services.UacConfigDto(false, "none", null, false, "Provide one of: enabled, promptOnSecureDesktop, autoApprove, adminBehavior.");
+        audit.Record("uac_config", $"{res.Setting}={res.Value}", res.Ok ? (res.RebootRequired ? "ok (reboot)" : "ok") : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_uac_respond"), Description("Best-effort answer a UAC consent prompt that is currently showing: accept=true presses Yes, false presses No. Only reaches the dialog when it's on the NORMAL desktop (promptOnSecureDesktop=false) AND Deskhand runs elevated — otherwise Windows isolates it (set adminBehavior=0 to skip prompts entirely). Returns { found, acted, window, waitedMs, note }. Requires armed; audited.")]
+    public static string UacRespond(ControlState state, AuditLog audit, bool accept = true, int timeoutMs = 5000)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = Deskhand.Core.Services.UacService.Respond(accept, timeoutMs);
+        audit.Record("uac_respond", accept ? "accept" : "reject", res.Acted ? "acted" : (res.Found ? "found-only" : "none"));
+        return Json(res);
+    }
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)

@@ -654,6 +654,97 @@ api.MapPost("/vision/click-text", (IAutomationBackend b, ControlState st, Vision
 api.MapGet("/vision/pixel", (IAutomationBackend b, ControlState st, int x, int y) =>
     st.CaptureEnabled ? Results.Ok(Deskhand.Core.Services.VisionOps.GetPixel(b, x, y)) : CapGate(st));
 
+// Paste text: set the clipboard then send Ctrl+V (fast, exact Unicode entry). Armed + audited.
+api.MapPost("/input/paste", (IAutomationBackend b, ControlState st, AuditLog al, PasteRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var set = Deskhand.Core.Services.ClipboardService.SetText(r.Text ?? "");
+    if (!set.Ok) return Results.Json(new { error = set.Error, type = "clipboard_error" }, statusCode: 400);
+    b.SendKeys("ctrl+v");
+    al.Record("paste", $"{set.Length} chars", "ok");
+    return Ok();
+});
+
+// Process control: terminate / suspend / resume / reprioritize by pid. Armed + audited.
+api.MapPost("/process/control", (ControlState st, AuditLog al, ProcControlRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = (r.Action ?? "").Trim().ToLowerInvariant() switch
+    {
+        "kill" or "terminate" => Deskhand.Core.Services.ProcessControlService.Kill(r.Pid, r.Tree ?? true),
+        "suspend" => Deskhand.Core.Services.ProcessControlService.Suspend(r.Pid),
+        "resume" => Deskhand.Core.Services.ProcessControlService.Resume(r.Pid),
+        "priority" => Deskhand.Core.Services.ProcessControlService.SetPriority(r.Pid, r.Level ?? ""),
+        _ => new Deskhand.Core.Services.ProcControlDto(false, r.Pid, null, r.Action ?? "", Error: "action must be kill|suspend|resume|priority."),
+    };
+    al.Record("process_control", $"{res.Action} pid={r.Pid}", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+
+// Service control (WMI). Armed + audited; state read is open.
+api.MapGet("/service/state", (string name) => Results.Ok(new { name, state = Deskhand.Core.Services.ServiceControlService.State(name) }));
+api.MapPost("/service/control", (ControlState st, AuditLog al, ServiceControlRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = (r.Action ?? "").Trim().ToLowerInvariant() switch
+    {
+        "start" => Deskhand.Core.Services.ServiceControlService.Start(r.Name),
+        "stop" => Deskhand.Core.Services.ServiceControlService.Stop(r.Name),
+        "restart" => Deskhand.Core.Services.ServiceControlService.Restart(r.Name),
+        _ => new Deskhand.Core.Services.ServiceControlDto(false, r.Name, r.Action ?? "", Error: "action must be start|stop|restart."),
+    };
+    al.Record("service_control", $"{res.Action} {r.Name}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+
+// Environment variables. Get is read; set is armed + audited (user/machine scope persists).
+api.MapGet("/env", (string name, string? scope) => Results.Ok(Deskhand.Core.Services.EnvironmentService.Get(name, scope)));
+api.MapPost("/env", (ControlState st, AuditLog al, EnvSetRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.EnvironmentService.Set(r.Name, r.Value, r.Scope);
+    al.Record("env_set", $"{res.Scope}:{r.Name}", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+
+// Scheduled tasks: run/end/enable/disable by name. Armed + audited.
+api.MapPost("/task", (ControlState st, AuditLog al, TaskActionRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = (r.Action ?? "").Trim().ToLowerInvariant() switch
+    {
+        "run" => Deskhand.Core.Services.ScheduledTaskService.Run(r.Task),
+        "end" => Deskhand.Core.Services.ScheduledTaskService.End(r.Task),
+        "enable" => Deskhand.Core.Services.ScheduledTaskService.Enable(r.Task),
+        "disable" => Deskhand.Core.Services.ScheduledTaskService.Disable(r.Task),
+        _ => new Deskhand.Core.Services.TaskActionDto(false, r.Task, r.Action ?? "", -1, Error: "action must be run|end|enable|disable."),
+    };
+    al.Record("task", $"{res.Action} {r.Task}", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+
+// UAC: read status; configure (registry, needs elevation); best-effort respond to a live prompt. Config armed + audited.
+api.MapGet("/uac", () => Results.Ok(Deskhand.Core.Services.UacService.Status()));
+api.MapPost("/uac/config", (ControlState st, AuditLog al, UacConfigRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    Deskhand.Core.Services.UacConfigDto res =
+        r.Enabled is bool en ? Deskhand.Core.Services.UacService.SetEnabled(en)
+        : r.PromptOnSecureDesktop is bool sd ? Deskhand.Core.Services.UacService.SetSecureDesktop(sd)
+        : r.AutoApprove is bool aa ? Deskhand.Core.Services.UacService.SetAutoApprove(aa)
+        : r.AdminBehavior is int lvl ? Deskhand.Core.Services.UacService.SetAdminBehavior(lvl)
+        : new Deskhand.Core.Services.UacConfigDto(false, "none", null, false, "Provide one of: enabled, promptOnSecureDesktop, autoApprove, adminBehavior.");
+    al.Record("uac_config", $"{res.Setting}={res.Value}", res.Ok ? (res.RebootRequired ? "ok (reboot required)" : "ok") : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+api.MapPost("/uac/respond", (ControlState st, AuditLog al, UacRespondRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.UacService.Respond(r.Accept ?? true, r.TimeoutMs ?? 5000);
+    al.Record("uac_respond", r.Accept ?? true ? "accept" : "reject", res.Acted ? "acted" : (res.Found ? "found-only" : "none"));
+    return Results.Ok(res);
+});
+
 // Self-update: check GitHub Releases; apply downloads the latest zip and relaunches. Apply is opt-in
 // (DESKHAND_ENABLE_SELF_UPDATE), armed, audited — it stops and replaces this running server.
 api.MapGet("/update/check", async () => Results.Ok(await Deskhand.Core.Services.UpdateService.CheckAsync()));
@@ -886,6 +977,13 @@ record VisionClickImageRequest(string? TemplateBase64, string? Target, int? Moni
     long? Hwnd, string? Reference, double? Threshold, string? Button, int? Count, int? TimeoutMs);
 record VisionClickTextRequest(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
     long? Hwnd, string? Reference, string? Button, int? Count, int? TimeoutMs);
+record PasteRequest(string? Text);
+record ProcControlRequest(int Pid, string Action, bool? Tree, string? Level);
+record ServiceControlRequest(string Name, string Action);
+record EnvSetRequest(string Name, string? Value, string? Scope);
+record TaskActionRequest(string Task, string Action);
+record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
+record UacRespondRequest(bool? Accept, int? TimeoutMs);
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
 record InputRecordRequest(bool? CaptureText);

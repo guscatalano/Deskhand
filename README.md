@@ -103,6 +103,13 @@ suspend / resume / reprioritize; **service** start / stop / restart; **environme
 process/user/machine scope; **scheduled task** run / end / enable / disable. All mutations require *armed* and are
 audited; privileged ones surface a clean access error when not elevated.
 
+**Guardrails against footguns.** Destructive actions — process `kill`/`suspend`, service `stop`/`restart` —
+require an explicit **`confirm:true`** (otherwise you get `{ confirmationRequired:true }` and nothing happens),
+so a stray call can't do damage. Deskhand **refuses to kill/suspend its own process** or **stop the service
+hosting it** — absolutely, so automation can't cut its own legs off. OS-critical processes (winlogon, lsass,
+csrss, …) are refused unless you also pass **`force:true`**. Every guard lives in the service layer, so it
+protects the fleet path too.
+
 #### UAC (`/uac`, `/uac/config`, `/uac/respond`, `deskhand_uac_*`)
 
 When elevation prompts get in an agent's way:

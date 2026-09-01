@@ -274,9 +274,21 @@ app.MapPost("/agents/{id}/vision/click-text", (string id, AgentClickTextReq r) =
     Results.Ok(O(id).ClickText(r.Text ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Button, r.Count, r.TimeoutMs)));
 app.MapGet("/agents/{id}/vision/pixel", (string id, int x, int y) => Results.Ok(O(id).GetPixel(x, y)));
 app.MapPost("/agents/{id}/input/paste", (string id, AgentClipReq r) => Results.Ok(O(id).Paste(r.Text ?? "")));
-app.MapPost("/agents/{id}/process/control", (string id, AgentProcCtrlReq r) => Results.Ok(O(id).ProcessControl(r.Pid, r.Action, r.Tree, r.Level)));
+app.MapPost("/agents/{id}/process/control", (string id, AgentProcCtrlReq r) =>
+{
+    var act = (r.Action ?? "").Trim().ToLowerInvariant();
+    if (act is "kill" or "terminate" or "suspend" && r.Confirm != true)
+        return Results.Json(new { ok = false, confirmationRequired = true, action = act, pid = r.Pid, message = "destructive — resend with confirm=true" }, statusCode: 409);
+    return Results.Ok(O(id).ProcessControl(r.Pid, r.Action, r.Tree, r.Level, r.Force ?? false));
+});
 app.MapGet("/agents/{id}/service/state", (string id, string name) => Results.Ok(new { name, state = "" }));
-app.MapPost("/agents/{id}/service/control", (string id, AgentSvcCtrlReq r) => Results.Ok(O(id).ServiceControl(r.Name, r.Action)));
+app.MapPost("/agents/{id}/service/control", (string id, AgentSvcCtrlReq r) =>
+{
+    var act = (r.Action ?? "").Trim().ToLowerInvariant();
+    if (act is "stop" or "restart" && r.Confirm != true)
+        return Results.Json(new { ok = false, confirmationRequired = true, action = act, name = r.Name, message = "destructive — resend with confirm=true" }, statusCode: 409);
+    return Results.Ok(O(id).ServiceControl(r.Name, r.Action));
+});
 app.MapGet("/agents/{id}/env", (string id, string name, string? scope) => Results.Ok(O(id).EnvGet(name, scope)));
 app.MapPost("/agents/{id}/env", (string id, AgentEnvSetReq r) => Results.Ok(O(id).EnvSet(r.Name, r.Value, r.Scope)));
 app.MapPost("/agents/{id}/task", (string id, AgentTaskReq r) => Results.Ok(O(id).TaskAction(r.Task, r.Action)));
@@ -387,8 +399,8 @@ record AgentClickImageReq(string? TemplateBase64, string? Target, int? Monitor, 
     long? Hwnd, string? Reference, double? Threshold, string? Button, int? Count, int? TimeoutMs);
 record AgentClickTextReq(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
     long? Hwnd, string? Reference, string? Button, int? Count, int? TimeoutMs);
-record AgentProcCtrlReq(int Pid, string Action, bool? Tree, string? Level);
-record AgentSvcCtrlReq(string Name, string Action);
+record AgentProcCtrlReq(int Pid, string Action, bool? Tree, string? Level, bool? Force, bool? Confirm);
+record AgentSvcCtrlReq(string Name, string Action, bool? Confirm);
 record AgentEnvSetReq(string Name, string? Value, string? Scope);
 record AgentTaskReq(string Task, string Action);
 record AgentUacCfgReq(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);

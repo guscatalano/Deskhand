@@ -510,14 +510,18 @@ public static class DeskhandTools
         return "{\"ok\":true}";
     }
 
-    [McpServerTool(Name = "deskhand_process_control"), Description("Control a process by pid: action = kill (terminate; tree=true kills children too) | suspend | resume | priority (level idle|belownormal|normal|abovenormal|high|realtime). Returns { ok, pid, name, action, error? }. Protected/other-user processes need elevation. Requires armed; audited.")]
-    public static string ProcessControl(ControlState state, AuditLog audit, int pid, string action, bool tree = true, string? level = null)
+    [McpServerTool(Name = "deskhand_process_control"), Description("Control a process by pid: action = kill (terminate; tree=true kills children too) | suspend | resume | priority (level idle|belownormal|normal|abovenormal|high|realtime). Returns { ok, pid, name, action, error? }. DESTRUCTIVE actions (kill, suspend) require confirm=true — without it you get { confirmationRequired:true } and nothing happens. Deskhand REFUSES to kill/suspend its own process; OS-critical processes need force=true. Protected/other-user processes need elevation. Requires armed; audited.")]
+    public static string ProcessControl(ControlState state, AuditLog audit, int pid, string action, bool tree = true, string? level = null, bool force = false, bool confirm = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
-        var res = (action ?? "").Trim().ToLowerInvariant() switch
+        var act = (action ?? "").Trim().ToLowerInvariant();
+        bool destructive = act is "kill" or "terminate" or "suspend";
+        if (destructive && !confirm)
+            return Json(new { ok = false, confirmationRequired = true, action = act, pid, message = $"'{act}' on pid {pid} is destructive — re-issue with confirm=true to proceed." });
+        var res = act switch
         {
-            "kill" or "terminate" => Deskhand.Core.Services.ProcessControlService.Kill(pid, tree),
-            "suspend" => Deskhand.Core.Services.ProcessControlService.Suspend(pid),
+            "kill" or "terminate" => Deskhand.Core.Services.ProcessControlService.Kill(pid, tree, force),
+            "suspend" => Deskhand.Core.Services.ProcessControlService.Suspend(pid, force),
             "resume" => Deskhand.Core.Services.ProcessControlService.Resume(pid),
             "priority" => Deskhand.Core.Services.ProcessControlService.SetPriority(pid, level ?? ""),
             _ => new Deskhand.Core.Services.ProcControlDto(false, pid, null, action ?? "", Error: "action must be kill|suspend|resume|priority."),
@@ -526,11 +530,14 @@ public static class DeskhandTools
         return Json(res);
     }
 
-    [McpServerTool(Name = "deskhand_service_control"), Description("Start / stop / restart a Windows service by name (via WMI). Returns { ok, name, action, state, error? }. Most service changes need elevation. Requires armed; audited.")]
-    public static string ServiceControl(ControlState state, AuditLog audit, string name, string action)
+    [McpServerTool(Name = "deskhand_service_control"), Description("Start / stop / restart a Windows service by name (via WMI). Returns { ok, name, action, state, error? }. DESTRUCTIVE actions (stop, restart) require confirm=true. Deskhand REFUSES to stop the service hosting itself. Most service changes need elevation. Requires armed; audited.")]
+    public static string ServiceControl(ControlState state, AuditLog audit, string name, string action, bool confirm = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
-        var res = (action ?? "").Trim().ToLowerInvariant() switch
+        var actn = (action ?? "").Trim().ToLowerInvariant();
+        if (actn is "stop" or "restart" && !confirm)
+            return Json(new { ok = false, confirmationRequired = true, action = actn, name, message = $"'{actn}' on service '{name}' is destructive — re-issue with confirm=true to proceed." });
+        var res = actn switch
         {
             "start" => Deskhand.Core.Services.ServiceControlService.Start(name),
             "stop" => Deskhand.Core.Services.ServiceControlService.Stop(name),

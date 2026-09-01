@@ -679,10 +679,13 @@ api.MapPost("/input/paste", (IAutomationBackend b, ControlState st, AuditLog al,
 api.MapPost("/process/control", (ControlState st, AuditLog al, ProcControlRequest r) =>
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
-    var res = (r.Action ?? "").Trim().ToLowerInvariant() switch
+    var act = (r.Action ?? "").Trim().ToLowerInvariant();
+    if (act is "kill" or "terminate" or "suspend" && r.Confirm != true)
+        return Results.Json(new { ok = false, confirmationRequired = true, action = act, pid = r.Pid, message = $"'{act}' on pid {r.Pid} is destructive — resend with confirm=true." }, statusCode: 409);
+    var res = act switch
     {
-        "kill" or "terminate" => Deskhand.Core.Services.ProcessControlService.Kill(r.Pid, r.Tree ?? true),
-        "suspend" => Deskhand.Core.Services.ProcessControlService.Suspend(r.Pid),
+        "kill" or "terminate" => Deskhand.Core.Services.ProcessControlService.Kill(r.Pid, r.Tree ?? true, r.Force ?? false),
+        "suspend" => Deskhand.Core.Services.ProcessControlService.Suspend(r.Pid, r.Force ?? false),
         "resume" => Deskhand.Core.Services.ProcessControlService.Resume(r.Pid),
         "priority" => Deskhand.Core.Services.ProcessControlService.SetPriority(r.Pid, r.Level ?? ""),
         _ => new Deskhand.Core.Services.ProcControlDto(false, r.Pid, null, r.Action ?? "", Error: "action must be kill|suspend|resume|priority."),
@@ -696,7 +699,10 @@ api.MapGet("/service/state", (string name) => Results.Ok(new { name, state = Des
 api.MapPost("/service/control", (ControlState st, AuditLog al, ServiceControlRequest r) =>
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
-    var res = (r.Action ?? "").Trim().ToLowerInvariant() switch
+    var actn = (r.Action ?? "").Trim().ToLowerInvariant();
+    if (actn is "stop" or "restart" && r.Confirm != true)
+        return Results.Json(new { ok = false, confirmationRequired = true, action = actn, name = r.Name, message = $"'{actn}' on service '{r.Name}' is destructive — resend with confirm=true." }, statusCode: 409);
+    var res = actn switch
     {
         "start" => Deskhand.Core.Services.ServiceControlService.Start(r.Name),
         "stop" => Deskhand.Core.Services.ServiceControlService.Stop(r.Name),
@@ -1059,8 +1065,8 @@ record VisionClickImageRequest(string? TemplateBase64, string? Target, int? Moni
 record VisionClickTextRequest(string? Text, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
     long? Hwnd, string? Reference, string? Button, int? Count, int? TimeoutMs);
 record PasteRequest(string? Text);
-record ProcControlRequest(int Pid, string Action, bool? Tree, string? Level);
-record ServiceControlRequest(string Name, string Action);
+record ProcControlRequest(int Pid, string Action, bool? Tree, string? Level, bool? Force, bool? Confirm);
+record ServiceControlRequest(string Name, string Action, bool? Confirm);
 record EnvSetRequest(string Name, string? Value, string? Scope);
 record TaskActionRequest(string Task, string Action);
 record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);

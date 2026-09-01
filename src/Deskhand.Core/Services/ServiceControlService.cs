@@ -29,6 +29,13 @@ public static class ServiceControlService
         {
             using var svc = new ManagementObject($"Win32_Service.Name='{name.Replace("'", "\\'")}'");
             svc.Get();                          // throws if the service doesn't exist
+            // Self-protection: don't let Deskhand stop/restart the service that is hosting it.
+            if (method == "StopService")
+            {
+                var hostPid = SafePid(svc);
+                if (hostPid == Environment.ProcessId)
+                    return new ServiceControlDto(false, name, action, SafeState(svc), "Refusing to stop the service that is hosting Deskhand itself.");
+            }
             uint rc = (uint)svc.InvokeMethod(method, null);
             string? state = SafeState(svc);
             return rc == 0
@@ -57,6 +64,7 @@ public static class ServiceControlService
     }
 
     private static string? SafeState(ManagementObject svc) { try { return svc["State"]?.ToString(); } catch { return null; } }
+    private static int SafePid(ManagementObject svc) { try { return Convert.ToInt32(svc["ProcessId"] ?? 0); } catch { return 0; } }
 
     // Win32_Service method return codes (subset that matters operationally).
     private static string ServiceReturn(uint rc) => rc switch

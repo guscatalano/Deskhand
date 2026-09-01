@@ -35,6 +35,30 @@ public class SystemControlTests
     }
 
     [Fact]
+    public void Kill_refuses_deskhands_own_process()
+    {
+        var r = ProcessControlService.Kill(Environment.ProcessId);
+        Assert.False(r.Ok);
+        Assert.Contains("own process", r.Error);
+    }
+
+    [Fact]
+    public void Kill_refuses_a_critical_system_process_without_force()
+    {
+        // csrss always runs and is on the protected list — the guard refuses BEFORE any real kill attempt,
+        // so this is safe (it does not actually try to terminate csrss).
+        var csrss = System.Diagnostics.Process.GetProcessesByName("csrss").FirstOrDefault();
+        if (csrss is null) return;   // inconclusive on an unusual host
+        try
+        {
+            var r = ProcessControlService.Kill(csrss.Id);
+            Assert.False(r.Ok);
+            Assert.Contains("protected system process", r.Error);
+        }
+        finally { csrss.Dispose(); }
+    }
+
+    [Fact]
     public void Process_control_rejects_unknown_pid_and_bad_priority()
     {
         Assert.False(ProcessControlService.Kill(999_999).Ok);

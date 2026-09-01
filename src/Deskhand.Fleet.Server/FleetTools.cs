@@ -323,13 +323,23 @@ public static class FleetTools
     public static string AgentPasteText(AgentRegistry r, FleetAudit audit, string agentId, string text)
         => Raw(O(r, audit, agentId, "paste").Paste(text));
 
-    [McpServerTool(Name = "deskhand_agent_process_control"), Description("Control a process on a fleet PC: action = kill|suspend|resume|priority (level idle..realtime). Not available on RDP agents.")]
-    public static string AgentProcessControl(AgentRegistry r, FleetAudit audit, string agentId, int pid, string action, bool tree = true, string? level = null)
-        => Raw(O(r, audit, agentId, "process_control").ProcessControl(pid, action, tree, level));
+    [McpServerTool(Name = "deskhand_agent_process_control"), Description("Control a process on a fleet PC: action = kill|suspend|resume|priority (level idle..realtime). DESTRUCTIVE (kill, suspend) require confirm=true. The agent refuses to kill its OWN Deskhand process; OS-critical processes need force=true. Not available on RDP agents.")]
+    public static string AgentProcessControl(AgentRegistry r, FleetAudit audit, string agentId, int pid, string action, bool tree = true, string? level = null, bool force = false, bool confirm = false)
+    {
+        var act = (action ?? "").Trim().ToLowerInvariant();
+        if (act is "kill" or "terminate" or "suspend" && !confirm)
+            return $"{{\"ok\":false,\"confirmationRequired\":true,\"action\":\"{act}\",\"pid\":{pid},\"message\":\"destructive — resend with confirm=true\"}}";
+        return Raw(O(r, audit, agentId, "process_control").ProcessControl(pid, action, tree, level, force));
+    }
 
-    [McpServerTool(Name = "deskhand_agent_service_control"), Description("Start/stop/restart a Windows service on a fleet PC. Not available on RDP agents.")]
-    public static string AgentServiceControl(AgentRegistry r, FleetAudit audit, string agentId, string name, string action)
-        => Raw(O(r, audit, agentId, "service_control").ServiceControl(name, action));
+    [McpServerTool(Name = "deskhand_agent_service_control"), Description("Start/stop/restart a Windows service on a fleet PC. DESTRUCTIVE (stop, restart) require confirm=true. The agent refuses to stop the service hosting itself. Not available on RDP agents.")]
+    public static string AgentServiceControl(AgentRegistry r, FleetAudit audit, string agentId, string name, string action, bool confirm = false)
+    {
+        var act = (action ?? "").Trim().ToLowerInvariant();
+        if (act is "stop" or "restart" && !confirm)
+            return $"{{\"ok\":false,\"confirmationRequired\":true,\"action\":\"{act}\",\"name\":\"{name}\",\"message\":\"destructive — resend with confirm=true\"}}";
+        return Raw(O(r, audit, agentId, "service_control").ServiceControl(name, action));
+    }
 
     [McpServerTool(Name = "deskhand_agent_env_get"), Description("Read an environment variable on a fleet PC (scope process|user|machine).")]
     public static string AgentEnvGet(AgentRegistry r, FleetAudit audit, string agentId, string name, string? scope = null)

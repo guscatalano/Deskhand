@@ -82,7 +82,7 @@ public sealed class RemoteAgentObserver(IAgentLink link)
         => Call(FleetMethods.ClickText, new { text, target, monitor, x, y, width, height, hwnd, reference, button, count, timeoutMs });
     public JsonElement GetPixel(int x, int y) => Call(FleetMethods.GetPixel, new { x, y });
     public JsonElement Paste(string text) => Call(FleetMethods.Paste, new { text });
-    public JsonElement ProcessControl(int pid, string action, bool? tree, string? level) => Call(FleetMethods.ProcessControl, new { pid, action, tree, level });
+    public JsonElement ProcessControl(int pid, string action, bool? tree, string? level, bool force = false) => Call(FleetMethods.ProcessControl, new { pid, action, tree, level, force });
     public JsonElement ServiceControl(string name, string action) => Call(FleetMethods.ServiceControl, new { name, action });
     public JsonElement EnvGet(string name, string? scope) => Call(FleetMethods.EnvGet, new { name, scope });
     public JsonElement EnvSet(string name, string? value, string? scope) => Call(FleetMethods.EnvSet, new { name, value, scope });

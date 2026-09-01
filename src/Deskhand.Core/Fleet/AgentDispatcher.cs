@@ -191,8 +191,8 @@ public static class AgentDispatcher
                 int pid = a.Int("pid");
                 return (a.Str("action") ?? "").ToLowerInvariant() switch
                 {
-                    "kill" or "terminate" => Services.ProcessControlService.Kill(pid, a.Bool("tree", true)),
-                    "suspend" => Services.ProcessControlService.Suspend(pid),
+                    "kill" or "terminate" => Services.ProcessControlService.Kill(pid, a.Bool("tree", true), a.Bool("force")),
+                    "suspend" => Services.ProcessControlService.Suspend(pid, a.Bool("force")),
                     "resume" => Services.ProcessControlService.Resume(pid),
                     "priority" => Services.ProcessControlService.SetPriority(pid, a.Str("level") ?? ""),
                     _ => new Services.ProcControlDto(false, pid, null, a.Str("action") ?? "", Error: "action must be kill|suspend|resume|priority."),

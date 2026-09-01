@@ -74,6 +74,12 @@ No bearer token is required for the browser dashboard. The server is protected b
   web pages in your browser cannot reach it. No CORS headers are emitted.
 - **Optional token** — set `DESKHAND_TOKEN` to require `Authorization: Bearer <token>` from
   *non-browser* clients (curl / scripts). On loopback the same-origin dashboard still needs none.
+- **Output can't be silently truncated** — every MCP tool result is bounded by a char budget
+  (`DESKHAND_MAX_TOOL_CHARS`, default 200,000). If a result would exceed it, the full text is spilled to an
+  OutputStore and the tool returns a small **valid** envelope (`{ truncated:true, outputId, url, head, note }`)
+  instead of a giant blob the client would cut mid-token (which corrupts JSON/base64). Page the rest in-channel
+  with `deskhand_read_output(outputId, offset, limit)` or download it from `/outputs/{id}`. (Screenshots use the
+  separate `maxWidth`/`maxBytes` budget.)
 - **Shell is opt-in** — the command runner (`/shell/run`, `deskhand_run_command`, the dashboard **Shell**
   tab) is **disabled unless you start the server with `DESKHAND_ENABLE_SHELL=1`**, and even then requires
   the kill switch to be *armed* and audits every command. Off by default because it runs arbitrary code as

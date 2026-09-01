@@ -24,7 +24,28 @@ public static class DeskhandTools
         WriteIndented = true,
     };
 
-    private static string Json(object? o) => JsonSerializer.Serialize(o, J);
+    // Every tool result funnels through here. If it exceeds the per-result char budget, spill the full text to
+    // the OutputStore and return a small, VALID envelope (head preview + id + URL) instead of letting the
+    // client truncate a huge blob mid-token (which corrupts JSON/base64). Page the rest with deskhand_read_output.
+    private static string Json(object? o)
+    {
+        string s = JsonSerializer.Serialize(o, J);
+        int budget = Deskhand.Core.Services.OutputStore.MaxChars;
+        if (s.Length <= budget) return s;
+        string id = Deskhand.Core.Services.OutputStore.Save(s);
+        int headLen = Math.Min(2000, budget / 4);
+        return JsonSerializer.Serialize(new
+        {
+            truncated = true,
+            totalChars = s.Length,
+            budget,
+            outputId = id,
+            url = $"/outputs/{id}",
+            head = s[..headLen],
+            note = $"Result ({s.Length} chars) exceeds the {budget}-char tool-output budget and was saved whole. " +
+                   $"Page it with deskhand_read_output(outputId=\"{id}\", offset, limit), GET /outputs/{id}, or refine the query.",
+        }, J);
+    }
 
     // Run an element operation with actionable errors: name a missing 'reference', and turn any thrown
     // exception into its real message (stale element, pattern not supported, …) instead of the MCP SDK's
@@ -612,6 +633,10 @@ public static class DeskhandTools
         audit.Record("fetch", $"{url} -> {res.Path}", res.Ok ? $"{res.Bytes} bytes" : $"FAIL {res.Error}");
         return Json(res);
     }
+
+    [McpServerTool(Name = "deskhand_read_output"), Description("Page through a large tool result that was spilled to the OutputStore (when a previous tool returned { truncated:true, outputId }). Returns { outputId, offset, limit, totalChars, nextOffset, done, text }. Read sequentially with offset = the previous nextOffset until done=true. limit is clamped to the tool-output budget.")]
+    public static string ReadOutput(string outputId, int offset = 0, int limit = 0)
+        => JsonSerializer.Serialize(Deskhand.Core.Services.OutputStore.ReadSlice(outputId, offset, limit), J);
 
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,

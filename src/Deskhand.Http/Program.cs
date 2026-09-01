@@ -808,6 +808,13 @@ api.MapDelete("/webhooks", (ControlState st, AuditLog al, Deskhand.Core.Services
     return Results.Ok(new { ok, urls = wh.List() });
 });
 
+// Spilled tool outputs: full text of an over-budget MCP result (see deskhand_read_output).
+api.MapGet("/outputs/{id}", (string id) =>
+{
+    var path = Deskhand.Core.Services.OutputStore.PathFor(id);
+    return File.Exists(path) ? Results.File(path, "text/plain; charset=utf-8") : Results.NotFound(new { error = "not found (may have expired)", type = "not_found" });
+});
+
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
 

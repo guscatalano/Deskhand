@@ -4,7 +4,7 @@ namespace Deskhand.Core;
 /// the OpenAPI doc, and the self-update check (compared against the latest GitHub release tag).</summary>
 public static class BuildInfo
 {
-    public const string Version = "0.2.5";
+    public const string Version = "0.2.6";
 
     /// <summary>owner/repo the self-update check queries on GitHub for the latest release.</summary>
     public const string Repository = "guscatalano/Deskhand";

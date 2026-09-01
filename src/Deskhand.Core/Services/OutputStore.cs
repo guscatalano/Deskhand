@@ -15,15 +15,32 @@ public static class OutputStore
 {
     private static readonly string Dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "deskhand-outputs");
 
-    /// <summary>Per-result char budget for MCP tool output. Configurable via DESKHAND_MAX_TOOL_CHARS
-    /// (default 200,000; floored at 8,000 so it can't be set uselessly small).</summary>
+    public const int FloorChars = 8_000;
+    public const int CeilingChars = 20_000_000;
+    private static volatile int _override;   // 0 = use env/default; set at runtime by a client that knows its budget
+
+    /// <summary>Per-result char budget for MCP tool output. A runtime override (set via <see cref="SetBudget"/>)
+    /// wins; otherwise DESKHAND_MAX_TOOL_CHARS; otherwise 200,000. Floored at 8,000 so it can't be uselessly small.</summary>
     public static int MaxChars
     {
         get
         {
+            if (_override > 0) return _override;
             var v = Environment.GetEnvironmentVariable("DESKHAND_MAX_TOOL_CHARS");
-            return int.TryParse(v, out var n) && n >= 8_000 ? n : 200_000;
+            return int.TryParse(v, out var n) && n >= FloorChars ? n : 200_000;
         }
+    }
+
+    /// <summary>Whether the current budget comes from a runtime override vs env/default.</summary>
+    public static string BudgetSource => _override > 0 ? "runtime"
+        : (int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_MAX_TOOL_CHARS"), out var n) && n >= FloorChars ? "env" : "default");
+
+    /// <summary>Set the runtime char budget for tool output (clamped to [8k, 20M]); pass 0 or less to clear the
+    /// override and fall back to env/default. Returns the now-effective budget.</summary>
+    public static int SetBudget(int chars)
+    {
+        _override = chars <= 0 ? 0 : Math.Clamp(chars, FloorChars, CeilingChars);
+        return MaxChars;
     }
 
     /// <summary>Save an over-budget result; returns its id. Old spills (>6h) are swept on write.</summary>

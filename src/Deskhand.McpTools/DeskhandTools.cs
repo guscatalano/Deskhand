@@ -638,6 +638,13 @@ public static class DeskhandTools
     public static string ReadOutput(string outputId, int offset = 0, int limit = 0)
         => JsonSerializer.Serialize(Deskhand.Core.Services.OutputStore.ReadSlice(outputId, offset, limit), J);
 
+    [McpServerTool(Name = "deskhand_output_budget"), Description("Get or set the per-result tool-output char budget — set this to YOUR context/tool-output limit so Deskhand shrinks or spills results to fit instead of you truncating them. Omit chars (or 0) to just read the current value; pass chars>0 to set it (clamped to [8000, 20000000]); pass a negative to clear the runtime override and fall back to env/default. Returns { budget, source }.")]
+    public static string OutputBudget(int chars = 0)
+    {
+        if (chars != 0) Deskhand.Core.Services.OutputStore.SetBudget(chars);
+        return JsonSerializer.Serialize(new { budget = Deskhand.Core.Services.OutputStore.MaxChars, source = Deskhand.Core.Services.OutputStore.BudgetSource }, J);
+    }
+
     [McpServerTool(Name = "deskhand_dump_process"), Description("Write a FULL-MEMORY crash dump (.dmp, via MiniDumpWriteDump — like Task Manager's 'Create dump file') of a process by pid, for debugging/forensics. Blocks until written (seconds–minutes; the file can be large). Saved on the host and downloadable at /dumps/{name}; auto-deleted after 24h. SENSITIVE: the dump contains the process's memory (may include secrets). Dumping protected/other-user processes needs elevation. Requires the kill switch to be armed.")]
     public static string DumpProcess(Deskhand.Core.Services.ProcessDumper d, ControlState state,
         [Description("Process id to dump.")] int pid)

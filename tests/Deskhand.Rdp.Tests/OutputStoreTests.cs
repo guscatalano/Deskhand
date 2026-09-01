@@ -45,4 +45,21 @@ public class OutputStoreTests
         Assert.NotNull(s.Error);
         Assert.Equal("", s.Text);
     }
+
+    [Fact]
+    public void Set_budget_clamps_and_clears()
+    {
+        try
+        {
+            Assert.Equal(50_000, OutputStore.SetBudget(50_000));
+            Assert.Equal("runtime", OutputStore.BudgetSource);
+            Assert.Equal(OutputStore.FloorChars, OutputStore.SetBudget(10));       // clamped up to the floor
+            Assert.Equal(OutputStore.CeilingChars, OutputStore.SetBudget(int.MaxValue)); // clamped to the ceiling
+        }
+        finally
+        {
+            OutputStore.SetBudget(0);                                              // clear the override
+            Assert.NotEqual("runtime", OutputStore.BudgetSource);
+        }
+    }
 }

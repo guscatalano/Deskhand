@@ -808,6 +808,16 @@ api.MapDelete("/webhooks", (ControlState st, AuditLog al, Deskhand.Core.Services
     return Results.Ok(new { ok, urls = wh.List() });
 });
 
+// Tool-output char budget (drives spill-to-OutputStore). GET reads; POST sets at runtime (a client can pin it
+// to its own context limit). Body {chars}: >0 set, <=0 clear the override.
+api.MapGet("/config/output-budget", () => Results.Ok(new { budget = Deskhand.Core.Services.OutputStore.MaxChars, source = Deskhand.Core.Services.OutputStore.BudgetSource }));
+api.MapPost("/config/output-budget", (AuditLog al, OutputBudgetRequest r) =>
+{
+    int eff = Deskhand.Core.Services.OutputStore.SetBudget(r.Chars ?? 0);
+    al.Record("output_budget", $"set {r.Chars}", $"effective {eff}");
+    return Results.Ok(new { budget = eff, source = Deskhand.Core.Services.OutputStore.BudgetSource });
+});
+
 // Spilled tool outputs: full text of an over-budget MCP result (see deskhand_read_output).
 api.MapGet("/outputs/{id}", (string id) =>
 {
@@ -1079,6 +1089,7 @@ record TaskActionRequest(string Task, string Action);
 record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
 record UacRespondRequest(bool? Accept, int? TimeoutMs);
 record FetchRequest(string? Url, string? Path, long? MaxBytes);
+record OutputBudgetRequest(int? Chars);
 record WebhookRequest(string? Url);
 
 // Forwards live UI events to registered webhook subscribers (outbound event push).

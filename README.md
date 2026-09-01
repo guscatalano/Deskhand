@@ -79,7 +79,8 @@ No bearer token is required for the browser dashboard. The server is protected b
   OutputStore and the tool returns a small **valid** envelope (`{ truncated:true, outputId, url, head, note }`)
   instead of a giant blob the client would cut mid-token (which corrupts JSON/base64). Page the rest in-channel
   with `deskhand_read_output(outputId, offset, limit)` or download it from `/outputs/{id}`. (Screenshots use the
-  separate `maxWidth`/`maxBytes` budget.)
+  separate `maxWidth`/`maxBytes` budget.) A client can pin the budget to **its own** context limit at runtime with
+  `deskhand_output_budget(chars)` / `POST /config/output-budget` — no restart or env change needed.
 - **Shell is opt-in** — the command runner (`/shell/run`, `deskhand_run_command`, the dashboard **Shell**
   tab) is **disabled unless you start the server with `DESKHAND_ENABLE_SHELL=1`**, and even then requires
   the kill switch to be *armed* and audits every command. Off by default because it runs arbitrary code as

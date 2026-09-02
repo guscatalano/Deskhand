@@ -275,6 +275,7 @@ app.MapPost("/agents/{id}/vision/click-text", (string id, AgentClickTextReq r) =
 app.MapGet("/agents/{id}/vision/pixel", (string id, int x, int y) => Results.Ok(O(id).GetPixel(x, y)));
 app.MapPost("/agents/{id}/ux/explore", (string id, AgentUxReq? r) => Results.Ok(O(id).ExploreUx(r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200)));
 app.MapPost("/agents/{id}/ux/crawl", (string id, AgentUxCrawlReq? r) => Results.Ok(O(id).CrawlUx(r?.Reference, r?.Depth ?? 3, r?.MaxNodes ?? 1500, r?.SelectTabs ?? false, r?.UseCache ?? false)));
+app.MapPost("/agents/{id}/dismiss-modals", (string id, AgentDismissReq? r) => Results.Ok(O(id).DismissModals(r?.AcceptOk ?? true, r?.AcceptYes ?? false, r?.MaxPasses ?? 4)));
 app.MapPost("/agents/{id}/input/paste", (string id, AgentClipReq r) => Results.Ok(O(id).Paste(r.Text ?? "")));
 app.MapPost("/agents/{id}/process/control", (string id, AgentProcCtrlReq r) =>
 {
@@ -410,3 +411,4 @@ record AgentUacRespReq(bool? Accept, int? TimeoutMs);
 record AgentFetchReq(string? Url, string? Path, long? MaxBytes);
 record AgentUxReq(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max);
 record AgentUxCrawlReq(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
+record AgentDismissReq(bool? AcceptOk, bool? AcceptYes, int? MaxPasses);

@@ -110,6 +110,7 @@ public static class FleetMethods
     public const string Fetch = "fetch";
     public const string ExploreUx = "explore_ux";
     public const string CrawlUx = "crawl_ux";
+    public const string DismissModals = "dismiss_modals";
     public const string DumpProcess = "dump_process";
     public const string ListApps = "list_apps";
     public const string ListDesktops = "list_desktops";

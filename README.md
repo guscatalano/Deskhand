@@ -103,6 +103,20 @@ layer is what makes **UIA-blind UIs navigable** — custom-drawn apps, Chromium/
 games — where the UIA tree is thin or absent. Returns `{ window, uiaCount, textCount, targets[…], note }`, ranked
 (enabled, reading order) and capped; act on a `uia` target by ref, or click any target's `(x,y)`.
 
+#### Dismiss dialogs (`/dismiss-modals`, `deskhand_dismiss_modals`)
+
+Closing pop-ups is a routine tax of driving real apps. `deskhand_dismiss_modals` finds open dialogs/modals and
+closes them **non-committally** — it clicks Cancel / Close / No / Don't-Save before it would ever click OK, and
+**never Yes** unless `acceptYes:true`, so it won't confirm a destructive prompt; it falls back to closing the
+window. Only dialog-like windows (owned pop-ups, the classic `#32770` class) are touched — never the main
+window — and it runs a few passes to clear a stack. Collapses many turns into one.
+
+#### Capture that carries the clickable targets (`withTargets`)
+
+The dominant agent loop is *capture → look → click-by-text*. Pass **`withTargets:true`** to `deskhand_capture_*`
+and the screenshot comes back with a compact list of **clickable text (OCR words + centers) and UIA controls
+(ref + center + type)** derived from the *same* capture — one round-trip instead of two, for a few KB.
+
 #### Crawl & cache the whole UX (`/ux/crawl`, `deskhand_crawl_ux`)
 
 Learn "every command this app has" once, then recall it. `deskhand_crawl_ux` actively explores a window to a

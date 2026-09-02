@@ -182,6 +182,8 @@ public static class AgentDispatcher
                 return Services.UxExplorer.Explore(b, a.Str("reference"), a.Bool("uia", true), a.Bool("text", true), a.Bool("includeOffscreen"), a.Int("max", 200));
             case FleetMethods.CrawlUx:
                 return Services.UxCrawler.Crawl(b, a.Str("reference"), a.Int("depth", 3), a.Int("maxNodes", 1500), a.Bool("selectTabs"), a.Bool("useCache"));
+            case FleetMethods.DismissModals:
+                return Services.DismissService.Dismiss(b, a.Bool("acceptOk", true), a.Bool("acceptYes"), a.Int("maxPasses", 4));
             case FleetMethods.Paste:
             {
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");

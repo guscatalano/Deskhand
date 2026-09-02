@@ -588,6 +588,15 @@ api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
 
+// Dismiss open dialogs/modals non-committally (Cancel/Close/No before OK; never Yes unless asked). Armed + audited.
+api.MapPost("/dismiss-modals", (IAutomationBackend b, ControlState st, AuditLog al, DismissRequest? r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.DismissService.Dismiss(b, r?.AcceptOk ?? true, r?.AcceptYes ?? false, r?.MaxPasses ?? 4);
+    al.Record("dismiss_modals", $"acceptOk={r?.AcceptOk ?? true} acceptYes={r?.AcceptYes ?? false}", $"dismissed {res.Count}");
+    return Results.Ok(res);
+});
+
 // OCR: read text off the screen for apps UIA can't see. Capture (lossless) then recognize; word boxes come
 // back in screen coordinates (click-ready). Capture-class — gated on captureEnabled.
 Deskhand.Core.Services.OcrResultDto Ocr(CaptureResultDto cap) =>
@@ -1103,6 +1112,7 @@ record FetchRequest(string? Url, string? Path, long? MaxBytes);
 record OutputBudgetRequest(int? Chars);
 record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max);
 record UxCrawlRequest(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
+record DismissRequest(bool? AcceptOk, bool? AcceptYes, int? MaxPasses);
 record WebhookRequest(string? Url);
 
 // Forwards live UI events to registered webhook subscribers (outbound event push).

@@ -510,6 +510,18 @@ public static class DeskhandTools
         return Try(() => Json(Deskhand.Core.Services.VisionOps.ClickText(b, text, Spec(target, monitor, x, y, width, height, hwnd, reference), button, count, timeoutMs)));
     }
 
+    [McpServerTool(Name = "deskhand_dismiss_modals"), Description("Find and close open dialogs / modal pop-ups in one call (the routine cost of driving a real app). Dismisses NON-COMMITTALLY: clicks Cancel/Close/No/Don't-Save before it would ever click OK (and never Yes unless acceptYes=true), so it won't confirm a destructive prompt; falls back to closing the window. Only touches dialog-like windows (owned pop-ups / #32770), never the main window. Runs a few passes to clear stacked dialogs. Returns { count, dismissed:[{window,hwnd,via}], note }. Requires armed; audited.")]
+    public static string DismissModals(IAutomationBackend b, ControlState state, AuditLog audit,
+        [Description("Allow clicking OK/Okay when no non-committal button exists (default true).")] bool acceptOk = true,
+        [Description("Allow clicking Yes (default false — Yes often confirms an action).")] bool acceptYes = false,
+        [Description("Max passes to clear stacked dialogs (default 4).")] int maxPasses = 4)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = Deskhand.Core.Services.DismissService.Dismiss(b, acceptOk, acceptYes, maxPasses);
+        audit.Record("dismiss_modals", $"acceptOk={acceptOk} acceptYes={acceptYes}", $"dismissed {res.Count}");
+        return Json(res);
+    }
+
     [McpServerTool(Name = "deskhand_get_pixel"), Description("Read the RGB color of a single screen pixel at (x,y) virtual-desktop coordinates. Returns { ok, x, y, r, g, b, hex }. Cheap state check (is the indicator green yet?). Requires capture enabled.")]
     public static string GetPixel(IAutomationBackend b, ControlState state, int x, int y)
     {
@@ -898,17 +910,56 @@ public static class DeskhandTools
         }
     }
 
-    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an MCP image block (image-capable clients render it). IF YOUR CLIENT CAN'T DISPLAY MCP IMAGES (you only see metadata, no image): pass save=true — it returns the screenshot as base64 TEXT in one call, plus a saved file + /screenshots/{name} download URL. TO FIT A SIZE BUDGET: pass maxWidth (cap the resolution) and/or maxBytes (cap the encoded payload; PNG is auto-switched to JPEG and downscaled to fit). The metadata reports the returned image's dimensions + scale so you can map image pixels back to screen coordinates.")]
-    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
-        => CaptureOut(ss, b.CaptureScreen(monitor, Fmt(format), 80), save, maxWidth, maxBytes);
+    [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an MCP image block (image-capable clients render it). IF YOUR CLIENT CAN'T DISPLAY MCP IMAGES (you only see metadata, no image): pass save=true — it returns the screenshot as base64 TEXT in one call, plus a saved file + /screenshots/{name} download URL. TO FIT A SIZE BUDGET: pass maxWidth (cap the resolution) and/or maxBytes (cap the encoded payload; PNG is auto-switched to JPEG and downscaled to fit). PASS withTargets=true to ALSO get the clickable text + UIA controls (label + screen center) in the same call — so you can click-by-text without a second round-trip. The metadata reports the returned image's dimensions + scale so you can map image pixels back to screen coordinates.")]
+    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false)
+    {
+        var c = b.CaptureScreen(monitor, Fmt(format), withTargets ? 100 : 80);
+        return Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+    }
 
-    [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget (see capture_screen).")]
-    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int x, int y, int width, int height, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
-        => CaptureOut(ss, b.CaptureRegion(x, y, width, height, Fmt(format), 80), save, maxWidth, maxBytes);
+    [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget; withTargets=true also returns clickable text + controls (see capture_screen).")]
+    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int x, int y, int width, int height, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false)
+    {
+        var c = b.CaptureRegion(x, y, width, height, Fmt(format), withTargets ? 100 : 80);
+        return Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+    }
 
-    [McpServerTool(Name = "deskhand_capture_window"), Description("Screenshot one window by element ref (its host window). Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget (see capture_screen).")]
-    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
-        => CaptureOut(ss, b.CaptureWindowByRef(reference, Fmt(format), 80), save, maxWidth, maxBytes);
+    [McpServerTool(Name = "deskhand_capture_window"), Description("Screenshot one window by element ref (its host window). Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget; withTargets=true also returns clickable text + controls (see capture_screen).")]
+    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false)
+    {
+        var c = b.CaptureWindowByRef(reference, Fmt(format), withTargets ? 100 : 80);
+        return Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+    }
+
+    // Append a compact "what's clickable here" block (OCR text + UIA controls) computed from the SAME captured
+    // bytes — so a capture can carry the click-by-text/-control targets without a second round-trip.
+    private static IEnumerable<ContentBlock> Annotate(IEnumerable<ContentBlock> blocks, IAutomationBackend b, CaptureResultDto c, bool withTargets)
+    {
+        var list = blocks.ToList();
+        if (!withTargets) return list;
+        try
+        {
+            var ocr = Deskhand.Core.Services.OcrService.Recognize(c.Bytes, c.Rect.X, c.Rect.Y);
+            var text = ocr.Words.Where(w => !string.IsNullOrWhiteSpace(w.Text))
+                .Select(w => new { label = w.Text, x = w.X + w.Width / 2, y = w.Y + w.Height / 2 }).Take(400).ToList();
+            var uia = new List<object>();
+            try
+            {
+                var fg = b.GetForegroundWindow();
+                foreach (var e in b.Find(fg.Ref, new FindQuery(Scope: "descendants", Max: 400)))
+                {
+                    if (e.IsOffscreen || e.BoundingRect is not { Width: > 0, Height: > 0 } r) continue;
+                    var acts = e.Patterns.Where(p => p is "Invoke" or "Toggle" or "ExpandCollapse" or "Value" or "SelectionItem").ToList();
+                    if (acts.Count == 0 && e.ControlType is not ("Button" or "MenuItem" or "TabItem" or "CheckBox" or "RadioButton" or "Edit" or "ComboBox" or "Hyperlink" or "ListItem")) continue;
+                    uia.Add(new { e.Ref, name = e.Name, type = e.ControlType, x = r.X + r.Width / 2, y = r.Y + r.Height / 2, enabled = e.IsEnabled });
+                }
+            }
+            catch { }
+            list.Add(new TextContentBlock { Text = Json(new { targets = new { uiaCount = uia.Count, textCount = text.Count, uia, text } }) });
+        }
+        catch { }
+        return list;
+    }
 
     [McpServerTool(Name = "deskhand_capture_element"), Description("Screenshot a single element's bounding rectangle. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget (see capture_screen).")]
     public static IEnumerable<ContentBlock> CaptureElement(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)

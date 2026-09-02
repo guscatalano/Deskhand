@@ -808,6 +808,10 @@ api.MapDelete("/webhooks", (ControlState st, AuditLog al, Deskhand.Core.Services
     return Results.Ok(new { ok, urls = wh.List() });
 });
 
+// UX map: fused UIA interactables + OCR text targets for the foreground window (or an element ref).
+api.MapPost("/ux/explore", (IAutomationBackend b, UxExploreRequest? r) =>
+    Results.Ok(Deskhand.Core.Services.UxExplorer.Explore(b, r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200)));
+
 // Tool-output char budget (drives spill-to-OutputStore). GET reads; POST sets at runtime (a client can pin it
 // to its own context limit). Body {chars}: >0 set, <=0 clear the override.
 api.MapGet("/config/output-budget", () => Results.Ok(new { budget = Deskhand.Core.Services.OutputStore.MaxChars, source = Deskhand.Core.Services.OutputStore.BudgetSource }));
@@ -1090,6 +1094,7 @@ record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoAp
 record UacRespondRequest(bool? Accept, int? TimeoutMs);
 record FetchRequest(string? Url, string? Path, long? MaxBytes);
 record OutputBudgetRequest(int? Chars);
+record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max);
 record WebhookRequest(string? Url);
 
 // Forwards live UI events to registered webhook subscribers (outbound event push).

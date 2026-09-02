@@ -319,6 +319,10 @@ public static class FleetTools
     public static string AgentGetPixel(AgentRegistry r, FleetAudit audit, string agentId, int x, int y)
         => Raw(O(r, audit, agentId, "get_pixel").GetPixel(x, y));
 
+    [McpServerTool(Name = "deskhand_agent_explore_ux"), Description("Compact UX map of a fleet PC's foreground window (or element ref): fused UIA interactables + OCR text targets, each with a click-ready screen center. The way to navigate a remote UI — including custom-drawn/canvas apps with no UIA tree.")]
+    public static string AgentExploreUx(AgentRegistry r, FleetAudit audit, string agentId, string? reference = null, bool uia = true, bool text = true, bool includeOffscreen = false, int max = 200)
+        => Raw(O(r, audit, agentId, "explore_ux").ExploreUx(reference, uia, text, includeOffscreen, max));
+
     [McpServerTool(Name = "deskhand_agent_paste_text"), Description("Paste text on a fleet PC (clipboard + Ctrl+V). Not available on RDP agents.")]
     public static string AgentPasteText(AgentRegistry r, FleetAudit audit, string agentId, string text)
         => Raw(O(r, audit, agentId, "paste").Paste(text));

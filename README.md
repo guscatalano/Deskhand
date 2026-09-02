@@ -93,6 +93,16 @@ No bearer token is required for the browser dashboard. The server is protected b
   `DESKHAND_ENABLE_FIREWALL_ADMIN=1`; also requires *armed*, is audited, and needs the host running as
   Administrator. **Deskhand only ever removes rules it opened** (see below).
 
+#### Explore the UX (`/ux/explore`, `deskhand_explore_ux`)
+
+A compact, action-oriented **map** of the current window for an agent to navigate by — instead of a verbose UIA
+tree or a screenshot it can't see. It **fuses two layers**: **UIA interactables** (buttons, menus, tabs, edits,
+list items — each with a `ref`, a click-ready screen center, and its actions: `invoke`/`toggle`/`expand`/
+`setValue`/`select`) and **OCR text targets** (every on-screen word as a click point at its center). The OCR
+layer is what makes **UIA-blind UIs navigable** — custom-drawn apps, Chromium/Electron canvases, audio plugins,
+games — where the UIA tree is thin or absent. Returns `{ window, uiaCount, textCount, targets[…], note }`, ranked
+(enabled, reading order) and capped; act on a `uia` target by ref, or click any target's `(x,y)`.
+
 #### Reliable automation: wait, then act (`/vision/wait-*`, `/vision/click-*`, `/vision/pixel`)
 
 The lookups above become *reliable* when you can wait on them and act in one shot:

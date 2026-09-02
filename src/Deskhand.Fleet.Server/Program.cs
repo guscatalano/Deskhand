@@ -273,6 +273,7 @@ app.MapPost("/agents/{id}/vision/click-image", (string id, AgentClickImageReq r)
 app.MapPost("/agents/{id}/vision/click-text", (string id, AgentClickTextReq r) =>
     Results.Ok(O(id).ClickText(r.Text ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Button, r.Count, r.TimeoutMs)));
 app.MapGet("/agents/{id}/vision/pixel", (string id, int x, int y) => Results.Ok(O(id).GetPixel(x, y)));
+app.MapPost("/agents/{id}/ux/explore", (string id, AgentUxReq? r) => Results.Ok(O(id).ExploreUx(r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200)));
 app.MapPost("/agents/{id}/input/paste", (string id, AgentClipReq r) => Results.Ok(O(id).Paste(r.Text ?? "")));
 app.MapPost("/agents/{id}/process/control", (string id, AgentProcCtrlReq r) =>
 {
@@ -406,3 +407,4 @@ record AgentTaskReq(string Task, string Action);
 record AgentUacCfgReq(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
 record AgentUacRespReq(bool? Accept, int? TimeoutMs);
 record AgentFetchReq(string? Url, string? Path, long? MaxBytes);
+record AgentUxReq(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max);

@@ -634,6 +634,15 @@ public static class DeskhandTools
         return Json(res);
     }
 
+    [McpServerTool(Name = "deskhand_explore_ux"), Description("Get a compact, action-oriented MAP of what's on the current window (or element ref) — the way to navigate a UI without wading through a huge UIA tree or a screenshot you can't see. FUSES two layers: UIA interactables (buttons/menus/tabs/edits/… each with a ref, a click-ready screen center, and its actions: invoke/toggle/expand/setValue/select) AND — crucially for custom-drawn/canvas/plugin/game UIs that have NO usable UIA tree — OCR text targets (every on-screen word as a click point at its center). Returns { window, uiaCount, textCount, targets:[{source,ref,label,type,x,y,enabled,actions,value}], note }. Act on a uia target by ref (deskhand_invoke/set_value/toggle) or click any target's (x,y); for OCR-only UIs use deskhand_click_text/find_image. Ranked + capped.")]
+    public static string ExploreUx(IAutomationBackend b,
+        [Description("Element ref of the window/container to map. Omit for the foreground window.")] string? reference = null,
+        [Description("Include UIA interactables (default true).")] bool uia = true,
+        [Description("Include OCR text targets (default true) — needed for UIA-blind UIs.")] bool text = true,
+        [Description("Include off-screen/scrolled-out elements (default false).")] bool includeOffscreen = false,
+        [Description("Max targets to return (default 200).")] int max = 200)
+        => Try(() => Json(Deskhand.Core.Services.UxExplorer.Explore(b, reference, uia, text, includeOffscreen, max)));
+
     [McpServerTool(Name = "deskhand_read_output"), Description("Page through a large tool result that was spilled to the OutputStore (when a previous tool returned { truncated:true, outputId }). Returns { outputId, offset, limit, totalChars, nextOffset, done, text }. Read sequentially with offset = the previous nextOffset until done=true. limit is clamped to the tool-output budget.")]
     public static string ReadOutput(string outputId, int offset = 0, int limit = 0)
         => JsonSerializer.Serialize(Deskhand.Core.Services.OutputStore.ReadSlice(outputId, offset, limit), J);

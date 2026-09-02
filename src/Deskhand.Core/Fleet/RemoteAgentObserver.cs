@@ -91,4 +91,5 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement UacConfig(bool? enabled, bool? promptOnSecureDesktop, bool? autoApprove, int? adminBehavior) => Call(FleetMethods.UacConfig, new { enabled, promptOnSecureDesktop, autoApprove, adminBehavior });
     public JsonElement UacRespond(bool accept, int timeoutMs) => Call(FleetMethods.UacRespond, new { accept, timeoutMs });
     public JsonElement Fetch(string url, string? path, long? maxBytes) => Call(FleetMethods.Fetch, new { url, path, maxBytes });
+    public JsonElement ExploreUx(string? reference, bool uia, bool text, bool includeOffscreen, int max) => Call(FleetMethods.ExploreUx, new { reference, uia, text, includeOffscreen, max });
 }

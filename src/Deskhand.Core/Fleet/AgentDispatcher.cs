@@ -178,6 +178,8 @@ public static class AgentDispatcher
                 return Services.VisionOps.ClickText(b, a.Str("text") ?? "", SpecOf(a), a.Str("button") ?? "left", a.Int("count", 1), a.Int("timeoutMs", 0));
             case FleetMethods.GetPixel:
                 return Services.VisionOps.GetPixel(b, a.Int("x"), a.Int("y"));
+            case FleetMethods.ExploreUx:
+                return Services.UxExplorer.Explore(b, a.Str("reference"), a.Bool("uia", true), a.Bool("text", true), a.Bool("includeOffscreen"), a.Int("max", 200));
             case FleetMethods.Paste:
             {
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");

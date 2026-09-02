@@ -103,6 +103,16 @@ layer is what makes **UIA-blind UIs navigable** — custom-drawn apps, Chromium/
 games — where the UIA tree is thin or absent. Returns `{ window, uiaCount, textCount, targets[…], note }`, ranked
 (enabled, reading order) and capped; act on a `uia` target by ref, or click any target's `(x,y)`.
 
+#### Crawl & cache the whole UX (`/ux/crawl`, `deskhand_crawl_ux`)
+
+Learn "every command this app has" once, then recall it. `deskhand_crawl_ux` actively explores a window to a
+`depth`, building a deep tree of its controls, and **caches the map per app** (exe · window-class · title) —
+`useCache:true` returns the saved map instantly instead of re-crawling. **Safe by design:** it only performs
+non-destructive, structure-revealing actions (expand collapsed menus/trees/groups, optionally select tabs),
+**never invokes** buttons/commands, skips dangerous labels (delete/quit/format/…), and collapses expanded nodes
+back. `deskhand_ux_cache` lists / fetches / deletes cached maps. (For a snapshot of just the *current* screen's
+actionable surface, use `deskhand_explore_ux` above.)
+
 #### Reliable automation: wait, then act (`/vision/wait-*`, `/vision/click-*`, `/vision/pixel`)
 
 The lookups above become *reliable* when you can wait on them and act in one shot:

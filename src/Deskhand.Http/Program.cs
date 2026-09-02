@@ -808,6 +808,13 @@ api.MapDelete("/webhooks", (ControlState st, AuditLog al, Deskhand.Core.Services
     return Results.Ok(new { ok, urls = wh.List() });
 });
 
+// UX crawl: actively (and safely) expand the window's structure to a depth, build + cache a deep map.
+api.MapPost("/ux/crawl", (IAutomationBackend b, UxCrawlRequest? r) =>
+    Results.Ok(Deskhand.Core.Services.UxCrawler.Crawl(b, r?.Reference, r?.Depth ?? 3, r?.MaxNodes ?? 1500, r?.SelectTabs ?? false, r?.UseCache ?? false)));
+api.MapGet("/ux/cache", (string? appKey) => appKey is null
+    ? Results.Ok(new { apps = Deskhand.Core.Services.UxCacheStore.List() })
+    : (Deskhand.Core.Services.UxCacheStore.Load(appKey) is { } j ? Results.Text(j.GetRawText(), "application/json") : Results.NotFound(new { error = "no cached map", type = "not_found" })));
+
 // UX map: fused UIA interactables + OCR text targets for the foreground window (or an element ref).
 api.MapPost("/ux/explore", (IAutomationBackend b, UxExploreRequest? r) =>
     Results.Ok(Deskhand.Core.Services.UxExplorer.Explore(b, r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200)));
@@ -1095,6 +1102,7 @@ record UacRespondRequest(bool? Accept, int? TimeoutMs);
 record FetchRequest(string? Url, string? Path, long? MaxBytes);
 record OutputBudgetRequest(int? Chars);
 record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max);
+record UxCrawlRequest(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
 record WebhookRequest(string? Url);
 
 // Forwards live UI events to registered webhook subscribers (outbound event push).

@@ -643,6 +643,31 @@ public static class DeskhandTools
         [Description("Max targets to return (default 200).")] int max = 200)
         => Try(() => Json(Deskhand.Core.Services.UxExplorer.Explore(b, reference, uia, text, includeOffscreen, max)));
 
+    [McpServerTool(Name = "deskhand_crawl_ux"), Description("Actively explore a window's UX to build a DEEP, cacheable map of its controls — learn 'every command this app has' once, then recall it. SAFE: it only expands collapsed menus/trees/groups and (optionally) selects tabs to reveal structure; it NEVER invokes buttons/commands (no side effects) and skips dangerous labels (delete/quit/format/…); expanded nodes are collapsed back. Returns a tree { appKey, window, nodes, depth, cached, root:{ref,name,type,x,y,actions,children[]} }. Cached per app — pass useCache=true to return the saved map instantly instead of re-crawling. depth 1–8 (default 3).")]
+    public static string CrawlUx(IAutomationBackend b,
+        [Description("Element ref of the window/container to crawl. Omit for the foreground window.")] string? reference = null,
+        [Description("How many levels deep to expand/recurse (1–8, default 3).")] int depth = 3,
+        [Description("Max nodes to visit (default 1500).")] int maxNodes = 1500,
+        [Description("Also select tabs to reveal their panes (changes the visible tab; default false).")] bool selectTabs = false,
+        [Description("Return the cached map for this app if one exists, instead of re-crawling (default false).")] bool useCache = false)
+        => Try(() => Json(Deskhand.Core.Services.UxCrawler.Crawl(b, reference, depth, maxNodes, selectTabs, useCache)));
+
+    [McpServerTool(Name = "deskhand_ux_cache"), Description("List cached UX maps (appKeys) from previous deskhand_crawl_ux runs, or fetch/delete one. action = list (default) | get | delete; for get/delete pass appKey. Recalling a map avoids re-crawling an app you've already explored.")]
+    public static string UxCache(string action = "list", string? appKey = null)
+    {
+        switch ((action ?? "list").ToLowerInvariant())
+        {
+            case "get":
+                if (string.IsNullOrWhiteSpace(appKey)) return Json(new { error = "appKey required for get", type = "bad_request" });
+                var m = Deskhand.Core.Services.UxCacheStore.Load(appKey);
+                return m is { } j ? j.GetRawText() : Json(new { error = "no cached map for that appKey", type = "not_found" });
+            case "delete":
+                return Json(new { ok = Deskhand.Core.Services.UxCacheStore.Delete(appKey ?? "") });
+            default:
+                return Json(new { apps = Deskhand.Core.Services.UxCacheStore.List() });
+        }
+    }
+
     [McpServerTool(Name = "deskhand_read_output"), Description("Page through a large tool result that was spilled to the OutputStore (when a previous tool returned { truncated:true, outputId }). Returns { outputId, offset, limit, totalChars, nextOffset, done, text }. Read sequentially with offset = the previous nextOffset until done=true. limit is clamped to the tool-output budget.")]
     public static string ReadOutput(string outputId, int offset = 0, int limit = 0)
         => JsonSerializer.Serialize(Deskhand.Core.Services.OutputStore.ReadSlice(outputId, offset, limit), J);

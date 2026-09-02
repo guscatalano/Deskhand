@@ -323,6 +323,10 @@ public static class FleetTools
     public static string AgentExploreUx(AgentRegistry r, FleetAudit audit, string agentId, string? reference = null, bool uia = true, bool text = true, bool includeOffscreen = false, int max = 200)
         => Raw(O(r, audit, agentId, "explore_ux").ExploreUx(reference, uia, text, includeOffscreen, max));
 
+    [McpServerTool(Name = "deskhand_agent_crawl_ux"), Description("Safely crawl a fleet PC's window UX to a depth (expands structure, never invokes commands) and cache the deep map on that agent. useCache=true returns the agent's saved map. depth 1–8 (default 3).")]
+    public static string AgentCrawlUx(AgentRegistry r, FleetAudit audit, string agentId, string? reference = null, int depth = 3, int maxNodes = 1500, bool selectTabs = false, bool useCache = false)
+        => Raw(O(r, audit, agentId, "crawl_ux").CrawlUx(reference, depth, maxNodes, selectTabs, useCache));
+
     [McpServerTool(Name = "deskhand_agent_paste_text"), Description("Paste text on a fleet PC (clipboard + Ctrl+V). Not available on RDP agents.")]
     public static string AgentPasteText(AgentRegistry r, FleetAudit audit, string agentId, string text)
         => Raw(O(r, audit, agentId, "paste").Paste(text));

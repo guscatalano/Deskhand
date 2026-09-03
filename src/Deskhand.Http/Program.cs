@@ -592,7 +592,7 @@ api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
 api.MapPost("/dismiss-modals", (IAutomationBackend b, ControlState st, AuditLog al, DismissRequest? r) =>
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
-    var res = Deskhand.Core.Services.DismissService.Dismiss(b, r?.AcceptOk ?? true, r?.AcceptYes ?? false, r?.MaxPasses ?? 4);
+    var res = Deskhand.Core.Services.DismissService.Dismiss(b, r?.AcceptOk ?? true, r?.AcceptYes ?? false, r?.MaxPasses ?? 4, r?.TitleContains, r?.IncludePopups ?? false);
     al.Record("dismiss_modals", $"acceptOk={r?.AcceptOk ?? true} acceptYes={r?.AcceptYes ?? false}", $"dismissed {res.Count}");
     return Results.Ok(res);
 });
@@ -826,7 +826,7 @@ api.MapGet("/ux/cache", (string? appKey) => appKey is null
 
 // UX map: fused UIA interactables + OCR text targets for the foreground window (or an element ref).
 api.MapPost("/ux/explore", (IAutomationBackend b, UxExploreRequest? r) =>
-    Results.Ok(Deskhand.Core.Services.UxExplorer.Explore(b, r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200)));
+    Results.Ok(Deskhand.Core.Services.UxExplorer.Explore(b, r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200, r?.IncludePopups ?? true)));
 
 // Tool-output char budget (drives spill-to-OutputStore). GET reads; POST sets at runtime (a client can pin it
 // to its own context limit). Body {chars}: >0 set, <=0 clear the override.
@@ -1150,9 +1150,9 @@ record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoAp
 record UacRespondRequest(bool? Accept, int? TimeoutMs);
 record FetchRequest(string? Url, string? Path, long? MaxBytes);
 record OutputBudgetRequest(int? Chars);
-record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max);
+record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max, bool? IncludePopups);
 record UxCrawlRequest(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
-record DismissRequest(bool? AcceptOk, bool? AcceptYes, int? MaxPasses);
+record DismissRequest(bool? AcceptOk, bool? AcceptYes, int? MaxPasses, IReadOnlyList<string>? TitleContains, bool? IncludePopups);
 record WebhookRequest(string? Url);
 
 // Forwards live UI events to registered webhook subscribers (outbound event push).

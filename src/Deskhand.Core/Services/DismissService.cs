@@ -20,7 +20,8 @@ public static class DismissService
     private static readonly string[] Ok = { "ok", "okay", "close" };
     private static readonly string[] Yes = { "yes" };
 
-    public static DismissResultDto Dismiss(IAutomationBackend b, bool acceptOk = true, bool acceptYes = false, int maxPasses = 4)
+    public static DismissResultDto Dismiss(IAutomationBackend b, bool acceptOk = true, bool acceptYes = false, int maxPasses = 4,
+        IReadOnlyList<string>? titleContains = null, bool includePopups = false)
     {
         maxPasses = Math.Clamp(maxPasses, 1, 10);
         var dismissed = new List<DismissedDto>();
@@ -28,7 +29,9 @@ public static class DismissService
 
         for (int pass = 0; pass < maxPasses; pass++)
         {
-            var dialogs = TopLevel(b).Where(IsDialog).Where(w => !seen.Contains(w.NativeWindowHandle)).ToList();
+            var dialogs = TopLevel(b)
+                .Where(w => IsTarget(w, titleContains, includePopups))
+                .Where(w => !seen.Contains(w.NativeWindowHandle)).ToList();
             if (dialogs.Count == 0) break;
             bool actedThisPass = false;
 
@@ -78,6 +81,18 @@ public static class DismissService
     private static IReadOnlyList<ElementInfoDto> TopLevel(IAutomationBackend b)
     { try { return b.GetTopLevelWindows(); } catch { return Array.Empty<ElementInfoDto>(); } }
 
+    private static bool IsTarget(ElementInfoDto w, IReadOnlyList<string>? titleContains, bool includePopups)
+    {
+        if (w.NativeWindowHandle == 0) return false;
+        if (IsDialog(w)) return true;
+        // Focus-stealers that appear over the app: close by explicit title match…
+        if (titleContains is { Count: > 0 } && !string.IsNullOrWhiteSpace(w.Name))
+            if (titleContains.Any(t => w.Name!.Contains(t, StringComparison.OrdinalIgnoreCase))) return true;
+        // …or, opt-in, by popup/menu class (open menus, flyouts, dropdowns, notifications).
+        if (includePopups && IsPopupClass(w)) return true;
+        return false;
+    }
+
     // A dialog: the classic Win32 dialog class, a "…Dialog" class, or an owned (secondary) top-level window.
     private static bool IsDialog(ElementInfoDto w)
     {
@@ -85,6 +100,14 @@ public static class DismissService
         var cls = w.ClassName ?? "";
         if (cls == "#32770" || cls.Contains("Dialog", StringComparison.OrdinalIgnoreCase)) return true;
         try { return GetWindow((IntPtr)w.NativeWindowHandle, GW_OWNER) != IntPtr.Zero; } catch { return false; }
+    }
+
+    private static bool IsPopupClass(ElementInfoDto w)
+    {
+        var cls = w.ClassName ?? "";
+        return cls is "#32768" || cls.Contains("Popup", StringComparison.OrdinalIgnoreCase)
+            || cls.Contains("Menu", StringComparison.OrdinalIgnoreCase) || cls.Contains("Flyout", StringComparison.OrdinalIgnoreCase)
+            || cls.Contains("DropDown", StringComparison.OrdinalIgnoreCase) || cls.Contains("ToolTip", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Norm(string? s) => (s ?? "").Replace("&", "").Trim().ToLowerInvariant();

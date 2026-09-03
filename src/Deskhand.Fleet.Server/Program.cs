@@ -273,9 +273,9 @@ app.MapPost("/agents/{id}/vision/click-image", (string id, AgentClickImageReq r)
 app.MapPost("/agents/{id}/vision/click-text", (string id, AgentClickTextReq r) =>
     Results.Ok(O(id).ClickText(r.Text ?? "", r.Target, r.Monitor, r.X, r.Y, r.Width, r.Height, r.Hwnd, r.Reference, r.Button, r.Count, r.TimeoutMs)));
 app.MapGet("/agents/{id}/vision/pixel", (string id, int x, int y) => Results.Ok(O(id).GetPixel(x, y)));
-app.MapPost("/agents/{id}/ux/explore", (string id, AgentUxReq? r) => Results.Ok(O(id).ExploreUx(r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200)));
+app.MapPost("/agents/{id}/ux/explore", (string id, AgentUxReq? r) => Results.Ok(O(id).ExploreUx(r?.Reference, r?.Uia ?? true, r?.Text ?? true, r?.IncludeOffscreen ?? false, r?.Max ?? 200, r?.IncludePopups ?? true)));
 app.MapPost("/agents/{id}/ux/crawl", (string id, AgentUxCrawlReq? r) => Results.Ok(O(id).CrawlUx(r?.Reference, r?.Depth ?? 3, r?.MaxNodes ?? 1500, r?.SelectTabs ?? false, r?.UseCache ?? false)));
-app.MapPost("/agents/{id}/dismiss-modals", (string id, AgentDismissReq? r) => Results.Ok(O(id).DismissModals(r?.AcceptOk ?? true, r?.AcceptYes ?? false, r?.MaxPasses ?? 4)));
+app.MapPost("/agents/{id}/dismiss-modals", (string id, AgentDismissReq? r) => Results.Ok(O(id).DismissModals(r?.AcceptOk ?? true, r?.AcceptYes ?? false, r?.MaxPasses ?? 4, r?.TitleContains, r?.IncludePopups ?? false)));
 app.MapPost("/agents/{id}/keyboard/press", (string id, AgentPressReq r) => Results.Ok(O(id).PressKeys(r.Chords ?? System.Array.Empty<string>(), r.BetweenMs ?? 40, r.Repeat ?? 1)));
 app.MapPost("/agents/{id}/secure/attention", (string id, AgentSasReq? r) => Results.Ok(O(id).SecureAttention(r?.AsUser)));
 app.MapPost("/agents/{id}/secure/lock", (string id) => Results.Ok(O(id).LockWorkstation()));
@@ -412,8 +412,8 @@ record AgentTaskReq(string Task, string Action);
 record AgentUacCfgReq(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
 record AgentUacRespReq(bool? Accept, int? TimeoutMs);
 record AgentFetchReq(string? Url, string? Path, long? MaxBytes);
-record AgentUxReq(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max);
+record AgentUxReq(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max, bool? IncludePopups);
 record AgentUxCrawlReq(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
-record AgentDismissReq(bool? AcceptOk, bool? AcceptYes, int? MaxPasses);
+record AgentDismissReq(bool? AcceptOk, bool? AcceptYes, int? MaxPasses, string[]? TitleContains, bool? IncludePopups);
 record AgentPressReq(string[]? Chords, int? BetweenMs, int? Repeat);
 record AgentSasReq(bool? AsUser);

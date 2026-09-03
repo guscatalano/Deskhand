@@ -320,8 +320,8 @@ public static class FleetTools
         => Raw(O(r, audit, agentId, "get_pixel").GetPixel(x, y));
 
     [McpServerTool(Name = "deskhand_agent_explore_ux"), Description("Compact UX map of a fleet PC's foreground window (or element ref): fused UIA interactables + OCR text targets, each with a click-ready screen center. The way to navigate a remote UI — including custom-drawn/canvas apps with no UIA tree.")]
-    public static string AgentExploreUx(AgentRegistry r, FleetAudit audit, string agentId, string? reference = null, bool uia = true, bool text = true, bool includeOffscreen = false, int max = 200)
-        => Raw(O(r, audit, agentId, "explore_ux").ExploreUx(reference, uia, text, includeOffscreen, max));
+    public static string AgentExploreUx(AgentRegistry r, FleetAudit audit, string agentId, string? reference = null, bool uia = true, bool text = true, bool includeOffscreen = false, int max = 200, bool includePopups = true)
+        => Raw(O(r, audit, agentId, "explore_ux").ExploreUx(reference, uia, text, includeOffscreen, max, includePopups));
 
     [McpServerTool(Name = "deskhand_agent_press_keys"), Description("Send a sequence of key chords on a fleet PC, e.g. [\"alt+f\",\"s\"]. betweenMs paces them; repeat sends the sequence N times.")]
     public static string AgentPressKeys(AgentRegistry r, FleetAudit audit, string agentId, string[] chords, int betweenMs = 40, int repeat = 1)
@@ -336,8 +336,8 @@ public static class FleetTools
         => Raw(O(r, audit, agentId, "lock_workstation").LockWorkstation());
 
     [McpServerTool(Name = "deskhand_agent_dismiss_modals"), Description("Find and close dialogs/modals on a fleet PC non-committally (Cancel/Close/No before OK; Yes only if acceptYes). Returns { count, dismissed[] }.")]
-    public static string AgentDismissModals(AgentRegistry r, FleetAudit audit, string agentId, bool acceptOk = true, bool acceptYes = false, int maxPasses = 4)
-        => Raw(O(r, audit, agentId, "dismiss_modals").DismissModals(acceptOk, acceptYes, maxPasses));
+    public static string AgentDismissModals(AgentRegistry r, FleetAudit audit, string agentId, bool acceptOk = true, bool acceptYes = false, int maxPasses = 4, string[]? titleContains = null, bool includePopups = false)
+        => Raw(O(r, audit, agentId, "dismiss_modals").DismissModals(acceptOk, acceptYes, maxPasses, titleContains, includePopups));
 
     [McpServerTool(Name = "deskhand_agent_crawl_ux"), Description("Safely crawl a fleet PC's window UX to a depth (expands structure, never invokes commands) and cache the deep map on that agent. useCache=true returns the agent's saved map. depth 1–8 (default 3).")]
     public static string AgentCrawlUx(AgentRegistry r, FleetAudit audit, string agentId, string? reference = null, int depth = 3, int maxNodes = 1500, bool selectTabs = false, bool useCache = false)

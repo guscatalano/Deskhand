@@ -514,10 +514,12 @@ public static class DeskhandTools
     public static string DismissModals(IAutomationBackend b, ControlState state, AuditLog audit,
         [Description("Allow clicking OK/Okay when no non-committal button exists (default true).")] bool acceptOk = true,
         [Description("Allow clicking Yes (default false — Yes often confirms an action).")] bool acceptYes = false,
-        [Description("Max passes to clear stacked dialogs (default 4).")] int maxPasses = 4)
+        [Description("Max passes to clear stacked dialogs (default 4).")] int maxPasses = 4,
+        [Description("Also close any window whose TITLE contains one of these substrings — for focus-stealers that pop over the target app (update/sign-in/notification windows).")] string[]? titleContains = null,
+        [Description("Also close popup/menu/flyout/dropdown/tooltip class windows (default false).")] bool includePopups = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
-        var res = Deskhand.Core.Services.DismissService.Dismiss(b, acceptOk, acceptYes, maxPasses);
+        var res = Deskhand.Core.Services.DismissService.Dismiss(b, acceptOk, acceptYes, maxPasses, titleContains, includePopups);
         audit.Record("dismiss_modals", $"acceptOk={acceptOk} acceptYes={acceptYes}", $"dismissed {res.Count}");
         return Json(res);
     }
@@ -652,8 +654,9 @@ public static class DeskhandTools
         [Description("Include UIA interactables (default true).")] bool uia = true,
         [Description("Include OCR text targets (default true) — needed for UIA-blind UIs.")] bool text = true,
         [Description("Include off-screen/scrolled-out elements (default false).")] bool includeOffscreen = false,
-        [Description("Max targets to return (default 200).")] int max = 200)
-        => Try(() => Json(Deskhand.Core.Services.UxExplorer.Explore(b, reference, uia, text, includeOffscreen, max)));
+        [Description("Max targets to return (default 200).")] int max = 200,
+        [Description("Also include controls in OPEN menu/popup/dropdown windows (separate top-level windows) — needed to navigate menu-driven apps (default true).")] bool includePopups = true)
+        => Try(() => Json(Deskhand.Core.Services.UxExplorer.Explore(b, reference, uia, text, includeOffscreen, max, includePopups)));
 
     [McpServerTool(Name = "deskhand_crawl_ux"), Description("Actively explore a window's UX to build a DEEP, cacheable map of its controls — learn 'every command this app has' once, then recall it. SAFE: it only expands collapsed menus/trees/groups and (optionally) selects tabs to reveal structure; it NEVER invokes buttons/commands (no side effects) and skips dangerous labels (delete/quit/format/…); expanded nodes are collapsed back. Returns a tree { appKey, window, nodes, depth, cached, root:{ref,name,type,x,y,actions,children[]} }. Cached per app — pass useCache=true to return the saved map instantly instead of re-crawling. depth 1–8 (default 3).")]
     public static string CrawlUx(IAutomationBackend b,
@@ -999,8 +1002,10 @@ public static class DeskhandTools
     public static string TypeText(IAutomationBackend b, string text, string? reference = null)
         => FocusThen(b, reference, () => b.TypeText(text));
 
-    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord, e.g. \"ctrl+shift+s\", \"alt+F4\", \"enter\", \"tab\". Modifiers: ctrl, alt, shift, win. Goes to the focused window — pass reference (an element ref) to focus that element's window FIRST if the chord isn't reaching the right app.")]
-    public static string SendKeys(IAutomationBackend b, string chord, string? reference = null)
+    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord to the focused window. Pass reference (an element ref) to focus that element's window FIRST if the chord isn't reaching the right app.")]
+    public static string SendKeys(IAutomationBackend b,
+        [Description("Key chord, '+'-separated, modifiers first. Modifiers: ctrl, alt, shift, win. Key (last token): a letter/digit/symbol (e.g. s, 1, /), F1–F24, or a named key: enter, return, tab, esc, space, backspace, delete, insert, home, end, pageup, pagedown, up, down, left, right, printscreen. Examples: \"ctrl+s\", \"ctrl+shift+esc\", \"alt+F4\", \"win+d\", \"enter\".")] string chord,
+        [Description("Optional element ref whose window to focus before sending.")] string? reference = null)
         => FocusThen(b, reference, () => b.SendKeys(chord));
 
     [McpServerTool(Name = "deskhand_press_keys"), Description("Send a SEQUENCE of key chords in order — e.g. [\"alt+f\",\"s\"] to walk a File→Save menu, or [\"ctrl+a\",\"delete\"]. betweenMs paces them (default 40); repeat sends the whole sequence N times. Goes to the focused window (pass reference to focus first). Requires armed; audited.")]

@@ -119,7 +119,9 @@ Closing pop-ups is a routine tax of driving real apps. `deskhand_dismiss_modals`
 closes them **non-committally** — it clicks Cancel / Close / No / Don't-Save before it would ever click OK, and
 **never Yes** unless `acceptYes:true`, so it won't confirm a destructive prompt; it falls back to closing the
 window. Only dialog-like windows (owned pop-ups, the classic `#32770` class) are touched — never the main
-window — and it runs a few passes to clear a stack. Collapses many turns into one.
+window — and it runs a few passes to clear a stack. Collapses many turns into one. For focus-stealers that pop
+*over* the app (update/sign-in/notification windows), pass **`titleContains`** to close any window by a title
+substring; **`includePopups:true`** also closes menu/flyout/dropdown/tooltip-class windows.
 
 #### Capture that carries the clickable targets (`withTargets`)
 
@@ -185,6 +187,8 @@ The visual complement to OCR: locate a small template image (an icon, button, cu
 inside a screenshot by grayscale **normalized cross-correlation**, then click/drag to the result. `target` is
 `screen` (default), `region` (`x,y,width,height`), or `window` (`hwnd`/`reference`). Returns matches sorted
 best-first, each with a `score` and a **screen-coordinate** box + `centerX,centerY`, plus a `best` shortcut.
+(`explore_ux` includes open **menu/popup windows** by default — `includePopups` — since they're separate
+top-level windows, which is the only structural path through a menu-driven app.)
 Search is coarse-to-fine (a downscaled pass finds candidates, each refined at full resolution) — a full 2880×1920
 screen scans in about a second — and overlapping hits are de-duplicated. NCC tolerates brightness/contrast
 shifts but **not** scaling or rotation of the template. Requires capture enabled. Fleet parity:

@@ -36,15 +36,15 @@ public static class UxExplorer
     };
 
     public static UxMapDto Explore(IAutomationBackend b, string? rootRef, bool includeUia = true, bool includeText = true,
-        bool includeOffscreen = false, int max = 200)
+        bool includeOffscreen = false, int max = 200, bool includePopups = true)
     {
         max = Math.Clamp(max, 1, 1000);
-        string? window = null; int? hwnd = null; RectDto? winRect = null;
+        string? window = null; int? hwnd = null; RectDto? winRect = null; int? rootPid = null;
         try
         {
             var root = rootRef is not null ? b.GetElement(rootRef) : b.GetForegroundWindow();
             window = root?.Name; hwnd = (int?)(root?.NativeWindowHandle); winRect = root?.BoundingRect;
-            rootRef = root?.Ref ?? rootRef;
+            rootRef = root?.Ref ?? rootRef; rootPid = root?.ProcessId;
         }
         catch (Exception ex) { return new UxMapDto(null, null, 0, 0, 0, Array.Empty<UxTargetDto>(), "", "Could not resolve the target window: " + ex.Message); }
 
@@ -71,6 +71,35 @@ public static class UxExplorer
                 }
             }
             catch { /* thin/absent UIA tree — OCR carries the map */ }
+
+            // ---- open menus / popups / dropdowns live in SEPARATE top-level windows, not under the root ----
+            // Without these there's no structural path through a menu-driven app.
+            if (includePopups)
+            {
+                try
+                {
+                    foreach (var win in b.GetTopLevelWindows())
+                    {
+                        if (win.Ref == rootRef || win.NativeWindowHandle == (hwnd ?? 0)) continue;
+                        if (!IsPopup(win, rootPid)) continue;
+                        try
+                        {
+                            foreach (var e in b.Find(win.Ref, new FindQuery(Scope: "descendants", Max: 200)))
+                            {
+                                var actions = ActionsFor(e);
+                                if (actions.Count == 0 && !Interactable.Contains(e.ControlType)) continue;
+                                if (!includeOffscreen && e.IsOffscreen) continue;
+                                if (e.BoundingRect is not { } r || r.Width <= 0 || r.Height <= 0) continue;
+                                targets.Add(new UxTargetDto("popup", e.Ref, Clean(e.Name) ?? "", e.ControlType,
+                                    r.X + r.Width / 2, r.Y + r.Height / 2, e.IsEnabled, actions.Count > 0 ? actions : new[] { "invoke" }));
+                                uiaCount++;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
         }
 
         // ---- OCR text targets (the fallback for UIA-blind UIs) ----
@@ -126,6 +155,16 @@ public static class UxExplorer
             }
         if (a.Count == 0 && e.ControlType is "Edit" or "Document") a.Add("setValue");
         return a.Distinct().ToList();
+    }
+
+    // A separate top-level window that's an open menu/popup/dropdown, or just another window of the same app.
+    private static bool IsPopup(ElementInfoDto w, int? rootPid)
+    {
+        var cls = w.ClassName ?? "";
+        if (cls is "#32768" or "#32770") return true;   // classic menu / dialog
+        if (cls.Contains("Popup", StringComparison.OrdinalIgnoreCase) || cls.Contains("Menu", StringComparison.OrdinalIgnoreCase)
+            || cls.Contains("Flyout", StringComparison.OrdinalIgnoreCase) || cls.Contains("DropDown", StringComparison.OrdinalIgnoreCase)) return true;
+        return rootPid is int p && w.ProcessId == p;    // an auxiliary window of the same app (e.g. an open dropdown)
     }
 
     private static string? Clean(string? s)

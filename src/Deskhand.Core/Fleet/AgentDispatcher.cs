@@ -179,11 +179,11 @@ public static class AgentDispatcher
             case FleetMethods.GetPixel:
                 return Services.VisionOps.GetPixel(b, a.Int("x"), a.Int("y"));
             case FleetMethods.ExploreUx:
-                return Services.UxExplorer.Explore(b, a.Str("reference"), a.Bool("uia", true), a.Bool("text", true), a.Bool("includeOffscreen"), a.Int("max", 200));
+                return Services.UxExplorer.Explore(b, a.Str("reference"), a.Bool("uia", true), a.Bool("text", true), a.Bool("includeOffscreen"), a.Int("max", 200), a.Bool("includePopups", true));
             case FleetMethods.CrawlUx:
                 return Services.UxCrawler.Crawl(b, a.Str("reference"), a.Int("depth", 3), a.Int("maxNodes", 1500), a.Bool("selectTabs"), a.Bool("useCache"));
             case FleetMethods.DismissModals:
-                return Services.DismissService.Dismiss(b, a.Bool("acceptOk", true), a.Bool("acceptYes"), a.Int("maxPasses", 4));
+                return Services.DismissService.Dismiss(b, a.Bool("acceptOk", true), a.Bool("acceptYes"), a.Int("maxPasses", 4), a.Obj<string[]>("titleContains"), a.Bool("includePopups"));
             case FleetMethods.PressKeys:
             {
                 var chords = a.Obj<string[]>("chords") ?? Array.Empty<string>();

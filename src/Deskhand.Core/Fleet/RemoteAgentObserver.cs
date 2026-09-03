@@ -91,9 +91,9 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement UacConfig(bool? enabled, bool? promptOnSecureDesktop, bool? autoApprove, int? adminBehavior) => Call(FleetMethods.UacConfig, new { enabled, promptOnSecureDesktop, autoApprove, adminBehavior });
     public JsonElement UacRespond(bool accept, int timeoutMs) => Call(FleetMethods.UacRespond, new { accept, timeoutMs });
     public JsonElement Fetch(string url, string? path, long? maxBytes) => Call(FleetMethods.Fetch, new { url, path, maxBytes });
-    public JsonElement ExploreUx(string? reference, bool uia, bool text, bool includeOffscreen, int max) => Call(FleetMethods.ExploreUx, new { reference, uia, text, includeOffscreen, max });
+    public JsonElement ExploreUx(string? reference, bool uia, bool text, bool includeOffscreen, int max, bool includePopups) => Call(FleetMethods.ExploreUx, new { reference, uia, text, includeOffscreen, max, includePopups });
     public JsonElement CrawlUx(string? reference, int depth, int maxNodes, bool selectTabs, bool useCache) => Call(FleetMethods.CrawlUx, new { reference, depth, maxNodes, selectTabs, useCache });
-    public JsonElement DismissModals(bool acceptOk, bool acceptYes, int maxPasses) => Call(FleetMethods.DismissModals, new { acceptOk, acceptYes, maxPasses });
+    public JsonElement DismissModals(bool acceptOk, bool acceptYes, int maxPasses, string[]? titleContains, bool includePopups) => Call(FleetMethods.DismissModals, new { acceptOk, acceptYes, maxPasses, titleContains, includePopups });
     public JsonElement PressKeys(string[] chords, int betweenMs, int repeat) => Call(FleetMethods.PressKeys, new { chords, betweenMs, repeat });
     public JsonElement SecureAttention(bool? asUser) => Call(FleetMethods.SecureAttention, new { asUser });
     public JsonElement LockWorkstation() => Call(FleetMethods.LockWorkstation, null);

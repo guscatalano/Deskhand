@@ -93,6 +93,16 @@ No bearer token is required for the browser dashboard. The server is protected b
   `DESKHAND_ENABLE_FIREWALL_ADMIN=1`; also requires *armed*, is audited, and needs the host running as
   Administrator. **Deskhand only ever removes rules it opened** (see below).
 
+#### Set-of-Mark: pick a number, not a pixel (`capture_* marks:true`, `deskhand_act_mark`)
+
+Models ignore a coordinate list because it competes with the picture — so put the targets *on* the picture.
+`deskhand_capture_screen/region/window` with **`marks:true`** draws numbered boxes over every actionable target
+(UIA controls + OCR text) and returns a legend `{ markSet, marks:[{id,label,type,ref,x,y,actions}], total }`.
+The model reads a **number off the image** and calls **`deskhand_act_mark(id)`** — Deskhand hits that target's
+exact center or acts by its UIA ref (invoke/set_value/toggle/select), no pixel guessing. Dense UI? The legend
+reports `total` when capped; narrow with **`markFilter:"save"`** or **`markOnly:"uia"`**, or mark a smaller
+**region** — rather than drawing hundreds of unreadable boxes.
+
 #### Explore the UX (`/ux/explore`, `deskhand_explore_ux`)
 
 A compact, action-oriented **map** of the current window for an agent to navigate by — instead of a verbose UIA

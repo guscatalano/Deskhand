@@ -914,24 +914,77 @@ public static class DeskhandTools
     }
 
     [McpServerTool(Name = "deskhand_capture_screen"), Description("Screenshot a monitor (by index) or the whole virtual desktop (omit monitor). Returns an MCP image block (image-capable clients render it). IF YOUR CLIENT CAN'T DISPLAY MCP IMAGES (you only see metadata, no image): pass save=true — it returns the screenshot as base64 TEXT in one call, plus a saved file + /screenshots/{name} download URL. TO FIT A SIZE BUDGET: pass maxWidth (cap the resolution) and/or maxBytes (cap the encoded payload; PNG is auto-switched to JPEG and downscaled to fit). PASS withTargets=true to ALSO get the clickable text + UIA controls (label + screen center) in the same call — so you can click-by-text without a second round-trip. The metadata reports the returned image's dimensions + scale so you can map image pixels back to screen coordinates.")]
-    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false)
+    public static IEnumerable<ContentBlock> CaptureScreen(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int? monitor = null, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false,
+        [Description("Set-of-Mark: draw numbered boxes over actionable targets and return a legend, so you pick a number (act_mark) instead of guessing a pixel.")] bool marks = false,
+        [Description("Max marks to draw (default 60). Dense UIs report a 'total' so you know it's capped — narrow instead of drawing hundreds.")] int maxMarks = 60,
+        [Description("Only mark targets whose label contains this text (optional) — the way to cut a dense UI down.")] string? markFilter = null,
+        [Description("Restrict marks to \"uia\" (controls) or \"text\" (OCR); default all.")] string? markOnly = null)
     {
-        var c = b.CaptureScreen(monitor, Fmt(format), withTargets ? 100 : 80);
-        return Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+        var c = b.CaptureScreen(monitor, Fmt(format), (withTargets || marks) ? 100 : 80);
+        return marks ? WithMarks(b, ss, c, save, maxWidth, maxBytes, maxMarks, markFilter, markOnly) : Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
     }
 
     [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget; withTargets=true also returns clickable text + controls (see capture_screen).")]
-    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int x, int y, int width, int height, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false)
+    public static IEnumerable<ContentBlock> CaptureRegion(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, int x, int y, int width, int height, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false, bool marks = false, int maxMarks = 60, string? markFilter = null, string? markOnly = null)
     {
-        var c = b.CaptureRegion(x, y, width, height, Fmt(format), withTargets ? 100 : 80);
-        return Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+        var c = b.CaptureRegion(x, y, width, height, Fmt(format), (withTargets || marks) ? 100 : 80);
+        return marks ? WithMarks(b, ss, c, save, maxWidth, maxBytes, maxMarks, markFilter, markOnly) : Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
     }
 
     [McpServerTool(Name = "deskhand_capture_window"), Description("Screenshot one window by element ref (its host window). Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget; withTargets=true also returns clickable text + controls (see capture_screen).")]
-    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false)
+    public static IEnumerable<ContentBlock> CaptureWindow(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, string reference, string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null, bool withTargets = false, bool marks = false, int maxMarks = 60, string? markFilter = null, string? markOnly = null)
     {
-        var c = b.CaptureWindowByRef(reference, Fmt(format), withTargets ? 100 : 80);
-        return Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+        var c = b.CaptureWindowByRef(reference, Fmt(format), (withTargets || marks) ? 100 : 80);
+        return marks ? WithMarks(b, ss, c, save, maxWidth, maxBytes, maxMarks, markFilter, markOnly) : Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+    }
+
+    // Set-of-Mark: draw numbered boxes on the capture, remember the mapping, and return the annotated image plus
+    // a legend { markSet, marks:[{id,label,type,ref,x,y,actions}] }. Act on a number with deskhand_act_mark.
+    private static IEnumerable<ContentBlock> WithMarks(IAutomationBackend b, Deskhand.Core.Services.ScreenshotStore ss, CaptureResultDto c, bool save, int? maxWidth, int? maxBytes, int maxMarks, string? markFilter, string? markOnly)
+    {
+        var (annotated, marks, total) = Deskhand.Core.Services.SetOfMarkService.Build(b, c, includeText: true, includePopups: true, max: maxMarks, filter: markFilter, only: markOnly);
+        string set = Deskhand.Core.Services.MarkStore.Save(marks);
+        var cA = c with { Bytes = annotated, Format = "png" };   // annotated output is always PNG
+        var blocks = CaptureOut(ss, cA, save, maxWidth, maxBytes).ToList();
+        string note = total > marks.Count
+            ? $"Showing {marks.Count} of {total} targets (capped for legibility). Too dense — narrow with markFilter=\"<text>\" or markOnly=\"uia\", capture a smaller region with marks, or raise maxMarks. Act with deskhand_act_mark(id)."
+            : "Numbered boxes are drawn on the image. Act on one with deskhand_act_mark(id). uia marks act by ref (invoke/set_value); ocr/text marks click their center.";
+        blocks.Add(new TextContentBlock { Text = Json(new
+        {
+            markSet = set,
+            count = marks.Count,
+            total,
+            note,
+            marks = marks.Select(m => new { m.Id, m.Label, m.Type, m.Ref, m.X, m.Y, m.Actions }),
+        }) });
+        return blocks;
+    }
+
+    [McpServerTool(Name = "deskhand_act_mark"), Description("Act on a NUMBERED mark from the most recent capture(marks:true) — you pick the number you saw drawn on the image and Deskhand hits its exact target (no pixel guessing). action: click (default) | double | right | move | invoke | toggle | setValue (pass text) | select. A 'uia' mark prefers its ref; an 'ocr'/'text' mark clicks its center. Pass markSet to act on an older set. Returns { ok, id, action, x, y, ref?, label }. Requires armed; audited.")]
+    public static string ActMark(IAutomationBackend b, ControlState state, AuditLog audit, int id,
+        string? action = null, string? text = null, string? markSet = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var m = Deskhand.Core.Services.MarkStore.Get(markSet, id);
+        if (m is null) return Json(new { error = $"No mark {id} (capture with marks:true first, or pass a valid markSet).", type = "not_found" });
+        string act = (action ?? (m.Ref is not null && m.Actions.Contains("invoke") ? "invoke" : "click")).Trim().ToLowerInvariant();
+        return Try(() =>
+        {
+            switch (act)
+            {
+                case "click": b.MouseClick("left", m.X, m.Y, 1); break;
+                case "double": case "doubleclick": b.MouseClick("left", m.X, m.Y, 2); act = "double"; break;
+                case "right": case "rightclick": b.MouseClick("right", m.X, m.Y, 1); act = "right"; break;
+                case "move": case "moveto": b.MouseMove(m.X, m.Y); break;
+                case "invoke": if (m.Ref is not null) b.Invoke(m.Ref); else { b.MouseClick("left", m.X, m.Y, 1); act = "click"; } break;
+                case "toggle": if (m.Ref is null) throw new ArgumentException("This mark has no UIA ref to toggle."); b.Toggle(m.Ref); break;
+                case "setvalue": if (m.Ref is null) throw new ArgumentException("This mark has no UIA ref to set."); b.SetValue(m.Ref, text ?? ""); break;
+                case "select": if (m.Ref is not null) b.Select(m.Ref); else { b.MouseClick("left", m.X, m.Y, 1); act = "click"; } break;
+                default: b.MouseClick("left", m.X, m.Y, 1); act = "click"; break;
+            }
+            audit.Record("act_mark", $"{act} #{id} ({m.Type})", "ok");
+            return Json(new { ok = true, id, action = act, m.X, m.Y, m.Ref, m.Label });
+        });
     }
 
     // Append a compact "what's clickable here" block (OCR text + UIA controls) computed from the SAME captured

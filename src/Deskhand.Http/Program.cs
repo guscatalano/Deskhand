@@ -817,6 +817,36 @@ api.MapDelete("/webhooks", (ControlState st, AuditLog al, Deskhand.Core.Services
     return Results.Ok(new { ok, urls = wh.List() });
 });
 
+// Set-of-Mark: annotated screenshot (numbered boxes) + a legend; act by mark number.
+api.MapPost("/ux/marks", (IAutomationBackend b, ControlState st, UxMarksRequest? r) =>
+{
+    if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
+    var cap = b.CaptureScreen(r?.Monitor, ImageFormat.Png, 100);
+    var (annotated, marks, total) = Deskhand.Core.Services.SetOfMarkService.Build(b, cap, r?.IncludeText ?? true, r?.IncludePopups ?? true, r?.MaxMarks ?? 60, r?.MarkFilter, r?.MarkOnly);
+    string set = Deskhand.Core.Services.MarkStore.Save(marks);
+    return Results.Ok(new { markSet = set, count = marks.Count, total, imageBase64 = Convert.ToBase64String(annotated), marks });
+});
+api.MapPost("/ux/act-mark", (IAutomationBackend b, ControlState st, AuditLog al, ActMarkRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var m = Deskhand.Core.Services.MarkStore.Get(r.MarkSet, r.Id);
+    if (m is null) return Results.Json(new { error = $"no mark {r.Id}", type = "not_found" }, statusCode: 404);
+    string act = (r.Action ?? (m.Ref is not null && m.Actions.Contains("invoke") ? "invoke" : "click")).Trim().ToLowerInvariant();
+    switch (act)
+    {
+        case "double": b.MouseClick("left", m.X, m.Y, 2); break;
+        case "right": b.MouseClick("right", m.X, m.Y, 1); break;
+        case "move": b.MouseMove(m.X, m.Y); break;
+        case "invoke" when m.Ref is not null: b.Invoke(m.Ref); break;
+        case "toggle" when m.Ref is not null: b.Toggle(m.Ref); break;
+        case "setvalue" when m.Ref is not null: b.SetValue(m.Ref, r.Text ?? ""); break;
+        case "select" when m.Ref is not null: b.Select(m.Ref); break;
+        default: b.MouseClick("left", m.X, m.Y, 1); act = "click"; break;
+    }
+    al.Record("act_mark", $"{act} #{r.Id}", "ok");
+    return Results.Ok(new { ok = true, id = r.Id, action = act, m.X, m.Y, m.Ref, m.Label });
+});
+
 // UX crawl: actively (and safely) expand the window's structure to a depth, build + cache a deep map.
 api.MapPost("/ux/crawl", (IAutomationBackend b, UxCrawlRequest? r) =>
     Results.Ok(Deskhand.Core.Services.UxCrawler.Crawl(b, r?.Reference, r?.Depth ?? 3, r?.MaxNodes ?? 1500, r?.SelectTabs ?? false, r?.UseCache ?? false)));
@@ -1153,6 +1183,8 @@ record OutputBudgetRequest(int? Chars);
 record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max, bool? IncludePopups);
 record UxCrawlRequest(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
 record DismissRequest(bool? AcceptOk, bool? AcceptYes, int? MaxPasses, IReadOnlyList<string>? TitleContains, bool? IncludePopups);
+record UxMarksRequest(int? Monitor, int? MaxMarks, string? MarkFilter, string? MarkOnly, bool? IncludeText, bool? IncludePopups);
+record ActMarkRequest(int Id, string? Action, string? Text, string? MarkSet);
 record WebhookRequest(string? Url);
 
 // Forwards live UI events to registered webhook subscribers (outbound event push).

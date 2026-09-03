@@ -510,6 +510,15 @@ public static class DeskhandTools
         return Try(() => Json(Deskhand.Core.Services.VisionOps.ClickText(b, text, Spec(target, monitor, x, y, width, height, hwnd, reference), button, count, timeoutMs)));
     }
 
+    [McpServerTool(Name = "deskhand_list_windows_all"), Description("COMPLETE top-level window enumeration via raw Win32 EnumWindows — catches windows the UIA list_windows misses (owned pop-ups, VCL/Delphi nag windows like TInAppShopForm, tool windows). Returns [{hwnd,title,class,pid,process,x,y,width,height,owned,foreground}]. Read-only. Use this when a window 'appeared out of nowhere' and list_windows/get_tree can't see it.")]
+    public static string ListWindowsAll() => Json(Deskhand.Core.Services.WindowWatchService.List());
+
+    [McpServerTool(Name = "deskhand_window_watch"), Description("Report-only detector for windows that appear over your app (the nag/dialog that arrives between your capture and your click). action=\"baseline\" snapshots the current top-level windows; action=\"changes\" (default) reports what APPEARED and CLOSED since the baseline (auto-creates one on first use). Returns { baseline, appeared:[{hwnd,title,class,process,foreground,...}], closed:[...], foregroundTitle, note }. It never clicks or closes anything — it just tells you something showed up so you can handle it. Built on the complete Win32 enumeration.")]
+    public static string WindowWatch(string action = "changes", string? baseline = null)
+        => (action ?? "changes").Trim().ToLowerInvariant() == "baseline"
+            ? Json(Deskhand.Core.Services.WindowWatchService.Baseline())
+            : Json(Deskhand.Core.Services.WindowWatchService.Changes(baseline));
+
     [McpServerTool(Name = "deskhand_dismiss_modals"), Description("Find and close open dialogs / modal pop-ups in one call (the routine cost of driving a real app). Dismisses NON-COMMITTALLY: clicks Cancel/Close/No/Don't-Save before it would ever click OK (and never Yes unless acceptYes=true), so it won't confirm a destructive prompt; falls back to closing the window. Only touches dialog-like windows (owned pop-ups / #32770), never the main window. Runs a few passes to clear stacked dialogs. Returns { count, dismissed:[{window,hwnd,via}], note }. Requires armed; audited.")]
     public static string DismissModals(IAutomationBackend b, ControlState state, AuditLog audit,
         [Description("Allow clicking OK/Okay when no non-committal button exists (default true).")] bool acceptOk = true,

@@ -588,6 +588,11 @@ api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
 
+// Complete Win32 window enumeration (catches what UIA misses) + report-only appearance watcher. Read-only.
+api.MapGet("/windows/all", () => Results.Ok(Deskhand.Core.Services.WindowWatchService.List()));
+api.MapPost("/windows/baseline", () => Results.Ok(Deskhand.Core.Services.WindowWatchService.Baseline()));
+api.MapGet("/windows/changes", (string? baseline) => Results.Ok(Deskhand.Core.Services.WindowWatchService.Changes(baseline)));
+
 // Dismiss open dialogs/modals non-committally (Cancel/Close/No before OK; never Yes unless asked). Armed + audited.
 api.MapPost("/dismiss-modals", (IAutomationBackend b, ControlState st, AuditLog al, DismissRequest? r) =>
 {

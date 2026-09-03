@@ -101,6 +101,7 @@ builder.Services.AddSingleton(screenshotStore);
 builder.Services.AddSingleton(inputRecorder);
 builder.Services.AddSingleton(new Deskhand.Core.Services.WebhookService());
 builder.Services.AddHostedService<WebhookForwarder>();
+builder.Services.AddHostedService<AutoDismissWorker>();   // continuously-present nag auto-dismisser (kill-switch bound)
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 
@@ -586,6 +587,16 @@ api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
     };
     al.Record("window", $"{res.Action} hwnd={r.Hwnd}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
+// Rule-based nag auto-dismisser (opt-in, allowlisted, hide-preferred, kill-switch-bound, logged).
+api.MapGet("/autodismiss", () => Results.Ok(Deskhand.Core.Services.AutoDismissService.Status()));
+api.MapGet("/autodismiss/log", (int? limit) => Results.Ok(Deskhand.Core.Services.AutoDismissService.Log(limit ?? 100)));
+api.MapPost("/autodismiss", (AuditLog al, AutoDismissRequest? r) =>
+{
+    var res = Deskhand.Core.Services.AutoDismissService.Configure(r?.Rules, r?.Enabled);
+    al.Record("autodismiss_config", $"enabled={res.Enabled} rules={res.RuleCount}", "set");
+    return Results.Ok(res);
 });
 
 // Complete Win32 window enumeration (catches what UIA misses) + report-only appearance watcher. Read-only.
@@ -1188,9 +1199,23 @@ record OutputBudgetRequest(int? Chars);
 record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max, bool? IncludePopups);
 record UxCrawlRequest(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
 record DismissRequest(bool? AcceptOk, bool? AcceptYes, int? MaxPasses, IReadOnlyList<string>? TitleContains, bool? IncludePopups);
+record AutoDismissRequest(IReadOnlyList<Deskhand.Core.Services.AutoRule>? Rules, bool? Enabled);
 record UxMarksRequest(int? Monitor, int? MaxMarks, string? MarkFilter, string? MarkOnly, bool? IncludeText, bool? IncludePopups);
 record ActMarkRequest(int Id, string? Action, string? Text, string? MarkSet);
 record WebhookRequest(string? Url);
+
+// Continuously ticks the rule-based nag auto-dismisser. It self-gates on armed, so it's inert until enabled AND armed.
+sealed class AutoDismissWorker(ControlState state) : Microsoft.Extensions.Hosting.BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try { Deskhand.Core.Services.AutoDismissService.Tick(state.Armed); } catch { }
+            try { await Task.Delay(500, ct); } catch (OperationCanceledException) { break; }
+        }
+    }
+}
 
 // Forwards live UI events to registered webhook subscribers (outbound event push).
 sealed class WebhookForwarder(Deskhand.Core.Events.EventHub hub, Deskhand.Core.Services.WebhookService hooks)

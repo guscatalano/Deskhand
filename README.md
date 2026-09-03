@@ -123,6 +123,22 @@ games — where the UIA tree is thin or absent. Returns `{ window, uiaCount, tex
 
 Keystrokes go to the focused window (pass `reference` to focus first); all require *armed* and are audited. Fleet parity for send/press/secure-attention/lock.
 
+#### Windows that appear between turns — detect, and optionally auto-handle
+
+An agent acts in discrete turns (capture → think → act); a nag can arrive *in the gap*, so "dismiss then click" is
+inherently racy. Deskhand is the one component continuously present, so it can watch and (opt-in) act:
+
+- **Complete enumeration** — `deskhand_list_windows_all` / `GET /windows/all` uses raw Win32 `EnumWindows`, so it
+  sees windows the UIA `list_windows` misses (owned pop-ups, VCL/Delphi nags like `TInAppShopForm`, tool windows).
+- **Report-only watcher** — `deskhand_window_watch` (`baseline` then `changes`): "a window titled X (class Y,
+  process Z) appeared over your target — handle it." Never touches anything. *Start here.*
+- **Rule-based auto-dismiss** — `deskhand_autodismiss(rules, enabled)`: a continuous background loop that acts
+  only on windows matching **explicit allowlist rules** (`titleContains`/`className`; a match-all rule is
+  rejected). It **prefers `hide` (SW_HIDE)** — which removes the window *without* running the app's close handler,
+  so it can't cascade or kill the app — with `close` (WM_CLOSE) opt-in per rule. It **only acts while armed**
+  (kill-switch bound) and **logs everything** (`deskhand_autodismiss_log`) so you can ask "what did you close
+  while I was thinking?"
+
 #### Dismiss dialogs (`/dismiss-modals`, `deskhand_dismiss_modals`)
 
 Closing pop-ups is a routine tax of driving real apps. `deskhand_dismiss_modals` finds open dialogs/modals and

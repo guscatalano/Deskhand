@@ -513,6 +513,17 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_list_windows_all"), Description("COMPLETE top-level window enumeration via raw Win32 EnumWindows — catches windows the UIA list_windows misses (owned pop-ups, VCL/Delphi nag windows like TInAppShopForm, tool windows). Returns [{hwnd,title,class,pid,process,x,y,width,height,owned,foreground}]. Read-only. Use this when a window 'appeared out of nowhere' and list_windows/get_tree can't see it.")]
     public static string ListWindowsAll() => Json(Deskhand.Core.Services.WindowWatchService.List());
 
+    [McpServerTool(Name = "deskhand_autodismiss"), Description("Configure the CONTINUOUS nag auto-dismisser — for windows that pop up between your capture and your click, when you can't act. OPT-IN + ALLOWLISTED: give explicit rules [{titleContains?, className?, action?}]; a rule matches a window by title substring and/or class (a rule with neither is rejected — never 'close anything'). action \"hide\" (default, SW_HIDE — removes it WITHOUT running the app's close handler, can't cascade) or \"close\" (WM_CLOSE). Set enabled=true to run. It only acts while the kill switch is ARMED, and logs everything (deskhand_autodismiss_log). Returns the current { enabled, ruleCount, rules, acted, note }.")]
+    public static string AutoDismiss(AuditLog audit, Deskhand.Core.Services.AutoRule[]? rules = null, bool? enabled = null)
+    {
+        var res = Deskhand.Core.Services.AutoDismissService.Configure(rules, enabled);
+        audit.Record("autodismiss_config", $"enabled={res.Enabled} rules={res.RuleCount}", "set");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_autodismiss_log"), Description("What the auto-dismisser hid/closed while you were thinking, newest first: [{ts, hwnd, title, class, action, rule}]. Ask this so your model of the screen stays in sync with reality after a window silently vanished.")]
+    public static string AutoDismissLog(int limit = 100) => Json(Deskhand.Core.Services.AutoDismissService.Log(limit));
+
     [McpServerTool(Name = "deskhand_window_watch"), Description("Report-only detector for windows that appear over your app (the nag/dialog that arrives between your capture and your click). action=\"baseline\" snapshots the current top-level windows; action=\"changes\" (default) reports what APPEARED and CLOSED since the baseline (auto-creates one on first use). Returns { baseline, appeared:[{hwnd,title,class,process,foreground,...}], closed:[...], foregroundTitle, note }. It never clicks or closes anything — it just tells you something showed up so you can handle it. Built on the complete Win32 enumeration.")]
     public static string WindowWatch(string action = "changes", string? baseline = null)
         => (action ?? "changes").Trim().ToLowerInvariant() == "baseline"

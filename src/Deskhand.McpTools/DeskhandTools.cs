@@ -999,9 +999,70 @@ public static class DeskhandTools
     public static string TypeText(IAutomationBackend b, string text, string? reference = null)
         => FocusThen(b, reference, () => b.TypeText(text));
 
-    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord, e.g. \"ctrl+shift+s\", \"alt+F4\", \"enter\", \"tab\". Goes to the focused window — pass reference (an element ref) to focus that element's window FIRST if the chord isn't reaching the right app.")]
+    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord, e.g. \"ctrl+shift+s\", \"alt+F4\", \"enter\", \"tab\". Modifiers: ctrl, alt, shift, win. Goes to the focused window — pass reference (an element ref) to focus that element's window FIRST if the chord isn't reaching the right app.")]
     public static string SendKeys(IAutomationBackend b, string chord, string? reference = null)
         => FocusThen(b, reference, () => b.SendKeys(chord));
+
+    [McpServerTool(Name = "deskhand_press_keys"), Description("Send a SEQUENCE of key chords in order — e.g. [\"alt+f\",\"s\"] to walk a File→Save menu, or [\"ctrl+a\",\"delete\"]. betweenMs paces them (default 40); repeat sends the whole sequence N times. Goes to the focused window (pass reference to focus first). Requires armed; audited.")]
+    public static string PressKeys(IAutomationBackend b, ControlState state, AuditLog audit, string[] chords,
+        int betweenMs = 40, int repeat = 1, string? reference = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        if (chords is null || chords.Length == 0) return "{\"error\":\"no chords\",\"type\":\"bad_request\"}";
+        return Try(() =>
+        {
+            var res = FocusThen(b, reference, () =>
+            {
+                for (int r = 0; r < Math.Clamp(repeat, 1, 100); r++)
+                    foreach (var c in chords) { b.SendKeys(c); if (betweenMs > 0) System.Threading.Thread.Sleep(Math.Clamp(betweenMs, 0, 5000)); }
+            });
+            audit.Record("press_keys", $"{chords.Length} chords x{repeat}", "ok");
+            return res;
+        });
+    }
+
+    [McpServerTool(Name = "deskhand_hold_key"), Description("Press and HOLD a key (with optional modifiers) for holdMs, then release — for games / key-repeat, e.g. hold \"w\" 1500ms or \"shift+right\" 600ms. Goes to the focused window. Requires armed; audited. (Local only; not recorded into macros.)")]
+    public static string HoldKey(ControlState state, AuditLog audit, string key, int holdMs = 500)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        return Try(() =>
+        {
+            Deskhand.Core.Services.InputInjector.SendKeys(key, Math.Clamp(holdMs, 1, 30000));
+            audit.Record("hold_key", $"{key} {holdMs}ms", "ok");
+            return "{\"ok\":true}";
+        });
+    }
+
+    [McpServerTool(Name = "deskhand_secure_attention"), Description("Send Ctrl+Alt+Del (the Secure Attention Sequence) via the SendSAS API — plain key injection can't forge it. Works when Deskhand runs as LocalSystem, OR when the SoftwareSASGeneration policy allows apps (see deskhand_sas_status / deskhand_configure_sas). Raises the secure desktop; clicking its options needs the SYSTEM secure-desktop path. Returns { ok, action, error?, hint? }. Requires armed; audited.")]
+    public static string SecureAttention(ControlState state, AuditLog audit,
+        [Description("Override AsUser (default auto: false when running as SYSTEM, else true).")] bool? asUser = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.SecureInputService.SendCtrlAltDel(asUser);
+        audit.Record("secure_attention", "ctrl+alt+del", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_lock_workstation"), Description("Lock the workstation (Win+L equivalent, via LockWorkStation). Requires armed; audited.")]
+    public static string LockWorkstation(ControlState state, AuditLog audit)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.SecureInputService.LockWorkstation();
+        audit.Record("lock_workstation", "", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_sas_status"), Description("Whether Ctrl+Alt+Del can be sent from here: { isSystem, softwareSasGeneration, sasPolicy, canSendSas, note }. Read-only.")]
+    public static string SasStatus() => Json(Deskhand.Core.Services.SecureInputService.Status());
+
+    [McpServerTool(Name = "deskhand_configure_sas"), Description("Set the SoftwareSASGeneration policy so apps can send Ctrl+Alt+Del: level 0 none | 1 services | 2 ease-of-access apps | 3 both. Needs elevation. Requires armed; audited.")]
+    public static string ConfigureSas(ControlState state, AuditLog audit, int level)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.SecureInputService.ConfigureSas(level);
+        audit.Record("configure_sas", $"level={level}", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
 
     // Optionally raise+focus the target element's window before sending input, so keystrokes land where
     // intended (the #1 cause of "input didn't reach the app" is the wrong window being foreground).

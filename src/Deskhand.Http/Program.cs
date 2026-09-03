@@ -958,6 +958,46 @@ api.MapPost("/mouse/drag", (IAutomationBackend b, DragRequest r) => { b.Drag(r.F
 // ---- input: keyboard ----
 api.MapPost("/keyboard/type", (IAutomationBackend b, TypeRequest r) => { b.TypeText(r.Text); return Ok(); });
 api.MapPost("/keyboard/keys", (IAutomationBackend b, KeysRequest r) => { b.SendKeys(r.Chord); return Ok(); });
+api.MapPost("/keyboard/press", (IAutomationBackend b, ControlState st, AuditLog al, PressKeysRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    if (r.Chords is null || r.Chords.Count == 0) return Results.Json(new { error = "no chords", type = "bad_request" }, statusCode: 400);
+    for (int i = 0; i < Math.Clamp(r.Repeat ?? 1, 1, 100); i++)
+        foreach (var c in r.Chords) { b.SendKeys(c); if ((r.BetweenMs ?? 40) > 0) System.Threading.Thread.Sleep(Math.Clamp(r.BetweenMs ?? 40, 0, 5000)); }
+    al.Record("press_keys", $"{r.Chords.Count} chords x{r.Repeat ?? 1}", "ok");
+    return Ok();
+});
+api.MapPost("/keyboard/hold", (ControlState st, AuditLog al, HoldKeyRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    Deskhand.Core.Services.InputInjector.SendKeys(r.Key ?? "", Math.Clamp(r.HoldMs ?? 500, 1, 30000));
+    al.Record("hold_key", $"{r.Key} {r.HoldMs}ms", "ok");
+    return Ok();
+});
+
+// ---- secure input: Ctrl+Alt+Del (SendSAS), lock, SAS policy ----
+api.MapGet("/secure/sas-status", () => Results.Ok(Deskhand.Core.Services.SecureInputService.Status()));
+api.MapPost("/secure/attention", (ControlState st, AuditLog al, SecureAttentionRequest? r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.SecureInputService.SendCtrlAltDel(r?.AsUser);
+    al.Record("secure_attention", "ctrl+alt+del", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+api.MapPost("/secure/lock", (ControlState st, AuditLog al) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.SecureInputService.LockWorkstation();
+    al.Record("lock_workstation", "", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
+api.MapPost("/secure/configure-sas", (ControlState st, AuditLog al, ConfigureSasRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.SecureInputService.ConfigureSas(r.Level);
+    al.Record("configure_sas", $"level={r.Level}", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return Results.Json(res, statusCode: res.Ok ? 200 : 400);
+});
 
 // MCP over Streamable HTTP — same server, same state as the dashboard.
 app.MapMcp("/mcp");
@@ -1147,4 +1187,8 @@ record ScrollRequest(int Dx, int Dy);
 record DragRequest(int FromX, int FromY, int ToX, int ToY, string? Button, int? Steps, int? HoldMs);
 record TypeRequest(string Text);
 record KeysRequest(string Chord);
+record PressKeysRequest(IReadOnlyList<string>? Chords, int? BetweenMs, int? Repeat, string? Reference);
+record HoldKeyRequest(string? Key, int? HoldMs);
+record SecureAttentionRequest(bool? AsUser);
+record ConfigureSasRequest(int Level);
 record CaptureJson(string Desktop, RectDto Rect, int Monitor, double DpiScale, string Format, string ImageBase64, double Scale = 1.0);

@@ -111,6 +111,9 @@ public static class FleetMethods
     public const string ExploreUx = "explore_ux";
     public const string CrawlUx = "crawl_ux";
     public const string DismissModals = "dismiss_modals";
+    public const string PressKeys = "press_keys";
+    public const string SecureAttention = "secure_attention";
+    public const string LockWorkstation = "lock_workstation";
     public const string DumpProcess = "dump_process";
     public const string ListApps = "list_apps";
     public const string ListDesktops = "list_desktops";

@@ -94,4 +94,7 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement ExploreUx(string? reference, bool uia, bool text, bool includeOffscreen, int max) => Call(FleetMethods.ExploreUx, new { reference, uia, text, includeOffscreen, max });
     public JsonElement CrawlUx(string? reference, int depth, int maxNodes, bool selectTabs, bool useCache) => Call(FleetMethods.CrawlUx, new { reference, depth, maxNodes, selectTabs, useCache });
     public JsonElement DismissModals(bool acceptOk, bool acceptYes, int maxPasses) => Call(FleetMethods.DismissModals, new { acceptOk, acceptYes, maxPasses });
+    public JsonElement PressKeys(string[] chords, int betweenMs, int repeat) => Call(FleetMethods.PressKeys, new { chords, betweenMs, repeat });
+    public JsonElement SecureAttention(bool? asUser) => Call(FleetMethods.SecureAttention, new { asUser });
+    public JsonElement LockWorkstation() => Call(FleetMethods.LockWorkstation, null);
 }

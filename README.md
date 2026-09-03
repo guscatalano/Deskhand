@@ -103,6 +103,16 @@ layer is what makes **UIA-blind UIs navigable** — custom-drawn apps, Chromium/
 games — where the UIA tree is thin or absent. Returns `{ window, uiaCount, textCount, targets[…], note }`, ranked
 (enabled, reading order) and capped; act on a `uia` target by ref, or click any target's `(x,y)`.
 
+#### Keyboard shortcuts, sequences, holds, and Ctrl+Alt+Del
+
+- **`deskhand_send_keys`** — one chord: `ctrl+shift+s`, `alt+F4`, `enter`, `win+d`. Modifiers `ctrl`/`alt`/`shift`/`win`; keys are letters/digits/symbols, `F1`–`F24`, and named keys (enter, tab, esc, arrows, home/end, pageup/down, …).
+- **`deskhand_press_keys`** — a *sequence* of chords, e.g. `["alt+f","s"]` to walk File→Save, with `betweenMs` pacing and `repeat`.
+- **`deskhand_hold_key`** — press-and-hold a key/chord for `holdMs` (games, key-repeat).
+- **`deskhand_secure_attention`** — **Ctrl+Alt+Del**. Plain injection can't forge the Secure Attention Sequence; this uses the `SendSAS` API, which works when Deskhand runs as **LocalSystem** *or* when the `SoftwareSASGeneration` policy allows apps. `deskhand_sas_status` tells you whether it'll work here; `deskhand_configure_sas` sets the policy (needs elevation). It raises the secure desktop — *clicking* its options still needs the SYSTEM secure-desktop path.
+- **`deskhand_lock_workstation`** — Win+L (via `LockWorkStation`).
+
+Keystrokes go to the focused window (pass `reference` to focus first); all require *armed* and are audited. Fleet parity for send/press/secure-attention/lock.
+
 #### Dismiss dialogs (`/dismiss-modals`, `deskhand_dismiss_modals`)
 
 Closing pop-ups is a routine tax of driving real apps. `deskhand_dismiss_modals` finds open dialogs/modals and

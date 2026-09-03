@@ -184,6 +184,18 @@ public static class AgentDispatcher
                 return Services.UxCrawler.Crawl(b, a.Str("reference"), a.Int("depth", 3), a.Int("maxNodes", 1500), a.Bool("selectTabs"), a.Bool("useCache"));
             case FleetMethods.DismissModals:
                 return Services.DismissService.Dismiss(b, a.Bool("acceptOk", true), a.Bool("acceptYes"), a.Int("maxPasses", 4));
+            case FleetMethods.PressKeys:
+            {
+                var chords = a.Obj<string[]>("chords") ?? Array.Empty<string>();
+                int between = a.Int("betweenMs", 40), rep = Math.Clamp(a.Int("repeat", 1), 1, 100);
+                for (int i = 0; i < rep; i++)
+                    foreach (var c in chords) { b.SendKeys(c); if (between > 0) System.Threading.Thread.Sleep(Math.Clamp(between, 0, 5000)); }
+                return new { ok = true, chords = chords.Length };
+            }
+            case FleetMethods.SecureAttention:
+                return Services.SecureInputService.SendCtrlAltDel(a.BoolN("asUser"));
+            case FleetMethods.LockWorkstation:
+                return Services.SecureInputService.LockWorkstation();
             case FleetMethods.Paste:
             {
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");

@@ -137,7 +137,11 @@ public static class InputInjector
     /// Send a keyboard chord such as "ctrl+shift+s", "alt+F4", "enter", or "{TAB}".
     /// Modifiers: ctrl, control, alt, shift, win/meta. The final token is the key.
     /// </summary>
-    public static void SendKeys(string chord)
+    public static void SendKeys(string chord) => SendKeys(chord, 0);
+
+    /// <summary>As <see cref="SendKeys(string)"/>, but if <paramref name="holdMs"/> &gt; 0 the final key is held
+    /// down for that long before release (modifiers held throughout) — for press-and-hold (games, key-repeat).</summary>
+    public static void SendKeys(string chord, int holdMs)
     {
         if (string.IsNullOrWhiteSpace(chord)) return;
         var tokens = chord.Trim().Trim('{', '}').Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -160,16 +164,28 @@ public static class InputInjector
 
         string keyToken = tokens[^1];
         var (vk, needShift) = ResolveKey(keyToken);
+        bool autoShift = needShift && !mods.Contains(0x10);
 
-        var seq = new List<INPUT>();
-        foreach (var m in mods) seq.Add(KeyVk(m, up: false));
-        if (needShift && !mods.Contains(0x10)) seq.Add(KeyVk(0x10, up: false));
-        seq.Add(KeyVk(vk, up: false));
-        seq.Add(KeyVk(vk, up: true));
-        if (needShift && !mods.Contains(0x10)) seq.Add(KeyVk(0x10, up: true));
-        for (int i = mods.Count - 1; i >= 0; i--) seq.Add(KeyVk(mods[i], up: true));
+        var down = new List<INPUT>();
+        foreach (var m in mods) down.Add(KeyVk(m, up: false));
+        if (autoShift) down.Add(KeyVk(0x10, up: false));
+        down.Add(KeyVk(vk, up: false));
 
-        Send(seq.ToArray());
+        var up = new List<INPUT>();
+        up.Add(KeyVk(vk, up: true));
+        if (autoShift) up.Add(KeyVk(0x10, up: true));
+        for (int i = mods.Count - 1; i >= 0; i--) up.Add(KeyVk(mods[i], up: true));
+
+        if (holdMs > 0)
+        {
+            Send(down.ToArray());
+            Thread.Sleep(Math.Clamp(holdMs, 1, 30_000));
+            Send(up.ToArray());
+        }
+        else
+        {
+            Send(down.Concat(up).ToArray());
+        }
     }
 
     private static (ushort vk, bool needShift) ResolveKey(string token)

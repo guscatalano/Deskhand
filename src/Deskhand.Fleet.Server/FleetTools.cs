@@ -323,6 +323,18 @@ public static class FleetTools
     public static string AgentExploreUx(AgentRegistry r, FleetAudit audit, string agentId, string? reference = null, bool uia = true, bool text = true, bool includeOffscreen = false, int max = 200)
         => Raw(O(r, audit, agentId, "explore_ux").ExploreUx(reference, uia, text, includeOffscreen, max));
 
+    [McpServerTool(Name = "deskhand_agent_press_keys"), Description("Send a sequence of key chords on a fleet PC, e.g. [\"alt+f\",\"s\"]. betweenMs paces them; repeat sends the sequence N times.")]
+    public static string AgentPressKeys(AgentRegistry r, FleetAudit audit, string agentId, string[] chords, int betweenMs = 40, int repeat = 1)
+        => Raw(O(r, audit, agentId, "press_keys").PressKeys(chords, betweenMs, repeat));
+
+    [McpServerTool(Name = "deskhand_agent_secure_attention"), Description("Send Ctrl+Alt+Del on a fleet PC via SendSAS (works when the agent runs as LocalSystem or SoftwareSASGeneration allows apps). Raises the secure desktop.")]
+    public static string AgentSecureAttention(AgentRegistry r, FleetAudit audit, string agentId, bool? asUser = null)
+        => Raw(O(r, audit, agentId, "secure_attention").SecureAttention(asUser));
+
+    [McpServerTool(Name = "deskhand_agent_lock_workstation"), Description("Lock a fleet PC's workstation (Win+L equivalent).")]
+    public static string AgentLockWorkstation(AgentRegistry r, FleetAudit audit, string agentId)
+        => Raw(O(r, audit, agentId, "lock_workstation").LockWorkstation());
+
     [McpServerTool(Name = "deskhand_agent_dismiss_modals"), Description("Find and close dialogs/modals on a fleet PC non-committally (Cancel/Close/No before OK; Yes only if acceptYes). Returns { count, dismissed[] }.")]
     public static string AgentDismissModals(AgentRegistry r, FleetAudit audit, string agentId, bool acceptOk = true, bool acceptYes = false, int maxPasses = 4)
         => Raw(O(r, audit, agentId, "dismiss_modals").DismissModals(acceptOk, acceptYes, maxPasses));

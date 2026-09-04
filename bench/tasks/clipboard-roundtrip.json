@@ -1,0 +1,9 @@
+{
+  "id": "clipboard-roundtrip",
+  "instruction": "Put the text 'deskhand-bench-42' onto the Windows clipboard.",
+  "setup": [],
+  "solution": [
+    { "method": "POST", "path": "/clipboard", "body": { "text": "deskhand-bench-42" } }
+  ],
+  "check": { "type": "clipboard_contains", "text": "deskhand-bench-42" }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "open-notepad",
+  "instruction": "Open Notepad.",
+  "setup": [],
+  "solution": [
+    { "method": "POST", "path": "/process/launch", "body": { "path": "C:\\Windows\\System32\\notepad.exe", "waitForWindowMs": 4000 } }
+  ],
+  "check": { "type": "window_title_contains", "text": "Notepad" }
+}

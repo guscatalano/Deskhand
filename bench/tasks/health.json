@@ -1,0 +1,7 @@
+{
+  "id": "health",
+  "instruction": "Deskhand should be reachable and responding.",
+  "setup": [],
+  "solution": [],
+  "check": { "type": "health_ok" }
+}

@@ -23,14 +23,16 @@ def load_tasks(path):
     return [(f, json.load(open(f, encoding="utf-8"))) for f in files]
 
 
-def run_task(dh, agent, task):
+def run_task(dh, agent_dh, agent, task):
     dh.episode_start(task.get("instruction", task["id"]), model=agent.name)
     t0 = time.time()
     err = None
     try:
         for step in task.get("setup", []):
             dh.call(step.get("method", "POST"), step["path"], step.get("body"))
-        agent.solve(dh, task)
+        # The agent gets its OWN client with a long timeout: a turn (model thinking, a long wait, a shell
+        # command) can run for many minutes and must not be aborted by the short read timeout used elsewhere.
+        agent.solve(agent_dh, task)
     except Exception as e:
         err = str(e)
     passed, detail = evaluate(dh, task.get("check"))
@@ -45,15 +47,18 @@ def main():
     ap.add_argument("--agent", default="scripted", choices=list(AGENTS))
     ap.add_argument("--tasks", default="tasks")
     ap.add_argument("--out", default="results.json")
+    ap.add_argument("--step-timeout", type=int, default=900,
+                    help="per-request timeout (seconds) for the agent's own client — generous so a long turn isn't aborted")
     a = ap.parse_args()
 
-    dh = Deskhand(a.base, a.token)
+    dh = Deskhand(a.base, a.token)                          # quick client: setup / verify / episode
+    agent_dh = Deskhand(a.base, a.token, timeout=a.step_timeout)   # the agent's own long-timeout client
     if not (dh.health() or {}).get("ok"):
         raise SystemExit(f"Deskhand not reachable at {a.base} (is deskhand-http running?)")
 
     agent = AGENTS[a.agent]()
     tasks = load_tasks(a.tasks)
-    results = [run_task(dh, agent, t) for _, t in tasks]
+    results = [run_task(dh, agent_dh, agent, t) for _, t in tasks]
 
     passed = sum(1 for r in results if r["passed"])
     print(f"\nDeskhand benchmark — agent={a.agent}  base={a.base}")

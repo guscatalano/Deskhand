@@ -5,13 +5,15 @@ import urllib.error
 
 
 class Deskhand:
-    def __init__(self, base="http://127.0.0.1:8791", token=None, timeout=60):
+    def __init__(self, base="http://127.0.0.1:8791", token=None, timeout=120):
         self.base = base.rstrip("/")
         self.token = token
         self.timeout = timeout
 
-    def call(self, method, path, body=None):
-        """Raw request. Returns (status, parsed-json-or-text)."""
+    def call(self, method, path, body=None, timeout=None):
+        """Raw request. Returns (status, parsed-json-or-text). `timeout` overrides the client default for this
+        one call — use a generous value for a step that can legitimately run for minutes (an agent turn, a long
+        wait_*, a shell command, a big fetch/dump) so it isn't aborted by the short read timeout."""
         url = self.base + path
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(url, data=data, method=method.upper())
@@ -20,7 +22,7 @@ class Deskhand:
         if self.token:
             req.add_header("Authorization", "Bearer " + self.token)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
                 raw = r.read().decode("utf-8", "replace")
                 return r.status, _parse(raw)
         except urllib.error.HTTPError as e:

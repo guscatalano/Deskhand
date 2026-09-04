@@ -128,6 +128,19 @@ var app = builder.Build();
 // (served fast from the cache at /update/status). Never blocks startup; failures are swallowed.
 _ = Deskhand.Core.Services.UpdateService.CheckAsync();
 
+// Trajectory recording: while an episode is active, every audited action becomes a step, paired with a small
+// screenshot grabbed from the RAW local backend (not audited → no reentrancy; downscaled JPEG to stay light).
+Deskhand.Core.Services.EpisodeRecorder.CaptureFn = () =>
+{
+    try
+    {
+        var c = localBackend.CaptureScreen(null, ImageFormat.Jpeg, 55);
+        return Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, 1280, null, 55).Bytes;
+    }
+    catch { return null; }
+};
+auditLog.Recorded += Deskhand.Core.Services.EpisodeRecorder.OnAction;
+
 app.UseSwagger();
 app.UseSwaggerUI(o => { o.SwaggerEndpoint("/swagger/v1/swagger.json", "Deskhand v1"); o.DocumentTitle = "Deskhand API"; });
 
@@ -587,6 +600,31 @@ api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
     };
     al.Record("window", $"{res.Action} hwnd={r.Hwnd}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
+// Trajectory / episode recording: start → (auto steps per action) → stop; download an episode as a zip.
+api.MapPost("/episode/start", (AuditLog al, EpisodeStartRequest? r) =>
+{
+    string id = Deskhand.Core.Services.EpisodeRecorder.Start(r?.Task, r?.Model);
+    al.Record("episode_start", r?.Task, id);
+    return Results.Ok(Deskhand.Core.Services.EpisodeRecorder.Status());
+});
+api.MapPost("/episode/stop", (AuditLog al, EpisodeStopRequest? r) =>
+{
+    var s = Deskhand.Core.Services.EpisodeRecorder.Stop(r?.Success, r?.Note);
+    al.Record("episode_stop", s.Id, s.Success == false ? "fail" : "ok");
+    return Results.Ok(s);
+});
+api.MapGet("/episode", () => Results.Ok(Deskhand.Core.Services.EpisodeRecorder.Status()));
+api.MapGet("/episodes", () => Results.Ok(new { episodes = Deskhand.Core.Services.EpisodeRecorder.List() }));
+api.MapGet("/episodes/{id}", (string id) =>
+{
+    var dir = Deskhand.Core.Services.EpisodeRecorder.DirFor(id);
+    if (dir is null) return Results.NotFound(new { error = "no such episode", type = "not_found" });
+    string zip = Path.Combine(Path.GetTempPath(), id + ".zip");
+    try { if (File.Exists(zip)) File.Delete(zip); System.IO.Compression.ZipFile.CreateFromDirectory(dir, zip); }
+    catch (Exception ex) { return Results.Json(new { error = ex.Message, type = "zip_failed" }, statusCode: 500); }
+    return Results.File(zip, "application/zip", id + ".zip");
 });
 
 // Rule-based nag auto-dismisser (opt-in, allowlisted, hide-preferred, kill-switch-bound, logged).
@@ -1200,6 +1238,8 @@ record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeO
 record UxCrawlRequest(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);
 record DismissRequest(bool? AcceptOk, bool? AcceptYes, int? MaxPasses, IReadOnlyList<string>? TitleContains, bool? IncludePopups);
 record AutoDismissRequest(IReadOnlyList<Deskhand.Core.Services.AutoRule>? Rules, bool? Enabled);
+record EpisodeStartRequest(string? Task, string? Model);
+record EpisodeStopRequest(bool? Success, string? Note);
 record UxMarksRequest(int? Monitor, int? MaxMarks, string? MarkFilter, string? MarkOnly, bool? IncludeText, bool? IncludePopups);
 record ActMarkRequest(int Id, string? Action, string? Text, string? MarkSet);
 record WebhookRequest(string? Url);

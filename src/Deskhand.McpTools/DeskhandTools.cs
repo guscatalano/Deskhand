@@ -513,6 +513,28 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_list_windows_all"), Description("COMPLETE top-level window enumeration via raw Win32 EnumWindows — catches windows the UIA list_windows misses (owned pop-ups, VCL/Delphi nag windows like TInAppShopForm, tool windows). Returns [{hwnd,title,class,pid,process,x,y,width,height,owned,foreground}]. Read-only. Use this when a window 'appeared out of nowhere' and list_windows/get_tree can't see it.")]
     public static string ListWindowsAll() => Json(Deskhand.Core.Services.WindowWatchService.List());
 
+    [McpServerTool(Name = "deskhand_episode_start"), Description("Begin recording a TRAJECTORY of the task you're about to do: while active, every governed action becomes a step paired with a screenshot (state after the action; step 000 = the starting screen). Use it to capture demonstrations for training/eval or a replayable/inspectable log. Returns { active, id, task, steps }.")]
+    public static string EpisodeStart(AuditLog audit, [Description("The task being demonstrated, e.g. \"export the project as WAV in FL Studio\".")] string task, [Description("Optional model/agent name for the metadata.")] string? model = null)
+    {
+        string id = Deskhand.Core.Services.EpisodeRecorder.Start(task, model);
+        audit.Record("episode_start", task, id);
+        return Json(Deskhand.Core.Services.EpisodeRecorder.Status());
+    }
+
+    [McpServerTool(Name = "deskhand_episode_stop"), Description("Finish the current trajectory recording. Pass success=true/false to label the episode (for training/eval). Returns a summary { id, task, steps, success, dir }; download it with GET /episodes/{id} (zip of meta.json + steps.jsonl + screenshots).")]
+    public static string EpisodeStop(AuditLog audit, bool? success = null, string? note = null)
+    {
+        var s = Deskhand.Core.Services.EpisodeRecorder.Stop(success, note);
+        audit.Record("episode_stop", s.Id, s.Success == false ? "fail" : "ok");
+        return Json(s);
+    }
+
+    [McpServerTool(Name = "deskhand_episode_status"), Description("Whether a trajectory is being recorded, and how many steps so far: { active, id, task, steps, note }.")]
+    public static string EpisodeStatus() => Json(Deskhand.Core.Services.EpisodeRecorder.Status());
+
+    [McpServerTool(Name = "deskhand_episode_list"), Description("List recorded episodes (ids). Download one with GET /episodes/{id}.")]
+    public static string EpisodeList() => Json(new { episodes = Deskhand.Core.Services.EpisodeRecorder.List() });
+
     [McpServerTool(Name = "deskhand_autodismiss"), Description("Configure the CONTINUOUS nag auto-dismisser — for windows that pop up between your capture and your click, when you can't act. OPT-IN + ALLOWLISTED: give explicit rules [{titleContains?, className?, action?}]; a rule matches a window by title substring and/or class (a rule with neither is rejected — never 'close anything'). action \"hide\" (default, SW_HIDE — removes it WITHOUT running the app's close handler, can't cascade) or \"close\" (WM_CLOSE). Set enabled=true to run. It only acts while the kill switch is ARMED, and logs everything (deskhand_autodismiss_log). Returns the current { enabled, ruleCount, rules, acted, note }.")]
     public static string AutoDismiss(AuditLog audit, Deskhand.Core.Services.AutoRule[]? rules = null, bool? enabled = null)
     {

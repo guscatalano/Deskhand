@@ -13,6 +13,11 @@ public sealed class AuditLog
     private readonly object _lock = new();
     public string Directory { get; }
 
+    /// <summary>Raised for every recorded action (action, detail, status). Lets the episode recorder capture a
+    /// trajectory step per governed action without threading a dependency through every call site. Handlers
+    /// must not throw and should be cheap/non-reentrant (they run inline on the acting thread).</summary>
+    public event Action<string, string?, string>? Recorded;
+
     public AuditLog(string? directory = null)
     {
         Directory = directory ?? Path.Combine(
@@ -36,6 +41,7 @@ public sealed class AuditLog
         {
             File.AppendAllText(file, line + Environment.NewLine);
         }
+        try { Recorded?.Invoke(action, detail, status); } catch { /* a subscriber must never break auditing */ }
     }
 
     /// <summary>Short content hash for logging a capture without storing the image.</summary>

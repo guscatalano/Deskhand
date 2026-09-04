@@ -200,6 +200,17 @@ When elevation prompts get in an agent's way:
 - **`/uac/respond`** best-effort presses Yes/No on a live prompt — which only works when the prompt is on the
   normal desktop *and* Deskhand runs elevated (Windows isolates the secure desktop by design).
 
+#### Trajectory recording (`/episode/*`, `deskhand_episode_*`)
+
+Record a task as a **trajectory** — the ordered `(screenshot, action, result)` steps an agent produced — so it
+can be replayed, inspected, or used as **training/eval data** (the capability a computer-use platform like c/ua
+has that a bare driver doesn't). `deskhand_episode_start(task)` begins recording; while active, **every governed
+action becomes a step automatically** (it taps the audit stream) paired with a downscaled screenshot of the
+resulting screen (step `000` = the starting screen); `deskhand_episode_stop(success?)` labels and finalizes it.
+On disk per episode: `meta.json` + `steps.jsonl` + `NNN.jpg`; download the whole episode as a zip from
+`GET /episodes/{id}`. Nothing extra to instrument — the driver already produces the screenshots and the audited
+actions; this just stitches them into episodes.
+
 #### Observability & integration (`/metrics`, `/audit/recent`, `/webhooks`, `/fetch`, self-update banner)
 
 Prometheus **`/metrics`** (scrape without a token on loopback); an **Audit** dashboard tab over `/audit/recent`;

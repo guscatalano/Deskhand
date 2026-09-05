@@ -206,6 +206,14 @@
   .logrow .p { color:var(--ink-2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .logrow .s { flex:none; font-weight:700; } .s.ok { color:var(--good); } .s.err { color:var(--crit); }
 
+  #viewer { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:70; display:flex; align-items:center; justify-content:center; padding:24px; }
+  #viewer[hidden] { display:none; }
+  .vwin { background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); width:min(960px,96vw); max-height:90vh; display:flex; flex-direction:column; overflow:hidden; }
+  .vwin header { display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--line-2); }
+  #vwTitle { font-size:12px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #vwBody { margin:0; overflow:auto; padding:12px 14px; font-family:var(--mono); font-size:12px; line-height:1.5; white-space:pre; tab-size:4; color:var(--ink); }
+  #vwBody.wrap { white-space:pre-wrap; word-break:break-word; }
+
   #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px); opacity:0; transition:.25s; background:var(--ink); color:var(--bg); padding:9px 16px; border-radius:8px; font-family:var(--mono); font-size:12px; z-index:60; box-shadow:var(--shadow); }
   #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   #toast.err { background:var(--crit); color:#fff; }
@@ -595,6 +603,16 @@
 
 <div id="logdrawer"><header>Activity<span class="spacer" style="flex:1"></span><button class="ghost" id="clrLog">Clear</button></header><div id="log"></div></div>
 <div id="toast"></div>
+<div id="viewer" hidden>
+  <div class="vwin">
+    <header><span id="vwTitle" class="mono"></span><span class="spacer" style="flex:1"></span>
+      <span id="vwMeta" class="lbl" style="color:var(--ink-3)"></span>
+      <button class="btn sm" id="vwWrap" title="Toggle line wrap">Wrap</button>
+      <button class="btn sm" id="vwDl" title="Download the full file">⬇</button>
+      <button class="btn sm" id="vwClose" title="Close (Esc)">✕</button></header>
+    <pre id="vwBody"></pre>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -1108,6 +1126,7 @@ const loadFiles=guard(async(path)=>{
     const link=(label,cls,fn)=>{ const a=elm("a"); a.textContent=label; if(cls) a.className=cls; a.onclick=guard(fn); return a; };
     if(e.isDirectory){ act.append(link("open",null,async()=>loadFiles(e.path))); }
     else {
+      act.append(link("view",null,async()=>fsView(e.path,e.name)));
       act.append(link("download",null,async()=>fsDownload(e.path,e.name)));
       act.append(link("launch",null,async()=>{ const r=await api("/process/launch","POST",{path:e.path,waitForWindowMs:4000}); toast(r.hasWindow?`launched: ${r.window?.name||r.processName||e.name}`:`launched: ${e.name}`); }));
       if((e.extension||"").toLowerCase()===".zip") act.append(link("unzip",null,async()=>{ const r=await api("/fs/unzip","POST",{zipPath:e.path}); toast(r.ok?`unzipped (${r.detail})`:r.error,!r.ok); fsReload(); }));
@@ -1128,6 +1147,31 @@ async function fsDownload(path,name){
   const blob=await r.blob(); const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=name; document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
+// text-only viewer: reads the front of a file as UTF-8 and shows it in an overlay (binaries are refused).
+let vwPath=null, vwName=null;
+const fsView=guard(async(path,name)=>{
+  const d=await api("/fs/read?path="+encodeURIComponent(path));
+  if(d.error){ toast("view: "+d.error,true); return; }
+  vwPath=path; vwName=name;
+  $("#vwTitle").textContent=name; $("#vwTitle").title=path;
+  const body=$("#vwBody");
+  if(d.binary){
+    body.textContent="(binary file — nothing to show as text; use ⬇ to download)";
+    $("#vwMeta").textContent=fmtSize(d.size)+" · binary";
+  } else {
+    body.textContent=d.text||"";
+    $("#vwMeta").textContent=fmtSize(d.size)+(d.truncated?` · showing first ${fmtSize(d.readBytes)}`:"");
+  }
+  body.scrollTop=0;
+  $("#viewer").hidden=false;
+});
+function vwCloseFn(){ $("#viewer").hidden=true; $("#vwBody").textContent=""; vwPath=null; }
+$("#vwClose").onclick=vwCloseFn;
+$("#viewer").onclick=(e)=>{ if(e.target.id==="viewer") vwCloseFn(); };
+$("#vwWrap").onclick=()=>$("#vwBody").classList.toggle("wrap");
+$("#vwDl").onclick=()=>{ if(vwPath) fsDownload(vwPath,vwName); };
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&!$("#viewer").hidden) vwCloseFn(); });
+
 $("#fsUploadBtn").onclick=()=>$("#fsUpload").click();
 $("#fsUpload").onchange=guard(async()=>{
   const files=$("#fsUpload").files; if(!files.length||!fsCurrent) return;

@@ -5,6 +5,7 @@ namespace Deskhand.Core.Services;
 public record FileEntryDto(string Name, string Path, bool IsDirectory, long? Size, DateTime? Modified, string? Extension);
 public record DirListingDto(string Path, string? Parent, bool IsRoot, IReadOnlyList<FileEntryDto> Entries, string? Error = null);
 public record FileContentDto(string Path, long Size, string? Base64, string? Error = null);
+public record FileTextDto(string Path, string Name, long Size, long ReadBytes, bool Truncated, bool Binary, string? Text, string? Error = null);
 public record WriteResultDto(string Path, long Size, bool Overwritten, string? Error = null);
 public record FsOpResultDto(string Op, string Path, string? Dest, bool Ok, string? Detail = null, string? Error = null);
 
@@ -143,6 +144,36 @@ public static class FileSystemService
         }
         catch (UnauthorizedAccessException) { return new WriteResultDto(path, 0, false, "Access denied — this location needs elevation."); }
         catch (Exception ex) { return new WriteResultDto(path, 0, false, ex.Message); }
+    }
+
+    /// <summary>Read a file as UTF-8 text for the dashboard's text-only viewer. Reads at most
+    /// <paramref name="maxBytes"/> from the front (default 512 KB), decodes as UTF-8, and flags files that look
+    /// binary (a NUL byte in the sample) so the caller can steer the user to download instead.</summary>
+    public static FileTextDto ReadText(string? path, long maxBytes = 512 * 1024)
+    {
+        path = (path ?? "").Trim().Trim('"');
+        if (path.Length == 0) return new FileTextDto("", "", 0, 0, false, false, null, "No path given.");
+        try
+        {
+            var full = System.IO.Path.GetFullPath(path);
+            if (Directory.Exists(full)) return new FileTextDto(full, "", 0, 0, false, false, null, "That is a folder, not a file.");
+            if (!File.Exists(full)) return new FileTextDto(full, "", 0, 0, false, false, null, "File not found.");
+            long len = new FileInfo(full).Length;
+            int want = (int)Math.Min(len, maxBytes);
+            var buf = new byte[want];
+            int read;
+            using (var fs = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                read = fs.Read(buf, 0, want);
+            bool binary = Array.IndexOf(buf, (byte)0, 0, read) >= 0;
+            string name = System.IO.Path.GetFileName(full);
+            if (binary) return new FileTextDto(full, name, len, read, len > read, true, null);
+            // strip a UTF-8 BOM if present so it doesn't render as a stray glyph
+            int start = (read >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF) ? 3 : 0;
+            string text = System.Text.Encoding.UTF8.GetString(buf, start, read - start);
+            return new FileTextDto(full, name, len, read, len > read, false, text);
+        }
+        catch (UnauthorizedAccessException) { return new FileTextDto(path, "", 0, 0, false, false, null, "Access denied."); }
+        catch (Exception ex) { return new FileTextDto(path, "", 0, 0, false, false, null, ex.Message); }
     }
 
     /// <summary>Validate a path for streaming download: returns the full path if it's a readable file, else an

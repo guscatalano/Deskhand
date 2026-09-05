@@ -414,6 +414,16 @@ api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.D
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));
 
+// Read a file as text for the dashboard's viewer (front-of-file, capped). SENSITIVE — gated + audited.
+api.MapGet("/fs/read", (ControlState st, AuditLog al, string? path, long? maxBytes) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var dto = Deskhand.Core.Services.FileSystemService.ReadText(path, maxBytes is > 0 ? maxBytes.Value : 512 * 1024);
+    if (dto.Error is not null) return Results.Json(new { error = dto.Error, type = "bad_request" }, statusCode: 400);
+    al.Record("file_read", dto.Path, dto.ReadBytes + "B" + (dto.Binary ? " (binary)" : dto.Truncated ? " (truncated)" : ""));
+    return Results.Ok(dto);
+});
+
 // Download a single file (stream). SENSITIVE (reads real file bytes) — gated on armed + audited.
 api.MapGet("/fs/download", (ControlState st, AuditLog al, string? path) =>
 {

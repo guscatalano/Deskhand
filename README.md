@@ -438,7 +438,7 @@ tree and keeps your selection, for when the app under inspection changes.
 
 ## MCP server
 
-`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (~47 tools:
+`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (~136 tools, plus ~81 fleet tools:
 `deskhand_list_windows`, `deskhand_list_processes`, `deskhand_get_tree`, `deskhand_get_all_properties`,
 `deskhand_element_from_point`, `deskhand_invoke`, `deskhand_capture_window`,
 `deskhand_mouse_click`, `deskhand_wait_for_process`, `deskhand_record_start`,

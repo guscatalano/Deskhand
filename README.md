@@ -2,15 +2,23 @@
   <img src="assets/deskhand-logo.svg" alt="Deskhand" width="440">
 </p>
 
-# Deskhand — local HTTP automation server
+# Deskhand — Windows desktop automation for AI agents
 
-A **localhost-only HTTP server** that exposes Windows **UI Automation**, **screen capture**, and
-**synthetic input** for the machine it runs on. It is the HTTP surface of the Deskhand design
-(see `Deskhand.html` for the full architecture doc). Built on **.NET 9 + FlaUI (UIA3)**.
+A Windows desktop-automation server that exposes **UI Automation**, **screen capture**, **synthetic
+input**, **OCR**, on-screen **vision**, and **system control** over **MCP** (stdio *and* Streamable-HTTP)
+and a **localhost HTTP API** — with a real-PC **fleet** and protocol-level **RDP** reach, all behind a
+**kill switch** and an append-only **audit log**. Built on **.NET 9 + FlaUI (UIA3)**.
+(See `Deskhand.html` for the full architecture doc.)
 
-This is the **Phase 1** deliverable: the single-machine, in-session **Default desktop** path.
-The secure desktop (UAC / lock / logon) is *reported* by `/desktop/state` but driving it requires
-the SYSTEM "Secure Helper" (Phase 2), which is not in this build.
+Both hosts and the fleet are thin shells over one governed backend (`IAutomationBackend`), so they
+expose identical capabilities and record to the same audit trail. The current surface is **~136 local
+MCP tools**, **~81 fleet tools**, and **~161 HTTP routes**.
+
+All five design phases are in this build: the single-machine **Default desktop** path (in-session UIA +
+capture + input), **secure-desktop capture** (UAC / lock / logon, via a SYSTEM helper), **governance**,
+the **fleet**, and **RDP**. Two things are capture-only / not fully exercised and called out where they
+appear: *driving input* on the secure desktop (needs a signed `uiAccess` binary), and the protocol-level
+RDP backend's live input path (needs a reachable RDP host to validate).
 
 ## Layout
 
@@ -359,6 +367,7 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /foreground` | — | Foreground window element |
 | `GET /focused` | — | Focused element |
 | `GET /windows` | — | All top-level windows (the reliable way to enter a specific app) |
+| `GET /windows/all` | — | **Complete** top-level enumeration via raw Win32 `EnumWindows` (sees pop-ups/nags UIA misses) |
 | `POST /process/launch` | `{path, args?, workingDir?, waitForWindowMs?}` | Launch a program; returns its window if it appears |
 | `POST /process/launch-as` | `{path, args?, workingDir?, sessionId?, desktop?, as?, user?, domain?, password?, noWindow?}` | Launch into a specific **session** / **desktop**, as a specific **user** (see below) |
 | `GET /firewall/rules` | `?direction=&port=&enabledOnly=&contains=&managedOnly=&max=` | List Windows Firewall rules (read-only) |
@@ -379,6 +388,10 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /env` · `POST /env` | `{name, value?, scope?}` | Read/set env vars (process·user·machine) |
 | `POST /task` | `{task, action}` | Scheduled task run · end · enable · disable |
 | `GET /uac` · `POST /uac/config` · `POST /uac/respond` | see below | Read/configure UAC; answer a live consent prompt |
+| `GET /fs` · `GET /fs/read` · `GET /fs/download` | `?path=` | Browse a folder · read a file as **text** (capped, binary-aware) · stream a file |
+| `POST /fs/upload` · `/fs/delete` · `/fs/rename` · `/fs/move` · `/fs/copy` · `/fs/zip` · `/fs/unzip` | see Files tab | File operations (mutations armed + audited) |
+| `POST /shell/run` | `{shell, command, cwd?, timeoutMs?}` | Run a command (**off unless `DESKHAND_ENABLE_SHELL=1`**; armed + audited) |
+| `POST /episode/start` · `/episode/stop` · `GET /episodes/{id}` | `{task?}` · `{success?}` | **Trajectory recording** — auto-steps from the audit stream; `{id}` downloads the episode as a zip |
 | `POST /fetch` | `{url, path?, maxBytes?}` | Download a URL to a file on the box |
 | `GET /metrics` | — | Prometheus gauges (no token; loopback scrape) |
 | `GET /audit/recent` | `?limit=` | Tail the audit log (also the dashboard **Audit** tab) |

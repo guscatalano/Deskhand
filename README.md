@@ -20,6 +20,38 @@ the **fleet**, and **RDP**. Two things are capture-only / not fully exercised an
 appear: *driving input* on the secure desktop (needs a signed `uiAccess` binary), and the protocol-level
 RDP backend's live input path (needs a reachable RDP host to validate).
 
+## Deskhand vs. a CUA driver
+
+A **CUA driver** (computer-using agent — Anthropic Computer Use, OpenAI's Computer-Using Agent /
+Operator, `trycua/cua`, and similar) drives a machine the way a person looks at a screen: the model
+gets a **screenshot**, reasons over the pixels, and emits **`click(x, y)` / `type(...)`** actions. It is
+OS-agnostic and needs no knowledge of the app — but every step costs a vision round-trip, and the click
+lands wherever the model *guessed* the pixel was.
+
+Deskhand starts from the opposite end — **structure before pixels** — and keeps the pixel path as a
+fallback rather than the whole story. It is not itself an agent loop; it's the **tool surface** you point
+your own agent at (over MCP or HTTP).
+
+| | **CUA driver** (pixel/vision) | **Deskhand** |
+|---|---|---|
+| **Perception** | Screenshot every step; model reads pixels | **UIA accessibility tree first** (`/uia/tree`, `find`, `element_from_point`); vision (OCR, template match, Set-of-Mark) as a complement |
+| **Targeting** | Model emits `x,y` from the image (pixel guessing) | Act by a stable **UIA ref** — `invoke` / `set_value` / `toggle` / `select` — *or* a **Set-of-Mark number**, *or* coordinates. Deterministic where a tree exists |
+| **Waiting / sync** | Screenshot, look, retry | `wait_for` element / text / image, `wait_stable` (region settles), refs **re-resolve** instead of firing at a stale target |
+| **Model needs** | A **vision-capable computer-use model** | **Any tool-calling model** — no vision required for tree-driven flows; vision available when you want it |
+| **Cost / latency per step** | One image in, reasoning over it, every step | A compact **text UX map** (`/ux/explore`) or a targeted read; send an image only when you choose to |
+| **Platform** | Cross-OS (anything it can screenshot) | **Windows-deep** (UIA3 / Win32) — not cross-platform |
+| **Custom / canvas UIs** | Handles them natively (it's all pixels anyway) | OCR + Set-of-Mark + `element_from_point` cover UIA-blind apps (Chromium/Electron, plugins); still weaker than pure vision on fully bespoke canvases |
+| **Governance** | Left to the harness | Built in: **kill switch**, append-only **audit log**, confirmation gates, self-protection, opt-in dangerous surfaces, consent toasts |
+| **Scale / remote** | Usually one sandboxed VM | **Fleet** (many real PCs by `agentId`) + **RDP**, same surface routed by id |
+| **Shape** | A full agent loop | A **governed tool surface** — bring your own agent |
+
+**Rule of thumb:** reach for a CUA driver when you need one agent loop that works on *any* OS and app
+out of the box and don't mind paying a screenshot per step. Reach for Deskhand when the target is
+**Windows** and you want **deterministic, cheap, auditable** control — with the vision path still there
+for the parts where the tree runs out. The two also compose: a CUA-style model can call Deskhand's
+`capture_* marks:true` to get numbered targets and click by **number instead of pixel**, which removes
+the guessing while keeping the vision loop.
+
 ## Layout
 
 ```

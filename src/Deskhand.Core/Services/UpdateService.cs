@@ -15,9 +15,11 @@ public record UpdateApplyDto(bool Ok, string? From, string? To, string? Message,
 /// <summary>
 /// Self-update against the project's GitHub Releases. <see cref="CheckAsync"/> is read-only (compares the
 /// running <see cref="BuildInfo.Version"/> to the latest release tag). <see cref="ApplyAsync"/> downloads the
-/// self-contained <c>deskhand.zip</c>, stages it, and hands off to a tiny detached updater that stops this
-/// process, copies the new files over the install directory, and relaunches — so it only works on a
-/// zip/self-contained install, and it runs downloaded code, hence it's opt-in (<c>DESKHAND_ENABLE_SELF_UPDATE</c>).
+/// self-contained <c>deskhand.zip</c>, verifies it against the sha256 digest and size GitHub publishes for the
+/// asset (failing closed on any mismatch — an incomplete or tampered download), stages it, and hands off to a
+/// tiny detached updater that stops this process, copies the new files over the install directory, and
+/// relaunches — so it only works on a zip/self-contained install, and it runs downloaded code, hence it's
+/// opt-in (<c>DESKHAND_ENABLE_SELF_UPDATE</c>).
 /// </summary>
 public static class UpdateService
 {
@@ -68,8 +70,9 @@ public static class UpdateService
             if (CompareVersions(latest, BuildInfo.Version) <= 0)
                 return new UpdateApplyDto(true, BuildInfo.Version, latest, "Already up to date; nothing to do.");
 
-            string? url = await AssetUrlAsync();
-            if (url is null) return new UpdateApplyDto(false, BuildInfo.Version, latest, null, $"Release {tag} has no {Asset} asset.");
+            var asset = await AssetAsync();
+            if (asset is null) return new UpdateApplyDto(false, BuildInfo.Version, latest, null, $"Release {tag} has no {Asset} asset.");
+            var (url, expectedSha, expectedSize) = asset.Value;
 
             string appDir = AppContext.BaseDirectory.TrimEnd('\\', '/');
             string? exe = SafeExePath();
@@ -86,6 +89,23 @@ public static class UpdateService
                 await using var fs = File.Create(zipPath);
                 await resp.Content.CopyToAsync(fs);
             }
+
+            // Verify the download before we trust its contents — this path extracts and RUNS downloaded code.
+            // Check against the size and sha256 GitHub publishes for the asset, and fail closed on any mismatch
+            // (an incomplete download, or a tampered one). If GitHub published no digest we fall through to the
+            // zip-validity + exe-presence checks below.
+            long gotSize = new FileInfo(zipPath).Length;
+            if (expectedSize > 0 && gotSize != expectedSize)
+                return new UpdateApplyDto(false, BuildInfo.Version, latest, null,
+                    $"Downloaded {Asset} is {gotSize:N0} bytes, expected {expectedSize:N0} — aborting (incomplete or tampered download).");
+            if (expectedSha is not null)
+            {
+                string gotSha = await Sha256HexAsync(zipPath);
+                if (!string.Equals(gotSha, expectedSha, StringComparison.OrdinalIgnoreCase))
+                    return new UpdateApplyDto(false, BuildInfo.Version, latest, null,
+                        $"Downloaded {Asset} sha256 {gotSha} does not match the published {expectedSha} — aborting (corrupt or tampered download).");
+            }
+
             ZipFile.ExtractToDirectory(zipPath, staging, overwriteFiles: true);
             if (!File.Exists(Path.Combine(staging, Path.GetFileName(exe))))
                 return new UpdateApplyDto(false, BuildInfo.Version, latest, null, $"Downloaded {Asset} doesn't contain {Path.GetFileName(exe)} — not a matching build.");
@@ -138,7 +158,9 @@ public static class UpdateService
         return (tag, name, notes, published, asset, size);
     }
 
-    private static async Task<string?> AssetUrlAsync()
+    // Resolve the deskhand.zip asset's download URL, along with the sha256 digest and size GitHub publishes
+    // for it (used to verify the download before it is extracted and run). digest arrives as "sha256:<hex>".
+    private static async Task<(string url, string? sha256, long size)?> AssetAsync()
     {
         using var resp = await Http.GetAsync($"https://api.github.com/repos/{BuildInfo.Repository}/releases/latest");
         if (!resp.IsSuccessStatusCode) return null;
@@ -146,8 +168,23 @@ public static class UpdateService
         if (doc.RootElement.TryGetProperty("assets", out var assets))
             foreach (var a in assets.EnumerateArray())
                 if (string.Equals(Str(a, "name"), Asset, StringComparison.OrdinalIgnoreCase))
-                    return Str(a, "browser_download_url");
+                {
+                    string? url = Str(a, "browser_download_url");
+                    if (url is null) return null;
+                    string? digest = Str(a, "digest");
+                    string? sha = digest is not null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
+                        ? digest["sha256:".Length..] : null;
+                    long size = a.TryGetProperty("size", out var s) && s.ValueKind == JsonValueKind.Number ? s.GetInt64() : 0;
+                    return (url, sha, size);
+                }
         return null;
+    }
+
+    private static async Task<string> Sha256HexAsync(string path)
+    {
+        await using var fs = File.OpenRead(path);
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        return Convert.ToHexString(await sha.ComputeHashAsync(fs)).ToLowerInvariant();
     }
 
     private static string? Str(JsonElement e, string name) =>

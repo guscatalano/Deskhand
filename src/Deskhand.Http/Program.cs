@@ -1181,8 +1181,18 @@ static IResult WriteCapture(HttpContext ctx, Deskhand.Core.Services.ScreenshotSt
             saved = true, file = s.File, sizeBytes = s.SizeBytes, url = $"/screenshots/{s.FileName}" });
     }
 
-    bool wantsRaw = string.Equals(ctx.Request.Query["raw"], "true", StringComparison.OrdinalIgnoreCase)
-                    || ctx.Request.Headers.Accept.ToString().Contains("image/", StringComparison.OrdinalIgnoreCase);
+    // Raw binary is opt-in. Trigger only on an explicit ?raw=true|1, or an Accept header that asks
+    // ONLY for an image type. A client that also accepts JSON or */* (browsers, most HTTP libs, and
+    // any client sending no Accept) gets the documented JSON { imageBase64 } shape. This matters:
+    // an intermediary that carries a "text" body would mangle raw PNG bytes (e.g. via latin-1),
+    // so we never hand back binary unless the caller unambiguously asked for it.
+    string rawQ = ctx.Request.Query["raw"].ToString();
+    string accept = ctx.Request.Headers.Accept.ToString();
+    bool acceptsJsonOrAny = accept.Length == 0
+                            || accept.Contains("application/json", StringComparison.OrdinalIgnoreCase)
+                            || accept.Contains("*/*", StringComparison.Ordinal);
+    bool wantsRaw = rawQ is "true" or "1"
+                    || (accept.Contains("image/", StringComparison.OrdinalIgnoreCase) && !acceptsJsonOrAny);
     string contentType = img.Format == "jpeg" ? "image/jpeg" : "image/png";
     if (wantsRaw) return Results.Bytes(img.Bytes, contentType);
 

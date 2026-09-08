@@ -454,8 +454,12 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `POST /keyboard/type` | `{text}` | Type a literal string (Unicode) |
 | `POST /keyboard/keys` | `{chord}` | Chord, e.g. `"ctrl+shift+s"`, `"alt+F4"`, `"enter"` |
 
-**Capture responses** default to JSON `{desktop, rect, monitor, dpiScale, format, imageBase64}`.
-Add `?raw=true` (or send `Accept: image/png`) to get raw image bytes instead.
+**Capture responses** default to JSON `{desktop, rect, monitor, dpiScale, format, imageBase64}` —
+`imageBase64` is standard base64; decode it, don't read the body as text. Raw image bytes are
+**opt-in**: add `?raw=true`, or send an `Accept` header that asks *only* for an image
+(e.g. `Accept: image/png` with no `application/json` and no `*/*`). A client that also accepts JSON or
+`*/*` (browsers, most HTTP libraries, or one sending no `Accept`) always gets the JSON shape, so a
+binary body is never returned by surprise to a caller that would carry it as text.
 
 `format` is `png` (default) or `jpeg`; `quality` (1–100) applies to JPEG.
 

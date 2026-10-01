@@ -45,7 +45,15 @@ public static class FleetTools
     private static IEnumerable<ContentBlock> AsImage(string agentId, CaptureResultDto c)
     {
         yield return new TextContentBlock { Text = $"agent={agentId} {c.Rect.Width}x{c.Rect.Height} desktop={c.Desktop}" };
-        yield return new ImageContentBlock { Data = c.Bytes, MimeType = c.Format == "jpeg" ? "image/jpeg" : "image/png" };
+        // WORKAROUND: ModelContextProtocol 2.2.0's polymorphic ContentBlock converter writes
+        // ImageContentBlock.Data (ReadOnlyMemory<byte>) as a raw UTF-8 string, not base64, corrupting the
+        // image over the wire. Pre-encode the base64 text into Data so the converter emits valid base64.
+        // Re-test and remove if the SDK is upgraded past 2.2.0. (Mirror of DeskhandTools.Base64Image.)
+        yield return new ImageContentBlock
+        {
+            Data = System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(c.Bytes)),
+            MimeType = c.Format == "jpeg" ? "image/jpeg" : "image/png",
+        };
     }
 
     [McpServerTool(Name = "deskhand_list_agents"), Description("List the PCs (agents) currently connected to the fleet, with machine name, desktop state, monitors, and elevation.")]

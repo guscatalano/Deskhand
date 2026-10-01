@@ -78,12 +78,23 @@ public static class DeskhandTools
             Text = $"desktop={c.Desktop} rect={c.Rect.Width}x{c.Rect.Height}@({c.Rect.X},{c.Rect.Y}) " +
                    $"monitor={c.Monitor} dpi={c.DpiScale} format={s.Format} bytes={s.Bytes.Length}{scaleNote}",
         };
-        yield return new ImageContentBlock
-        {
-            Data = s.Bytes,
-            MimeType = s.Format == "jpeg" ? "image/jpeg" : "image/png",
-        };
+        yield return Base64Image(s.Bytes, s.Format == "jpeg" ? "image/jpeg" : "image/png");
     }
+
+    // WORKAROUND for ModelContextProtocol 2.2.0 (the latest release): the polymorphic ContentBlock JSON
+    // converter the transport actually uses serializes ImageContentBlock.Data (ReadOnlyMemory<byte>) by
+    // writing the RAW bytes as a UTF-8 string instead of base64 — so an image comes back as mojibake in the
+    // JSON "data" field (e.g. "�PNG..."), unopenable, over BOTH the HTTP and stdio MCP transports.
+    // (Serializing the CONCRETE ImageContentBlock type is fine; only the polymorphic List<ContentBlock> path
+    // the SDK takes for tool results is broken.) We pre-encode: store the UTF-8 bytes of the base64 STRING in
+    // Data, so the converter's effective UTF8.GetString(Data) emits exactly the base64 text the MCP spec wants.
+    // If ModelContextProtocol is ever upgraded past 2.2.0, RE-TEST capture over MCP and drop this if the SDK
+    // is fixed (leaving it would double-encode). FleetTools has the same workaround inline.
+    internal static ImageContentBlock Base64Image(byte[] bytes, string mimeType) => new()
+    {
+        Data = System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(bytes)),
+        MimeType = mimeType,
+    };
 
     // ---------- orientation ----------
 
@@ -1101,11 +1112,7 @@ public static class DeskhandTools
         var r = b.CaptureInputDesktop(Fmt(format), 80);
         yield return new TextContentBlock { Text = $"success={r.Success} desktop={r.DesktopName} kind={r.Kind} note={r.Note}" };
         if (r.Success && r.Capture is not null)
-            yield return new ImageContentBlock
-            {
-                Data = r.Capture.Bytes,
-                MimeType = r.Capture.Format == "jpeg" ? "image/jpeg" : "image/png",
-            };
+            yield return Base64Image(r.Capture.Bytes, r.Capture.Format == "jpeg" ? "image/jpeg" : "image/png");
     }
 
     // ---------- input ----------

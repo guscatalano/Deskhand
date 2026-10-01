@@ -151,7 +151,12 @@ No bearer token is required for the browser dashboard. The server is protected b
 - **Shell is opt-in** — the command runner (`/shell/run`, `deskhand_run_command`, the dashboard **Shell**
   tab) is **disabled unless you start the server with `DESKHAND_ENABLE_SHELL=1`**, and even then requires
   the kill switch to be *armed* and audits every command. Off by default because it runs arbitrary code as
-  the current user.
+  the current user. **Running installers:** a synchronous `run_command` waits for the command to finish — use
+  `timeoutMs:0` (no limit) or `async:true` (poll `/shell/jobs/{id}`, cancel if needed) for a long/silent
+  install; for a **GUI installer you want to keep running on its own**, launch it detached with
+  `deskhand_launch_process` instead (it returns once the process starts, and the process keeps running). The
+  command runner gives commands **no stdin**, so an interactive prompt (e.g. `schtasks` asking for a password)
+  fails fast instead of hanging — pass credentials/flags non-interactively.
 - **Cross-session launch is opt-in** — `/process/launch-as` (`deskhand_launch_process_as`) launches a program
   into a specific TS **session**, on a specific window-station\\**desktop**, as a specific **user**. Off unless
   `DESKHAND_ENABLE_SESSION_LAUNCH=1`; also requires *armed* and is audited (never the password).

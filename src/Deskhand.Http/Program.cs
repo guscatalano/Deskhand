@@ -1121,7 +1121,12 @@ api.MapPost("/capture/input-desktop", (IAutomationBackend b, InputDesktopRequest
 
 // ---- input: mouse ----
 api.MapPost("/mouse/move", (IAutomationBackend b, MouseMoveRequest r) => { b.MouseMove(r.X, r.Y); return Ok(); });
-api.MapPost("/mouse/click", (IAutomationBackend b, MouseClickRequest r) => { b.MouseClick(r.Button ?? "left", r.X, r.Y, r.Count ?? 1); return Ok(); });
+api.MapPost("/mouse/click", (IAutomationBackend b, MouseClickRequest r) =>
+{
+    if (r.X is null || r.Y is null)
+        return Results.Json(new { error = "x and y are required (a click with no coordinates is rejected to avoid clicking wherever the cursor is; use /mouse/move first for the current position)", type = "bad_request" }, statusCode: 400);
+    b.MouseClick(r.Button ?? "left", r.X, r.Y, r.Count ?? 1); return Ok();
+});
 api.MapPost("/mouse/down", (IAutomationBackend b, MouseButtonRequest r) => { b.MouseDown(r.Button ?? "left", r.X, r.Y); return Ok(); });
 api.MapPost("/mouse/up", (IAutomationBackend b, MouseButtonRequest r) => { b.MouseUp(r.Button ?? "left", r.X, r.Y); return Ok(); });
 api.MapPost("/mouse/scroll", (IAutomationBackend b, ScrollRequest r) => { b.MouseScroll(r.Dx, r.Dy); return Ok(); });

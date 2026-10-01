@@ -1113,9 +1113,13 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_mouse_move"), Description("Move the mouse to a virtual-desktop pixel coordinate.")]
     public static string MouseMove(IAutomationBackend b, int x, int y) { b.MouseMove(x, y); return "ok"; }
 
-    [McpServerTool(Name = "deskhand_mouse_click"), Description("Click at a point (or at the current cursor if x/y omitted). button: left|right|middle. count: 2 for double-click.")]
-    public static string MouseClick(IAutomationBackend b, string button = "left", int? x = null, int? y = null, int count = 1)
-    { b.MouseClick(button, x, y, count); return "ok"; }
+    [McpServerTool(Name = "deskhand_mouse_click"), Description("Click at a virtual-desktop pixel. x and y are REQUIRED — a click with no target is rejected (so it can't fire wherever the cursor happens to be). button: left|right|middle. count: 2 for double-click. To click where the cursor already is, move there first with deskhand_mouse_move.")]
+    public static string MouseClick(IAutomationBackend b, int? x = null, int? y = null, string button = "left", int count = 1)
+    {
+        if (x is null || y is null)
+            return "{\"error\":\"mouse_click requires both x and y (virtual-desktop pixels). A click with no coordinates is rejected to avoid clicking wherever the cursor is; use deskhand_mouse_move first if you mean the current position.\",\"type\":\"bad_request\"}";
+        b.MouseClick(button, x, y, count); return "ok";
+    }
 
     [McpServerTool(Name = "deskhand_mouse_scroll"), Description("Scroll the wheel. dy positive scrolls up, dx positive scrolls right (in notches).")]
     public static string MouseScroll(IAutomationBackend b, int dx, int dy) { b.MouseScroll(dx, dy); return "ok"; }

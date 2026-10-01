@@ -48,6 +48,7 @@ public static class ShellService
         Process proc;
         try { proc = Process.Start(BuildPsi(shell, command, cwd))!; }
         catch (Exception ex) { return Err(shell, command, cwd, "Failed to start shell: " + ex.Message); }
+        try { proc.StandardInput.Close(); } catch { }   // no stdin -> prompts get EOF, not a hang
 
         var outTask = proc.StandardOutput.ReadToEndAsync();
         var errTask = proc.StandardError.ReadToEndAsync();
@@ -83,7 +84,12 @@ public static class ShellService
         if (!Enabled) return (null, shell, "Shell is disabled. Set DESKHAND_ENABLE_SHELL=1 to enable it.");
         if (string.IsNullOrWhiteSpace(command)) return (null, shell, "No command given.");
         if (cwd.Length > 0 && !Directory.Exists(cwd)) return (null, shell, $"Working directory not found: {cwd}");
-        try { return (Process.Start(BuildPsi(shell, command, cwd))!, shell, null); }
+        try
+        {
+            var proc = Process.Start(BuildPsi(shell, command, cwd))!;
+            try { proc.StandardInput.Close(); } catch { }   // no stdin -> prompts get EOF, not a hang
+            return (proc, shell, null);
+        }
         catch (Exception ex) { return (null, shell, "Failed to start shell: " + ex.Message); }
     }
 
@@ -97,6 +103,8 @@ public static class ShellService
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,   // closed immediately after start so interactive prompts hit EOF and
+                                            // fail fast instead of hanging the command until its timeout
         };
         if (cwd.Length > 0) psi.WorkingDirectory = cwd;
         if (shell == "cmd")

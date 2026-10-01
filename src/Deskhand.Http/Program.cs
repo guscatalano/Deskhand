@@ -118,6 +118,7 @@ builder.Services.AddSingleton(screenRecorder);
 builder.Services.AddSingleton(processDumper);
 builder.Services.AddSingleton(screenshotStore);
 builder.Services.AddSingleton(inputRecorder);
+builder.Services.AddSingleton(new Deskhand.Core.Services.ShellJobStore());
 builder.Services.AddSingleton(new Deskhand.Core.Services.WebhookService());
 builder.Services.AddHostedService<WebhookForwarder>();
 builder.Services.AddHostedService<AutoDismissWorker>();   // continuously-present nag auto-dismisser (kill-switch bound)
@@ -569,14 +570,41 @@ api.MapPost("/fs/unzip", (ControlState st, AuditLog al, FsUnzipRequest r) =>
 
 // One-shot shell: run a command in PowerShell/cmd and return its output. MOST POWERFUL capability
 // (arbitrary code as the current user) — OFF unless DESKHAND_ENABLE_SHELL is set, gated on armed, audited.
-api.MapPost("/shell/run", (ControlState st, AuditLog al, ShellRunRequest r) =>
+api.MapPost("/shell/run", (ControlState st, AuditLog al, Deskhand.Core.Services.ShellJobStore jobs, ShellRunRequest r) =>
 {
     if (!Deskhand.Core.Services.ShellService.Enabled)
         return Results.Json(new { error = "Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.", type = "shell_disabled" }, statusCode: 403);
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+
+    // Async: start the process, return a jobId + pid immediately, and keep running in the background. Poll
+    // /shell/jobs/{id} for output + status; stop it (incl. a hung installer) with /shell/jobs/{id}/cancel.
+    if (r.Async == true)
+    {
+        var (proc, shell, err) = Deskhand.Core.Services.ShellService.StartProcess(r.Shell, r.Command, r.Cwd);
+        if (proc is null) return Results.Json(new { error = err, type = "shell_error" }, statusCode: 400);
+        var job = jobs.Start(shell, r.Command ?? "", (r.Cwd ?? "").Trim().Trim('"'), proc);
+        al.Record("shell_run", $"{shell} [async {job.JobId} pid {job.Pid}]: {Trunc(r.Command ?? "", 160)}", "started");
+        return Results.Ok(job);
+    }
+
     var res = Deskhand.Core.Services.ShellService.Run(r.Shell, r.Command, r.Cwd, r.TimeoutMs);
     al.Record("shell_run", $"{res.Shell}: {Trunc(res.Command, 160)}", res.TimedOut ? "TIMEOUT" : $"exit {res.ExitCode} in {res.DurationMs}ms");
     return Results.Ok(res);
+});
+// Async shell jobs: list, fetch output+status, and cancel (kills the process tree — how a hung run is stopped).
+api.MapGet("/shell/jobs", (Deskhand.Core.Services.ShellJobStore jobs) => Results.Ok(jobs.List()));
+api.MapGet("/shell/jobs/{id}", (Deskhand.Core.Services.ShellJobStore jobs, string id) =>
+{
+    var r = jobs.Result(id);
+    return r is null ? Results.Json(new { error = "no such job (it may have expired)", type = "not_found" }, statusCode: 404) : Results.Ok(r);
+});
+api.MapPost("/shell/jobs/{id}/cancel", (ControlState st, AuditLog al, Deskhand.Core.Services.ShellJobStore jobs, string id) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var job = jobs.Cancel(id);
+    if (job is null) return Results.Json(new { error = "no such job (it may have expired)", type = "not_found" }, statusCode: 404);
+    al.Record("shell_cancel", $"{job.JobId} pid {job.Pid}", job.Error ?? "killed");
+    return Results.Ok(job);
 });
 
 // Launch a process into a specific SESSION, on a specific DESKTOP, as a specific USER (CreateProcessAsUser).
@@ -1275,7 +1303,7 @@ record FsMoveRequest(string Source, string Dest, bool? Overwrite);
 record FsCopyRequest(string Source, string Dest, bool? Overwrite);
 record FsZipRequest(IReadOnlyList<string>? Sources, string Dest, bool? Overwrite);
 record FsUnzipRequest(string ZipPath, string? Dest, bool? Overwrite);
-record ShellRunRequest(string? Shell, string Command, string? Cwd, int? TimeoutMs);
+record ShellRunRequest(string? Shell, string Command, string? Cwd, int? TimeoutMs, bool? Async);
 record SessionLaunchRequest(string Path, string? Args, string? WorkingDir, int? SessionId, string? Desktop,
     string? As, string? User, string? Domain, string? Password, bool? NoWindow);
 record FirewallOpenRequest(int Port, string? Protocol, string? Direction, string? RemoteAddresses, string? Name);

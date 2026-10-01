@@ -282,17 +282,48 @@ public static class DeskhandTools
     }
 
     [McpServerTool(Name = "deskhand_run_command"), Description("Run a single command in a shell (default PowerShell; shell=\"cmd\" or \"pwsh\") and return its output: { shell, command, cwd, exitCode, stdout, stderr, durationMs, timedOut, truncated, error? }. STATELESS — each call is a fresh process, so cd/variables do NOT persist between calls (pass cwd for a starting directory). MOST POWERFUL tool (arbitrary code as the current user): it is OFF unless the host sets DESKHAND_ENABLE_SHELL, and also requires the kill switch to be armed; every command is audited. Output is capped; long-running commands are killed at timeoutMs (default 30000; 0 = no limit, for long installers / downloads; otherwise no cap).")]
-    public static string RunCommand(ControlState state, AuditLog audit,
+    public static string RunCommand(ControlState state, AuditLog audit, Deskhand.Core.Services.ShellJobStore jobs,
         [Description("The command line to run, e.g. \"Get-Process | Sort CPU -Desc | Select -First 5\".")] string command,
         [Description("\"powershell\" (default), \"pwsh\" (PowerShell 7), or \"cmd\".")] string? shell = null,
         [Description("Working directory to start in (optional).")] string? cwd = null,
-        [Description("Kill the command after this many ms (default 30000, max 600000).")] int? timeoutMs = null)
+        [Description("Kill the command after this many ms (default 30000; 0 = no limit, for long installers; otherwise no cap). Ignored when async=true.")] int? timeoutMs = null,
+        [Description("Run in the BACKGROUND: returns { jobId, pid, running } immediately instead of blocking. Poll deskhand_shell_result(jobId) for output + status; stop it (incl. a hung installer) with deskhand_shell_cancel(jobId). Use this for long installers.")] bool async = false)
     {
         if (!Deskhand.Core.Services.ShellService.Enabled) return "{\"error\":\"Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.\",\"type\":\"shell_disabled\"}";
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        if (async)
+        {
+            var (proc, sh, err) = Deskhand.Core.Services.ShellService.StartProcess(shell, command, cwd);
+            if (proc is null) return Json(new { error = err, type = "shell_error" });
+            var job = jobs.Start(sh, command, (cwd ?? "").Trim().Trim('"'), proc);
+            audit.Record("shell_run", $"{sh} [async {job.JobId} pid {job.Pid}]: {(command.Length <= 160 ? command : command[..160] + "…")}", "started");
+            return Json(job);
+        }
         var r = Deskhand.Core.Services.ShellService.Run(shell, command, cwd, timeoutMs);
         audit.Record("shell_run", $"{r.Shell}: {(command.Length <= 160 ? command : command[..160] + "…")}", r.TimedOut ? "TIMEOUT" : $"exit {r.ExitCode} in {r.DurationMs}ms");
         return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_shell_jobs"), Description("List background shell jobs started with deskhand_run_command(async=true): [{ jobId, pid, shell, command, cwd, running, exitCode, canceled, durationMs, startedAt, finishedAt, error? }]. Finished jobs are kept ~1 hour.")]
+    public static string ShellJobs(Deskhand.Core.Services.ShellJobStore jobs) => Json(jobs.List());
+
+    [McpServerTool(Name = "deskhand_shell_result"), Description("Get a background shell job's status AND its captured output so far (live while it runs): { job:{…}, stdout, stderr, truncated }. Poll this after deskhand_run_command(async=true); the job's running flag flips false when it exits.")]
+    public static string ShellResult(Deskhand.Core.Services.ShellJobStore jobs,
+        [Description("The jobId returned by deskhand_run_command(async=true).")] string jobId)
+    {
+        var r = jobs.Result(jobId);
+        return r is null ? "{\"error\":\"no such job (it may have expired)\",\"type\":\"not_found\"}" : Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_shell_cancel"), Description("Stop a background shell job — kills its process tree (how you stop a hung or long-running installer). Returns the job { jobId, pid, running, canceled, ... }. Requires the kill switch armed; audited.")]
+    public static string ShellCancel(ControlState state, AuditLog audit, Deskhand.Core.Services.ShellJobStore jobs,
+        [Description("The jobId to cancel.")] string jobId)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var job = jobs.Cancel(jobId);
+        if (job is null) return "{\"error\":\"no such job (it may have expired)\",\"type\":\"not_found\"}";
+        audit.Record("shell_cancel", $"{job.JobId} pid {job.Pid}", job.Error ?? "killed");
+        return Json(job);
     }
 
     [McpServerTool(Name = "deskhand_registry_browse"), Description("Browse the Windows Registry (read-only): list a key's subkeys and values. path is empty for the hive roots, or \"HKLM\" / \"HKCU\\SOFTWARE\\Microsoft\" etc. (hives: HKLM, HKCU, HKCR, HKU, HKCC). Returns { path, subKeys[], values[{name,kind,value}], error? }. Keys needing elevation return an access error, not a crash.")]

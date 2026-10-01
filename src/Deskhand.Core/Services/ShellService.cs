@@ -44,34 +44,9 @@ public static class ShellService
         if (cwd.Length > 0 && !Directory.Exists(cwd))
             return Err(shell, command, cwd, $"Working directory not found: {cwd}");
 
-        var psi = new ProcessStartInfo
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        if (cwd.Length > 0) psi.WorkingDirectory = cwd;
-
-        if (shell == "cmd")
-        {
-            psi.FileName = "cmd.exe";
-            psi.ArgumentList.Add("/d");   // skip AutoRun
-            psi.ArgumentList.Add("/c");
-            psi.ArgumentList.Add(command);
-        }
-        else
-        {
-            psi.FileName = shell == "pwsh" ? "pwsh.exe" : "powershell.exe";
-            psi.ArgumentList.Add("-NoProfile");
-            psi.ArgumentList.Add("-NonInteractive");
-            psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add(command);
-        }
-
         var sw = Stopwatch.StartNew();
         Process proc;
-        try { proc = Process.Start(psi)!; }
+        try { proc = Process.Start(BuildPsi(shell, command, cwd))!; }
         catch (Exception ex) { return Err(shell, command, cwd, "Failed to start shell: " + ex.Message); }
 
         var outTask = proc.StandardOutput.ReadToEndAsync();
@@ -96,6 +71,50 @@ public static class ShellService
         return new ShellResultDto(shell, command, cwd, code, stdout, stderr, sw.ElapsedMilliseconds,
             TimedOut: !exited, Truncated: truncated,
             Error: exited ? null : $"Timed out after {timeout} ms (process killed). Pass timeoutMs:0 to wait with no limit.");
+    }
+
+    /// <summary>Validate and start a shell process for an async job. The caller owns output collection (via the
+    /// process's redirected streams) and lifetime. Returns the normalized shell name on success.</summary>
+    public static (Process? proc, string shell, string? error) StartProcess(string? shell, string? command, string? cwd)
+    {
+        shell = Normalize(shell);
+        command ??= "";
+        cwd = (cwd ?? "").Trim().Trim('"');
+        if (!Enabled) return (null, shell, "Shell is disabled. Set DESKHAND_ENABLE_SHELL=1 to enable it.");
+        if (string.IsNullOrWhiteSpace(command)) return (null, shell, "No command given.");
+        if (cwd.Length > 0 && !Directory.Exists(cwd)) return (null, shell, $"Working directory not found: {cwd}");
+        try { return (Process.Start(BuildPsi(shell, command, cwd))!, shell, null); }
+        catch (Exception ex) { return (null, shell, "Failed to start shell: " + ex.Message); }
+    }
+
+    public static string NormalizeShell(string? shell) => Normalize(shell);
+
+    private static ProcessStartInfo BuildPsi(string shell, string command, string cwd)
+    {
+        var psi = new ProcessStartInfo
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        if (cwd.Length > 0) psi.WorkingDirectory = cwd;
+        if (shell == "cmd")
+        {
+            psi.FileName = "cmd.exe";
+            psi.ArgumentList.Add("/d");   // skip AutoRun
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(command);
+        }
+        else
+        {
+            psi.FileName = shell == "pwsh" ? "pwsh.exe" : "powershell.exe";
+            psi.ArgumentList.Add("-NoProfile");
+            psi.ArgumentList.Add("-NonInteractive");
+            psi.ArgumentList.Add("-Command");
+            psi.ArgumentList.Add(command);
+        }
+        return psi;
     }
 
     private static string Normalize(string? shell) => (shell ?? "").Trim().ToLowerInvariant() switch

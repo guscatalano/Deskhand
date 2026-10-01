@@ -43,6 +43,7 @@ builder.Services.AddSingleton(screenRecorder);
 builder.Services.AddSingleton(processDumper);
 builder.Services.AddSingleton(screenshotStore);
 builder.Services.AddSingleton(inputRecorder);
+builder.Services.AddSingleton(new Deskhand.Core.Services.ShellJobStore());
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
 

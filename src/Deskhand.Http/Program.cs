@@ -7,7 +7,7 @@ using Deskhand.Ui;
 
 // Load optional declarative config (deskhand.json) into the environment BEFORE anything reads a DESKHAND_*
 // variable. A real environment variable always overrides the file. See Deskhand.Core.EnvConfigFile.
-Deskhand.Core.EnvConfigFile.ApplyAndReport(Console.Out);
+Deskhand.Core.EnvConfigFile.ApplyOrExit(Console.Out);
 
 // Per-Monitor-v2 DPI awareness MUST be set before anything touches windows or pixels.
 DpiHelper.EnablePerMonitorV2();

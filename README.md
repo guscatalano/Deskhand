@@ -111,7 +111,8 @@ in a **`deskhand.json`** config file for a reproducible, file-based install:
 - **Search order** (first found wins): the path in `DESKHAND_CONFIG`; `deskhand.json` in the working
   directory; `deskhand.json` beside the executable; `%PROGRAMDATA%\Deskhand\deskhand.json`.
 - **Keys** may be friendly (`port`, `maxUploadMb`, `enable-shell`) or full env names (`DESKHAND_PORT`);
-  booleans map to `1`/`0`. A missing or malformed file is a no-op — startup never fails over config.
+  booleans map to `1`/`0`. A missing or empty file is a no-op; a file that is **present but malformed is
+  fatal** — Deskhand refuses to start rather than silently ignore settings you meant to apply.
 - Applies to all four hosts (dashboard, MCP stdio, fleet server, fleet agent). A sample is in
   [`installer/deskhand.example.json`](installer/deskhand.example.json).
 

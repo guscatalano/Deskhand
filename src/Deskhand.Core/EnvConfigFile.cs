@@ -19,8 +19,9 @@ namespace Deskhand.Core;
 /// <para><b>Keys</b> may be full env names (<c>"DESKHAND_PORT"</c>), the suffix (<c>"PORT"</c>), or camelCase /
 /// kebab (<c>"maxUploadMb"</c>, <c>"enable-shell"</c>) — all normalized to <c>DESKHAND_UPPER_SNAKE</c>.
 /// <b>Values</b> may be strings, numbers, or booleans (<c>true</c>→<c>"1"</c>, <c>false</c>→<c>"0"</c>); a nested
-/// <c>"deskhand"</c> object is also honored. A missing or malformed file is a no-op — startup never fails over
-/// config.</para>
+/// <c>"deskhand"</c> object is also honored. A missing or empty file is a no-op; a file that is present but
+/// malformed is fatal (<see cref="ApplyOrExit"/>) — Deskhand refuses to start rather than silently ignore your
+/// settings.</para>
 /// </summary>
 public static class EnvConfigFile
 {
@@ -34,7 +35,9 @@ public static class EnvConfigFile
         if (path is null) return new Result(null, 0, 0, null);
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(path),
+            string text = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(text)) return new Result(path, 0, 0, null);  // empty placeholder: no-op
+            using var doc = JsonDocument.Parse(text,
                 new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
                 return new Result(path, 0, 0, "root is not a JSON object");
@@ -61,12 +64,19 @@ public static class EnvConfigFile
     }
 
     /// <summary>Apply the config file and write a one-line notice to <paramref name="log"/> (use
-    /// <c>Console.Error</c> for the MCP stdio host, whose stdout carries the protocol).</summary>
-    public static Result ApplyAndReport(System.IO.TextWriter log)
+    /// <c>Console.Error</c> for the MCP stdio host, whose stdout carries the protocol). A config file that is
+    /// present but malformed is <b>fatal</b>: rather than silently fall back to defaults — which would quietly
+    /// ignore settings the operator intended, including security-relevant ones like a token or bind address —
+    /// the process exits with <paramref name="exitCode"/>. A missing or empty file is a no-op.</summary>
+    public static Result ApplyOrExit(System.IO.TextWriter log, int exitCode = 3)
     {
         var r = Apply();
         if (r.Error is not null)
-            log.WriteLine($"Config: could not read {r.Path}: {r.Error} (continuing with environment / defaults).");
+        {
+            log.WriteLine($"FATAL: config file '{r.Path}' is present but could not be applied: {r.Error}");
+            log.WriteLine("  Refusing to start with a broken config so your settings aren't silently ignored. Fix the file or remove it.");
+            Environment.Exit(exitCode);
+        }
         else if (r.Path is not null)
             log.WriteLine($"Config: applied {r.Applied} setting(s) from {r.Path} (environment overrides; {r.Skipped} already set in environment).");
         return r;

@@ -6,7 +6,7 @@ using Deskhand.Core.Governance;
 // serves automation commands against the local desktop. No inbound port is opened on this machine.
 
 // Optional declarative config (deskhand.json) -> environment, before any DESKHAND_* read. Env overrides it.
-Deskhand.Core.EnvConfigFile.ApplyAndReport(Console.Out);
+Deskhand.Core.EnvConfigFile.ApplyOrExit(Console.Out);
 
 DpiHelper.EnablePerMonitorV2();
 

@@ -8,7 +8,7 @@ using Deskhand.Fleet.Server;
 // agents (put TLS in front / behind a reverse proxy for production).
 
 // Optional declarative config (deskhand.json) -> environment, before any DESKHAND_* read. Env overrides it.
-Deskhand.Core.EnvConfigFile.ApplyAndReport(Console.Out);
+Deskhand.Core.EnvConfigFile.ApplyOrExit(Console.Out);
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
 int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_FLEET_PORT"), out var p) ? p : 8799;

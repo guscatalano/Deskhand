@@ -89,6 +89,32 @@ dotnet run --project src/Deskhand.Http -c Release
 
 On start it prints the URL. **Just open it in a browser** — no token needed.
 
+## Configuration
+
+Deskhand is configured with `DESKHAND_*` **environment variables** (full list under
+[Governance & safety](#governance--safety-phase-3) and throughout). Set them before launch, or declare them
+in a **`deskhand.json`** config file for a reproducible, file-based install:
+
+```jsonc
+{
+  "port": 8791,
+  "token": "your-secret",
+  "bind": "127.0.0.1",
+  "enableShell": false,
+  "maxUploadMb": 1024
+}
+```
+
+- **Precedence:** a real environment variable always wins, then the config file, then the built-in default.
+  (The file is loaded into the environment at startup *only* for keys you haven't already set, so env still
+  overrides it.)
+- **Search order** (first found wins): the path in `DESKHAND_CONFIG`; `deskhand.json` in the working
+  directory; `deskhand.json` beside the executable; `%PROGRAMDATA%\Deskhand\deskhand.json`.
+- **Keys** may be friendly (`port`, `maxUploadMb`, `enable-shell`) or full env names (`DESKHAND_PORT`);
+  booleans map to `1`/`0`. A missing or malformed file is a no-op — startup never fails over config.
+- Applies to all four hosts (dashboard, MCP stdio, fleet server, fleet agent). A sample is in
+  [`installer/deskhand.example.json`](installer/deskhand.example.json).
+
 ## Web dashboard
 
 Open **http://127.0.0.1:8791** in any browser. The single-page console lets you:

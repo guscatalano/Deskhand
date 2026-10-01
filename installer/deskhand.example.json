@@ -1,0 +1,20 @@
+{
+  "//": "Deskhand declarative config. Place as deskhand.json beside the exe, in the working directory, or at %PROGRAMDATA%\\Deskhand\\deskhand.json — or point DESKHAND_CONFIG at any path. A real DESKHAND_* environment variable always overrides the matching value here. Keys may be friendly (camelCase) or full env names (DESKHAND_PORT); booleans map to 1/0. Remove the keys you don't need.",
+
+  "port": 8791,
+  "token": "change-me-or-remove",
+  "bind": "127.0.0.1",
+
+  "startDisarmed": false,
+  "disableInput": false,
+  "disableCapture": false,
+
+  "enableShell": false,
+  "enableSessionLaunch": false,
+  "enableFirewallAdmin": false,
+  "enableSelfUpdate": false,
+
+  "maxToolChars": 200000,
+  "maxUploadMb": 1024,
+  "uiaTimeoutMs": 2000
+}

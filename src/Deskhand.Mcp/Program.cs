@@ -6,6 +6,10 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 // Deskhand MCP server — the same IAutomationBackend as the HTTP server, exposed over MCP (stdio).
+// Optional declarative config (deskhand.json) -> environment, before any DESKHAND_* read. Env overrides it.
+// stdout carries the MCP protocol, so the config notice goes to stderr.
+Deskhand.Core.EnvConfigFile.ApplyAndReport(Console.Error);
+
 // Per-Monitor-v2 DPI awareness must be set before the backend touches any windows or pixels.
 DpiHelper.EnablePerMonitorV2();
 

@@ -7,6 +7,9 @@ using Deskhand.Fleet.Server;
 // same token gates the client API. Bind loopback by default, or DESKHAND_FLEET_BIND=any for remote
 // agents (put TLS in front / behind a reverse proxy for production).
 
+// Optional declarative config (deskhand.json) -> environment, before any DESKHAND_* read. Env overrides it.
+Deskhand.Core.EnvConfigFile.ApplyAndReport(Console.Out);
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
 int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_FLEET_PORT"), out var p) ? p : 8799;
 bool bindAny = string.Equals(Environment.GetEnvironmentVariable("DESKHAND_FLEET_BIND"), "any", StringComparison.OrdinalIgnoreCase);

@@ -5,6 +5,9 @@ using Deskhand.Core.Governance;
 // Deskhand Fleet Agent: runs in a user's interactive session, dials OUT to the fleet server, and
 // serves automation commands against the local desktop. No inbound port is opened on this machine.
 
+// Optional declarative config (deskhand.json) -> environment, before any DESKHAND_* read. Env overrides it.
+Deskhand.Core.EnvConfigFile.ApplyAndReport(Console.Out);
+
 DpiHelper.EnablePerMonitorV2();
 
 string server = args.FirstOrDefault(a => a.StartsWith("ws", StringComparison.OrdinalIgnoreCase))

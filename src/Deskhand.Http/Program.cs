@@ -53,14 +53,29 @@ if (external && !requireToken)
         "  Fix: set DESKHAND_TOKEN to a strong secret, or unset DESKHAND_BIND to stay loopback-only.");
     Environment.Exit(3);
 }
+// Upload size cap. ASP.NET Core's default MaxRequestBodySize is 30 MB, which silently 413s any larger
+// /fs/upload. Make it explicit and configurable: DESKHAND_MAX_UPLOAD_MB (default 1024 MB; "0"/"unlimited"
+// removes the cap). The multipart form limit is raised to match so it doesn't bind first.
+long? maxUploadBytes = ParseMaxUploadBytes();
+static long? ParseMaxUploadBytes()
+{
+    var v = Environment.GetEnvironmentVariable("DESKHAND_MAX_UPLOAD_MB")?.Trim().ToLowerInvariant();
+    if (string.IsNullOrEmpty(v)) return 1024L * 1024 * 1024;        // 1 GB default
+    if (v is "0" or "unlimited" or "none") return null;             // no cap
+    return long.TryParse(v, out var mb) && mb > 0 ? mb * 1024 * 1024 : 1024L * 1024 * 1024;
+}
+
 builder.WebHost.ConfigureKestrel(k =>
 {
+    k.Limits.MaxRequestBodySize = maxUploadBytes;
     void Https(Microsoft.AspNetCore.Server.Kestrel.Core.ListenOptions o) { if (tls) o.UseHttps(tlsCert!); }
     if (!external) { k.ListenLocalhost(port, Https); return; }
     if (bind is "any" or "0.0.0.0" or "*") k.ListenAnyIP(port, Https);
     else if (System.Net.IPAddress.TryParse(bind, out var ip)) k.Listen(new System.Net.IPEndPoint(ip, port), Https);
     else { Console.Error.WriteLine($"Invalid DESKHAND_BIND '{bind}'; using all interfaces."); k.ListenAnyIP(port, Https); }
 });
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+    o.MultipartBodyLengthLimit = maxUploadBytes ?? long.MaxValue);
 builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -425,12 +440,24 @@ api.MapGet("/fs/read", (ControlState st, AuditLog al, string? path, long? maxByt
 });
 
 // Download a single file (stream). SENSITIVE (reads real file bytes) — gated on armed + audited.
-api.MapGet("/fs/download", (ControlState st, AuditLog al, string? path) =>
+api.MapGet("/fs/download", (ControlState st, AuditLog al, HttpContext ctx, string? path) =>
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
     var (full, err) = Deskhand.Core.Services.FileSystemService.ResolveForDownload(path);
     if (full is null) return Results.Json(new { error = err, type = "bad_request" }, statusCode: 400);
     al.Record("file_download", full, new FileInfo(full).Length + "B");
+    // Opt-in integrity: ?sha256=true sets an X-Content-SHA256 header with the whole-file digest so a client
+    // can verify the download. Opt-in because it reads the file an extra time (the body still streams).
+    if (string.Equals(ctx.Request.Query["sha256"], "true", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using var fs = File.OpenRead(full);
+            ctx.Response.Headers["X-Content-SHA256"] = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+        }
+        catch { /* best-effort header; never fail the download over it */ }
+    }
     return Results.File(full, "application/octet-stream", Path.GetFileName(full), enableRangeProcessing: true);
 });
 
@@ -479,19 +506,38 @@ api.MapPost("/fs/upload", async (ControlState st, AuditLog al, HttpRequest req) 
     string full;
     try { full = Path.GetFullPath(dir); Directory.CreateDirectory(full); }
     catch (Exception ex) { return Results.Json(new { error = ex.Message, type = "bad_request" }, statusCode: 400); }
+    // Optional integrity check: a `sha256` form field verifies a single-file upload landed intact. On a
+    // mismatch the corrupt file is deleted and the upload fails, so a truncated transfer never leaves a
+    // plausible-looking broken file on disk. Every written file reports its sha256 either way.
+    string expectedSha = form["sha256"].ToString().Trim().ToLowerInvariant();
+    bool verifyOne = expectedSha.Length > 0 && form.Files.Count == 1;
     var written = new List<object>();
     foreach (var f in form.Files)
     {
         var target = Path.Combine(full, Path.GetFileName(f.FileName));
         try
         {
-            await using var outStream = File.Create(target);
-            await f.CopyToAsync(outStream);
-            written.Add(new { path = target, size = f.Length });
+            string hex;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            await using (var outStream = File.Create(target))
+            await using (var crypto = new System.Security.Cryptography.CryptoStream(outStream, sha, System.Security.Cryptography.CryptoStreamMode.Write))
+            {
+                await f.CopyToAsync(crypto);
+                await crypto.FlushFinalBlockAsync();
+                hex = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
+            }
+            if (verifyOne && !string.Equals(expectedSha, hex, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Delete(target); } catch { }
+                al.Record("file_upload", target, $"REJECTED sha256 mismatch (got {hex}, expected {expectedSha})");
+                return Results.Json(new { error = $"sha256 mismatch: got {hex}, expected {expectedSha}", type = "integrity_mismatch", path = target },
+                    statusCode: 422);
+            }
+            written.Add(new { path = target, size = f.Length, sha256 = hex });
         }
         catch (Exception ex) { written.Add(new { path = target, error = ex.Message }); }
     }
-    al.Record("file_upload", full, $"{form.Files.Count} files");
+    al.Record("file_upload", full, $"{form.Files.Count} files{(verifyOne ? " (sha256-verified)" : "")}");
     return Results.Ok(new { dir = full, written });
 });
 

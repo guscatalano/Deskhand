@@ -17,7 +17,6 @@ public static class ShellService
 {
     private const int MaxOutputChars = 200_000;   // cap each stream so one command can't flood the response
     private const int DefaultTimeoutMs = 30_000;
-    private const int MaxTimeoutMs = 600_000;
 
     /// <summary>Shell execution is opt-in: set DESKHAND_ENABLE_SHELL=1 (or true/yes/on) to allow it.</summary>
     public static bool Enabled
@@ -34,7 +33,9 @@ public static class ShellService
         shell = Normalize(shell);
         command ??= "";
         cwd = (cwd ?? "").Trim().Trim('"');
-        int timeout = Math.Clamp(timeoutMs ?? DefaultTimeoutMs, 1_000, MaxTimeoutMs);
+        // Timeout policy: null -> default (30s); <= 0 -> NO limit (wait indefinitely, for long installers /
+        // downloads); otherwise exactly as requested, with no upper cap — the caller owns the wait.
+        int? timeout = timeoutMs switch { null => DefaultTimeoutMs, <= 0 => null, _ => timeoutMs.Value };
 
         if (!Enabled)
             return Err(shell, command, cwd, "Shell is disabled. Set DESKHAND_ENABLE_SHELL=1 to enable it.");
@@ -75,7 +76,9 @@ public static class ShellService
 
         var outTask = proc.StandardOutput.ReadToEndAsync();
         var errTask = proc.StandardError.ReadToEndAsync();
-        bool exited = proc.WaitForExit(timeout);
+        bool exited;
+        if (timeout is null) { proc.WaitForExit(); exited = true; }   // no limit
+        else exited = proc.WaitForExit(timeout.Value);
         if (!exited)
         {
             try { proc.Kill(entireProcessTree: true); } catch { }
@@ -92,7 +95,7 @@ public static class ShellService
 
         return new ShellResultDto(shell, command, cwd, code, stdout, stderr, sw.ElapsedMilliseconds,
             TimedOut: !exited, Truncated: truncated,
-            Error: exited ? null : $"Timed out after {timeout} ms (process killed).");
+            Error: exited ? null : $"Timed out after {timeout} ms (process killed). Pass timeoutMs:0 to wait with no limit.");
     }
 
     private static string Normalize(string? shell) => (shell ?? "").Trim().ToLowerInvariant() switch

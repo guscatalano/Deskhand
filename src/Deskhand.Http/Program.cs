@@ -906,7 +906,7 @@ api.MapGet("/metrics", (ControlState st) => Results.Text(Deskhand.Core.Services.
 api.MapPost("/fetch", async (ControlState st, AuditLog al, FetchRequest r) =>
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
-    var res = await Deskhand.Core.Services.FetchService.DownloadAsync(r.Url, r.Path, r.MaxBytes);
+    var res = await Deskhand.Core.Services.FetchService.DownloadAsync(r.Url, r.Path, r.MaxBytes, r.TimeoutMs);
     al.Record("fetch", $"{r.Url} -> {res.Path}", res.Ok ? $"{res.Bytes} bytes" : $"FAIL {res.Error}");
     return Results.Json(res, statusCode: res.Ok ? 200 : 400);
 });
@@ -1302,7 +1302,7 @@ record EnvSetRequest(string Name, string? Value, string? Scope);
 record TaskActionRequest(string Task, string Action);
 record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
 record UacRespondRequest(bool? Accept, int? TimeoutMs);
-record FetchRequest(string? Url, string? Path, long? MaxBytes);
+record FetchRequest(string? Url, string? Path, long? MaxBytes, int? TimeoutMs);
 record OutputBudgetRequest(int? Chars);
 record UxExploreRequest(string? Reference, bool? Uia, bool? Text, bool? IncludeOffscreen, int? Max, bool? IncludePopups);
 record UxCrawlRequest(string? Reference, int? Depth, int? MaxNodes, bool? SelectTabs, bool? UseCache);

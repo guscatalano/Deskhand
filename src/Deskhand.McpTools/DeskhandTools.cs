@@ -281,7 +281,7 @@ public static class DeskhandTools
         return Json(r);
     }
 
-    [McpServerTool(Name = "deskhand_run_command"), Description("Run a single command in a shell (default PowerShell; shell=\"cmd\" or \"pwsh\") and return its output: { shell, command, cwd, exitCode, stdout, stderr, durationMs, timedOut, truncated, error? }. STATELESS — each call is a fresh process, so cd/variables do NOT persist between calls (pass cwd for a starting directory). MOST POWERFUL tool (arbitrary code as the current user): it is OFF unless the host sets DESKHAND_ENABLE_SHELL, and also requires the kill switch to be armed; every command is audited. Output is capped; long-running commands are killed at timeoutMs (default 30000, max 600000).")]
+    [McpServerTool(Name = "deskhand_run_command"), Description("Run a single command in a shell (default PowerShell; shell=\"cmd\" or \"pwsh\") and return its output: { shell, command, cwd, exitCode, stdout, stderr, durationMs, timedOut, truncated, error? }. STATELESS — each call is a fresh process, so cd/variables do NOT persist between calls (pass cwd for a starting directory). MOST POWERFUL tool (arbitrary code as the current user): it is OFF unless the host sets DESKHAND_ENABLE_SHELL, and also requires the kill switch to be armed; every command is audited. Output is capped; long-running commands are killed at timeoutMs (default 30000; 0 = no limit, for long installers / downloads; otherwise no cap).")]
     public static string RunCommand(ControlState state, AuditLog audit,
         [Description("The command line to run, e.g. \"Get-Process | Sort CPU -Desc | Select -First 5\".")] string command,
         [Description("\"powershell\" (default), \"pwsh\" (PowerShell 7), or \"cmd\".")] string? shell = null,
@@ -679,13 +679,14 @@ public static class DeskhandTools
         return Json(res);
     }
 
-    [McpServerTool(Name = "deskhand_fetch_url"), Description("Download an http/https URL to a file ON THIS MACHINE (e.g. pull an installer/asset onto the target). path is a full destination path or a folder (URL filename kept); omit for a temp file. Size-capped. Returns { ok, url, path, bytes, contentType, error? }. Outbound network request. Requires armed; audited.")]
+    [McpServerTool(Name = "deskhand_fetch_url"), Description("Download an http/https URL to a file ON THIS MACHINE (e.g. pull an installer/asset onto the target). path is a full destination path or a folder (URL filename kept); omit for a temp file. Size-capped. Returns { ok, url, path, bytes, contentType, error? }. Outbound network request. Requires armed; audited. timeoutMs bounds the whole download (default 600000; 0 = no limit, for a big/slow file).")]
     public static string FetchUrl(ControlState state, AuditLog audit, string url,
         [Description("Destination path or folder (optional; default a temp file).")] string? path = null,
-        [Description("Max bytes to download (optional; default/cap 500 MB).")] long? maxBytes = null)
+        [Description("Max bytes to download (optional; default/cap 500 MB).")] long? maxBytes = null,
+        [Description("Timeout for the whole download in ms (optional; default 600000; 0 = no limit).")] int? timeoutMs = null)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
-        var res = Deskhand.Core.Services.FetchService.DownloadAsync(url, path, maxBytes).GetAwaiter().GetResult();
+        var res = Deskhand.Core.Services.FetchService.DownloadAsync(url, path, maxBytes, timeoutMs).GetAwaiter().GetResult();
         audit.Record("fetch", $"{url} -> {res.Path}", res.Ok ? $"{res.Bytes} bytes" : $"FAIL {res.Error}");
         return Json(res);
     }

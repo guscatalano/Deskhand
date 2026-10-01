@@ -449,9 +449,9 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /uac` · `POST /uac/config` · `POST /uac/respond` | see below | Read/configure UAC; answer a live consent prompt |
 | `GET /fs` · `GET /fs/read` · `GET /fs/download` | `?path=` (`&sha256=true`) | Browse a folder · read a file as **text** (capped, binary-aware) · stream a file; `sha256=true` adds an `X-Content-SHA256` header with the whole-file digest |
 | `POST /fs/upload` · `/fs/delete` · `/fs/rename` · `/fs/move` · `/fs/copy` · `/fs/zip` · `/fs/unzip` | see Files tab | File operations (mutations armed + audited). Upload returns each file's `sha256`; send a `sha256` form field with a single file to **verify it landed intact** (mismatch ⇒ `422`, file removed). Body cap via `DESKHAND_MAX_UPLOAD_MB` (default 1024; `0`=unlimited) |
-| `POST /shell/run` | `{shell, command, cwd?, timeoutMs?}` | Run a command (**off unless `DESKHAND_ENABLE_SHELL=1`**; armed + audited) |
+| `POST /shell/run` | `{shell, command, cwd?, timeoutMs?}` | Run a command (**off unless `DESKHAND_ENABLE_SHELL=1`**; armed + audited). `timeoutMs` default 30000; **`0` = no limit** (for long installers); otherwise no cap |
 | `POST /episode/start` · `/episode/stop` · `GET /episodes/{id}` | `{task?}` · `{success?}` | **Trajectory recording** — auto-steps from the audit stream; `{id}` downloads the episode as a zip |
-| `POST /fetch` | `{url, path?, maxBytes?}` | Download a URL to a file on the box |
+| `POST /fetch` | `{url, path?, maxBytes?, timeoutMs?}` | Download a URL to a file on the box. `timeoutMs` default 600000; **`0` = no limit** (for a big/slow download) |
 | `GET /metrics` | — | Prometheus gauges (no token; loopback scrape) |
 | `GET /audit/recent` | `?limit=` | Tail the audit log (also the dashboard **Audit** tab) |
 | `GET/POST/DELETE /webhooks` | `{url}` | Register outbound sinks for UI events |

@@ -264,7 +264,7 @@ public static class AgentDispatcher
                 return Services.UacService.Respond(a.Bool("accept", true), a.Int("timeoutMs", 5000));
             case FleetMethods.Fetch:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent.");
-                return Services.FetchService.DownloadAsync(a.Str("url"), a.Str("path"), a.LongN("maxBytes")).GetAwaiter().GetResult();
+                return Services.FetchService.DownloadAsync(a.Str("url"), a.Str("path"), a.LongN("maxBytes"), a.IntN("timeoutMs")).GetAwaiter().GetResult();
             case FleetMethods.SystemInfo:
                 if (svc.Dumper is null) throw new InvalidOperationException("Not available on an RDP agent (it would report the connector's machine, not the target).");
                 return Services.SystemInfoService.Get();

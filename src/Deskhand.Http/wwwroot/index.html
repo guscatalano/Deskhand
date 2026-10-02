@@ -370,6 +370,11 @@
         <button class="btn sm" id="fsMoveSel" title="Move selected to…">Move…</button>
         <button class="btn sm a" id="fsDelSel" title="Delete selected (to Recycle Bin)">Delete</button>
       </div>
+      <div class="row" id="fsSearchRow" style="margin-top:8px">
+        <input type="text" id="fsSearch" placeholder="Search this folder &amp; subfolders by name (substring, or a glob like *.log)" style="flex:1;font-family:var(--mono);font-size:12px">
+        <button class="btn" id="fsSearchBtn" title="Recursive name search under the current folder">Search</button>
+        <button class="btn sm" id="fsSearchClear" title="Back to the folder listing" hidden>Clear</button>
+      </div>
       <div class="coordbar" id="fsCrumb" style="margin:10px 0"></div>
       <div id="fsBody"></div>
     </div>
@@ -1104,6 +1109,7 @@ const loadFiles=guard(async(path)=>{
   fsSel.clear(); fsUpdateSel();
   $("#fsPath").value=fsCurrent;
   $("#fsUploadBtn").disabled=fsIsRoot;
+  { const sc=$("#fsSearchClear"); if(sc) sc.hidden=true; }
   history.replaceState(null,"","#files"+(fsCurrent?"/"+fsCurrent:""));
   const crumb=$("#fsCrumb"); crumb.innerHTML="";
   const mk=(label,target)=>{ const a=elm("a"); a.textContent=label; a.style.cursor="pointer"; a.onclick=()=>loadFiles(target); return a; };
@@ -1139,6 +1145,46 @@ const loadFiles=guard(async(path)=>{
     row.append(cbCell,nm,sz,md,act); sect.append(row);
   });
   if(!d.entries.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(empty)"; sect.append(em); }
+  body.append(sect);
+});
+// recursive name search under the current folder; renders matches (with their subfolder) in place of the listing.
+const fsSearchRun=guard(async()=>{
+  const q=$("#fsSearch").value.trim();
+  if(!q) return;
+  if(fsIsRoot||!fsCurrent){ toast("Open a drive or folder first, then search inside it.",true); return; }
+  const body=$("#fsBody"); body.innerHTML='<div style="color:var(--ink-3);font-size:12px;padding:8px 7px">Searching…</div>';
+  const d=await api("/fs/search?path="+encodeURIComponent(fsCurrent)+"&q="+encodeURIComponent(q)+"&max=500");
+  body.innerHTML=""; $("#fsSearchClear").hidden=false;
+  if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; return; }
+  const sect=elm("div","sect"), h=elm("div","h");
+  let note=`${d.matches} match${d.matches===1?"":"es"} for "${d.query}"`;
+  if(d.truncated) note+=" · capped"; if(d.timedOut) note+=" · timed out, narrow the query";
+  h.innerHTML=`search <span class="count">${note}</span>`; sect.append(h);
+  const root=(d.root||fsCurrent).replace(/\\+$/,""), rl=root.toLowerCase();
+  const link=(label,cls,fn)=>{ const a=elm("a"); a.textContent=label; if(cls)a.className=cls; a.onclick=guard(fn); return a; };
+  d.results.forEach(e=>{
+    const row=elm("div","fsrow"+(e.isDirectory?" dir":""));
+    const cbCell=elm("div");  // no selection in search results
+    const nm=elm("div","nm");
+    const tick=elm("span"); tick.style.color="var(--ink-3)"; tick.textContent=e.isDirectory?"▸":"·";
+    const t=elm("span"); t.textContent=e.name;
+    const parent=e.path.replace(/\\[^\\]*$/,"");
+    let rel=parent; if(parent.toLowerCase().startsWith(rl)) rel=parent.slice(root.length).replace(/^\\+/,"");
+    const relSpan=elm("span"); relSpan.textContent=rel?("   "+rel):""; relSpan.style.cssText="color:var(--ink-3);font-size:11px";
+    nm.append(tick,t,relSpan);
+    if(e.isDirectory) nm.onclick=()=>loadFiles(e.path); else nm.title=e.path;
+    const sz=elm("div","sz"); sz.textContent=e.isDirectory?"":fmtSize(e.size);
+    const md=elm("div","md"); md.textContent=e.modified?new Date(e.modified).toLocaleString():"";
+    const act=elm("div","act");
+    if(e.isDirectory){ act.append(link("open",null,async()=>loadFiles(e.path))); }
+    else {
+      act.append(link("view",null,async()=>fsView(e.path,e.name)));
+      act.append(link("download",null,async()=>fsDownload(e.path,e.name)));
+      act.append(link("reveal",null,async()=>loadFiles(parent)));
+    }
+    row.append(cbCell,nm,sz,md,act); sect.append(row);
+  });
+  if(!d.results.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(no matches)"; sect.append(em); }
   body.append(sect);
 });
 async function fsDownload(path,name){
@@ -1204,6 +1250,9 @@ $("#fsDelSel").onclick=guard(async()=>{
 });
 $("#fsGo").onclick=()=>loadFiles($("#fsPath").value.trim());
 $("#fsPath").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#fsGo").click(); });
+$("#fsSearchBtn").onclick=()=>fsSearchRun();
+$("#fsSearch").addEventListener("keydown",e=>{ if(e.key==="Enter") fsSearchRun(); });
+$("#fsSearchClear").onclick=()=>{ $("#fsSearch").value=""; $("#fsSearchClear").hidden=true; fsReload(); };
 $("#fsUp").onclick=()=>{ if(fsIsRoot) return; loadFiles(fsParent||""); };
 fsUpdateSel();
 

@@ -434,6 +434,11 @@ api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.D
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));
 
+// Recursively search a folder tree by file/folder NAME (substring, or a glob with * and ?). Read-only,
+// names only (like /fs) — bounded by maxResults + a time budget so it can't run away. q is the query.
+api.MapGet("/fs/search", (string? path, string? q, int? max) =>
+    Results.Ok(Deskhand.Core.Services.FileSystemService.Search(path, q, max is > 0 ? max.Value : 200)));
+
 // Read a file as text for the dashboard's viewer (front-of-file, capped). SENSITIVE — gated + audited.
 api.MapGet("/fs/read", (ControlState st, AuditLog al, string? path, long? maxBytes) =>
 {

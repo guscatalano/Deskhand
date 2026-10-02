@@ -200,6 +200,13 @@ public static class DeskhandTools
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));
 
+    [McpServerTool(Name = "deskhand_search_files"), Description("Recursively search a folder tree by file/folder NAME (read-only). query is a case-insensitive substring, or a glob with * and ? (e.g. \"*.log\", \"config.*\"). Returns { root, query, matches, truncated, timedOut, scannedDirs, results[{name, path, isDirectory, size, modified, extension}] } with folders first. Names only — it does NOT search file contents. Bounded by maxResults (default 200, cap 2000) and an 8s time budget; access-denied subtrees and symlinks are skipped. path must be a folder (not empty).")]
+    public static string SearchFiles(
+        [Description("Folder to search under, e.g. \"C:\\\\Users\\\\Public\". Required (empty is the drive list, which can't be searched).")] string path,
+        [Description("Name query: a substring, or a glob with * and ?.")] string query,
+        [Description("Max results (default 200, cap 2000).")] int maxResults = 200)
+        => Json(Deskhand.Core.Services.FileSystemService.Search(path, query, maxResults));
+
     [McpServerTool(Name = "deskhand_read_file"), Description("Download a file's contents as base64 (\"download\"). Returns { path, size, base64, error? }. Refused for files over ~25 MB (use the HTTP /fs/download endpoint for large files). SENSITIVE: returns real file bytes (may include secrets). Requires the kill switch to be armed; audited.")]
     public static string ReadFile(ControlState state, AuditLog audit,
         [Description("Full path of the file to read, e.g. \"C:\\\\Users\\\\me\\\\notes.txt\".")] string path)

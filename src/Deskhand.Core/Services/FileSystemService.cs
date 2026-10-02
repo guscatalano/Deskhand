@@ -4,6 +4,7 @@ namespace Deskhand.Core.Services;
 
 public record FileEntryDto(string Name, string Path, bool IsDirectory, long? Size, DateTime? Modified, string? Extension);
 public record DirListingDto(string Path, string? Parent, bool IsRoot, IReadOnlyList<FileEntryDto> Entries, string? Error = null);
+public record FileSearchDto(string Root, string Query, int Matches, bool Truncated, bool TimedOut, long ScannedDirs, IReadOnlyList<FileEntryDto> Results, string? Error = null);
 public record FileContentDto(string Path, long Size, string? Base64, string? Error = null);
 public record FileTextDto(string Path, string Name, long Size, long ReadBytes, bool Truncated, bool Binary, string? Text, string? Error = null);
 public record WriteResultDto(string Path, long Size, bool Overwritten, string? Error = null);
@@ -93,6 +94,85 @@ public static class FileSystemService
     {
         try { return f().ToList(); }
         catch { return Array.Empty<T>(); }
+    }
+
+    /// <summary>Recursively search a directory tree for entries whose NAME matches — a case-insensitive
+    /// substring, or a glob with <c>*</c> / <c>?</c>. Read-only and name-only (never reads file contents).
+    /// Breadth-first so partial results stay near the top, and bounded by <paramref name="maxResults"/>, a
+    /// wall-clock <paramref name="timeBudgetMs"/>, and <paramref name="maxDepth"/> so it can't run away on a
+    /// huge tree; access-denied subtrees and reparse points (symlinks/junctions) are skipped.</summary>
+    public static FileSearchDto Search(string? path, string? query, int maxResults = 200, int maxDepth = 24, int timeBudgetMs = 8000)
+    {
+        path = (path ?? "").Trim().Trim('"');
+        query = (query ?? "").Trim();
+        var empty = Array.Empty<FileEntryDto>();
+        if (query.Length == 0) return new FileSearchDto(path, "", 0, false, false, 0, empty, "No search query.");
+        if (path.Length == 0) return new FileSearchDto(path, query, 0, false, false, 0, empty, "Search needs a folder to search in (an empty path is the drive list) — open a drive or folder first.");
+
+        string full;
+        try { full = System.IO.Path.GetFullPath(path); }
+        catch (Exception ex) { return new FileSearchDto(path, query, 0, false, false, 0, empty, "Invalid path: " + ex.Message); }
+        if (!Directory.Exists(full)) return new FileSearchDto(full, query, 0, false, false, 0, empty, "Directory not found.");
+
+        maxResults = Math.Clamp(maxResults, 1, 2000);
+        maxDepth = Math.Clamp(maxDepth, 1, 64);
+        timeBudgetMs = Math.Clamp(timeBudgetMs, 500, 60_000);
+        var matches = BuildMatcher(query);
+
+        var results = new List<FileEntryDto>();
+        long scanned = 0; bool truncated = false, timedOut = false;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var queue = new Queue<(DirectoryInfo dir, int depth)>();
+        queue.Enqueue((new DirectoryInfo(full), 0));
+
+        while (queue.Count > 0)
+        {
+            if (results.Count >= maxResults) { truncated = true; break; }
+            if (sw.ElapsedMilliseconds > timeBudgetMs) { timedOut = true; break; }
+            var (dir, depth) = queue.Dequeue();
+            scanned++;
+
+            foreach (var f in Safe(() => dir.EnumerateFiles()))
+            {
+                if (results.Count >= maxResults) { truncated = true; break; }
+                if (!matches(f.Name)) continue;
+                long? size = null; DateTime? mod = null;
+                try { size = f.Length; } catch { } try { mod = f.LastWriteTime; } catch { }
+                results.Add(new FileEntryDto(f.Name, f.FullName, false, size, mod,
+                    string.IsNullOrEmpty(f.Extension) ? null : f.Extension));
+            }
+
+            if (depth >= maxDepth) continue;
+            foreach (var d in Safe(() => dir.EnumerateDirectories()))
+            {
+                if (matches(d.Name) && results.Count < maxResults)
+                {
+                    DateTime? mod = null; try { mod = d.LastWriteTime; } catch { }
+                    results.Add(new FileEntryDto(d.Name, d.FullName, true, null, mod, null));
+                }
+                try { if ((d.Attributes & FileAttributes.ReparsePoint) != 0) continue; } catch { continue; }
+                queue.Enqueue((d, depth + 1));
+            }
+        }
+
+        var ordered = results
+            .OrderByDescending(e => e.IsDirectory)
+            .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new FileSearchDto(full, query, ordered.Count, truncated, timedOut, scanned, ordered);
+    }
+
+    // substring (default) or glob (when the query has * or ?), matched against the entry name, case-insensitive.
+    private static Func<string, bool> BuildMatcher(string query)
+    {
+        if (query.IndexOfAny(new[] { '*', '?' }) >= 0)
+        {
+            string rx = "^" + System.Text.RegularExpressions.Regex.Escape(query).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+            var re = new System.Text.RegularExpressions.Regex(rx,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            return name => re.IsMatch(name);
+        }
+        return name => name.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
     // ---- read / write (download / upload). SENSITIVE: reads/writes real file bytes — the host layer

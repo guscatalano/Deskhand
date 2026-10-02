@@ -207,8 +207,8 @@
   .logrow .p { color:var(--ink-2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .logrow .s { flex:none; font-weight:700; } .s.ok { color:var(--good); } .s.err { color:var(--crit); }
 
-  #viewer { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:70; display:flex; align-items:center; justify-content:center; padding:24px; }
-  #viewer[hidden] { display:none; }
+  #txtviewer { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:70; display:flex; align-items:center; justify-content:center; padding:24px; }
+  #txtviewer[hidden] { display:none; }
   .vwin { background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); width:min(960px,96vw); max-height:90vh; display:flex; flex-direction:column; overflow:hidden; }
   .vwin header { display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--line-2); }
   #vwTitle { font-size:12px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -609,7 +609,7 @@
 
 <div id="logdrawer"><header>Activity<span class="spacer" style="flex:1"></span><button class="ghost" id="clrLog">Clear</button></header><div id="log"></div></div>
 <div id="toast"></div>
-<div id="viewer" hidden>
+<div id="txtviewer" hidden>
   <div class="vwin">
     <header><span id="vwTitle" class="mono"></span><span class="spacer" style="flex:1"></span>
       <span id="vwMeta" class="lbl" style="color:var(--ink-3)"></span>
@@ -1210,14 +1210,14 @@ const fsView=guard(async(path,name)=>{
     $("#vwMeta").textContent=fmtSize(d.size)+(d.truncated?` · showing first ${fmtSize(d.readBytes)}`:"");
   }
   body.scrollTop=0;
-  $("#viewer").hidden=false;
+  $("#txtviewer").hidden=false;
 });
-function vwCloseFn(){ $("#viewer").hidden=true; $("#vwBody").textContent=""; vwPath=null; }
+function vwCloseFn(){ $("#txtviewer").hidden=true; $("#vwBody").textContent=""; vwPath=null; }
 $("#vwClose").onclick=vwCloseFn;
-$("#viewer").onclick=(e)=>{ if(e.target.id==="viewer") vwCloseFn(); };
+$("#txtviewer").onclick=(e)=>{ if(e.target.id==="txtviewer") vwCloseFn(); };
 $("#vwWrap").onclick=()=>$("#vwBody").classList.toggle("wrap");
 $("#vwDl").onclick=()=>{ if(vwPath) fsDownload(vwPath,vwName); };
-document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&!$("#viewer").hidden) vwCloseFn(); });
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&!$("#txtviewer").hidden) vwCloseFn(); });
 
 $("#fsUploadBtn").onclick=()=>$("#fsUpload").click();
 $("#fsUpload").onchange=guard(async()=>{

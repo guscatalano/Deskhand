@@ -437,7 +437,8 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /firewall/rules` | `?direction=&port=&enabledOnly=&contains=&managedOnly=&max=` | List Windows Firewall rules (read-only) |
 | `POST /firewall/open` | `{port, protocol?, direction?, remoteAddresses?, name?}` | Open a port (adds a Deskhand-tagged Allow rule) |
 | `POST /firewall/close` | `{port, protocol?, direction?}` or `{all:true}` | Close a port **Deskhand opened** (never touches other rules) |
-| `GET /clipboard` · `POST /clipboard` | `{text}` | Read / set the clipboard text (armed) |
+| `GET /clipboard` · `POST /clipboard` | `{text}` | Read / set the clipboard **text** (armed) |
+| `GET/POST /clipboard/image` · `GET/POST /clipboard/files` | `{imageBase64}` · `{paths[]}` | Read / set the clipboard **image** (base64 PNG ↔ CF_DIB) and **file list** (CF_HDROP) (armed; sets audited) |
 | `POST /window` | `{hwnd, action, x?, y?, width?, height?}` | activate·minimize·maximize·restore·close·move·resize·bounds a window (armed) |
 | `POST /ocr/screen` · `/ocr/region` · `/ocr/window` | `{monitor?}` · `{x,y,width,height}` · `{hwnd?/reference?}` | **OCR** on-screen text; words come back with **screen-coordinate boxes** |
 | `POST /mouse/drag` | `{fromX, fromY, toX, toY, button?, steps?, holdMs?}` | **Drag-and-drop** — press, smooth move, release (one atomic gesture) |

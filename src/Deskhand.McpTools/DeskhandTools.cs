@@ -442,6 +442,34 @@ public static class DeskhandTools
         return Json(r);
     }
 
+    [McpServerTool(Name = "deskhand_clipboard_get_image"), Description("Read an IMAGE from the Windows clipboard as a base64 PNG. Returns { ok, hasImage, width, height, base64Png, error? } (hasImage=false when the clipboard holds no image). Requires armed.")]
+    public static string ClipboardGetImage(ControlState state)
+        => state.Armed ? Json(Deskhand.Core.Services.ClipboardService.GetImage()) : "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+
+    [McpServerTool(Name = "deskhand_clipboard_set_image"), Description("Put an IMAGE on the clipboard (for a paste) from a base64 PNG. Returns { ok, width, height, error? }. Requires armed; audited.")]
+    public static string ClipboardSetImage(ControlState state, AuditLog audit,
+        [Description("The image as base64 (PNG or any format the OS image reader accepts).")] string imageBase64)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.ClipboardService.SetImage(imageBase64);
+        audit.Record("clipboard_set_image", r.Ok ? $"{r.Width}x{r.Height}" : "", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_clipboard_get_files"), Description("Read the list of FILES copied to the clipboard (CF_HDROP). Returns { ok, files:[paths], error? } (empty when none). Requires armed.")]
+    public static string ClipboardGetFiles(ControlState state)
+        => state.Armed ? Json(Deskhand.Core.Services.ClipboardService.GetFiles()) : "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+
+    [McpServerTool(Name = "deskhand_clipboard_set_files"), Description("Put a list of FILES on the clipboard (CF_HDROP) — a paste into Explorer/chat/mail receives them as copied files. paths should be absolute and exist. Returns { ok, files, error? }. Requires armed; audited.")]
+    public static string ClipboardSetFiles(ControlState state, AuditLog audit,
+        [Description("Absolute file paths to place on the clipboard.")] string[] paths)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.ClipboardService.SetFiles(paths);
+        audit.Record("clipboard_set_files", r.Ok ? $"{r.Files.Count} files" : "", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
     [McpServerTool(Name = "deskhand_window"), Description("Manage a top-level window by its nativeWindowHandle (from deskhand_list_windows): action = activate|minimize|maximize|restore|close|move|resize|bounds. move needs x,y; resize needs width,height; bounds needs all four (screen pixels). Returns { ok, hwnd, action, title, state, bounds, error? }. Requires armed; audited.")]
     public static string Window(ControlState state, AuditLog audit,
         [Description("Native window handle (nativeWindowHandle from list_windows).")] long hwnd,

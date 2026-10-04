@@ -679,6 +679,27 @@ api.MapPost("/clipboard/clear", (ControlState st, AuditLog al) =>
     al.Record("clipboard_clear", "", res.Ok ? "ok" : $"FAIL {res.Error}");
     return Results.Ok(res);
 });
+// Clipboard images (CF_DIB, base64 PNG) and files (CF_HDROP). Armed-gated like text; sets are audited.
+api.MapGet("/clipboard/image", (ControlState st) =>
+    st.Armed ? Results.Ok(Deskhand.Core.Services.ClipboardService.GetImage())
+             : Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403));
+api.MapPost("/clipboard/image", (ControlState st, AuditLog al, ClipboardImageRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.ClipboardService.SetImage(r.ImageBase64);
+    al.Record("clipboard_set_image", res.Ok ? $"{res.Width}x{res.Height}" : "", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return res.Ok ? Results.Ok(res) : Results.Json(res, statusCode: 400);
+});
+api.MapGet("/clipboard/files", (ControlState st) =>
+    st.Armed ? Results.Ok(Deskhand.Core.Services.ClipboardService.GetFiles())
+             : Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403));
+api.MapPost("/clipboard/files", (ControlState st, AuditLog al, ClipboardFilesRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.ClipboardService.SetFiles(r.Paths);
+    al.Record("clipboard_set_files", res.Ok ? $"{res.Files.Count} files" : "", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return res.Ok ? Results.Ok(res) : Results.Json(res, statusCode: 400);
+});
 
 // Window management by native handle (from /windows). Mutating, so gated on armed + audited.
 api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
@@ -1389,6 +1410,8 @@ record SessionLaunchRequest(string Path, string? Args, string? WorkingDir, int? 
 record FirewallOpenRequest(int Port, string? Protocol, string? Direction, string? RemoteAddresses, string? Name);
 record FirewallCloseRequest(int Port, string? Protocol, string? Direction, bool? All);
 record ClipboardSetRequest(string? Text);
+record ClipboardImageRequest(string? ImageBase64);
+record ClipboardFilesRequest(string[]? Paths);
 record WindowActionRequest(long Hwnd, string Action, int? X, int? Y, int? Width, int? Height);
 record DisplayResRequest(string? Device, int Width, int Height, int? RefreshHz);
 record OcrScreenRequest(int? Monitor);

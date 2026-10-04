@@ -116,6 +116,17 @@ in a **`deskhand.json`** config file for a reproducible, file-based install:
 - Applies to all four hosts (dashboard, MCP stdio, fleet server, fleet agent). A sample is in
   [`installer/deskhand.example.json`](installer/deskhand.example.json).
 
+### Running it in the background (window, service, logon)
+
+Deskhand drives the **interactive desktop** (UIA, input, capture), so it must run **in the logged-in
+session** — not as a classic Windows service, which lives in **session 0** and is blind to the desktop.
+`installer/install-service.ps1` can register it as a service, but that path only fits session-0-safe uses;
+for desktop automation, run it in the user session. To avoid a stray console window there, set
+**`DESKHAND_HIDE_CONSOLE=1`** (or `hideConsole: true` in `deskhand.json`, or pass `--hidden`) — Deskhand hides
+its console at startup but keeps running in the session so it can still drive the screen. The intended
+auto-start is a **logon scheduled task** (or the Fleet **Launcher**, which spawns a per-session agent as the
+logged-in user) running the exe windowless.
+
 ## Web dashboard
 
 Open **http://127.0.0.1:8791** in any browser. The single-page console lets you:

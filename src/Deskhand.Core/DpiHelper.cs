@@ -15,3 +15,18 @@ public static class DpiHelper
         catch { return false; }
     }
 }
+
+/// <summary>Hide this process's console window — so Deskhand can run windowless in the logged-in session
+/// (no stray cmd window) while still driving the interactive desktop, unlike a session-0 Windows service.</summary>
+public static class ConsoleWindow
+{
+    public static void Hide()
+    {
+        try
+        {
+            var h = NativeMethods.GetConsoleWindow();
+            if (h != IntPtr.Zero) NativeMethods.ShowWindow(h, NativeMethods.SW_HIDE);
+        }
+        catch { }
+    }
+}

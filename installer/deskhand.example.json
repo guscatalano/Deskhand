@@ -16,5 +16,8 @@
 
   "maxToolChars": 200000,
   "maxUploadMb": 1024,
-  "uiaTimeoutMs": 2000
+  "uiaTimeoutMs": 2000,
+
+  "//hideConsole": "true = run windowless in the logged-in session (no cmd window); still drives the desktop (unlike a session-0 service)",
+  "hideConsole": false
 }

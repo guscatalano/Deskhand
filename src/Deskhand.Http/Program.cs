@@ -9,6 +9,19 @@ using Deskhand.Ui;
 // variable. A real environment variable always overrides the file. See Deskhand.Core.EnvConfigFile.
 Deskhand.Core.EnvConfigFile.ApplyOrExit(Console.Out);
 
+// Optional: hide the console window (DESKHAND_HIDE_CONSOLE=1, or --hidden) so Deskhand runs windowless in the
+// logged-in session — e.g. launched by a logon task or a sandbox — without a stray cmd window. It still runs
+// IN the interactive session (so it can drive the desktop), unlike a session-0 Windows service. Output still
+// flows to any redirected stdout (a log file). Checked after config so deskhand.json can set it.
+if (HideConsoleRequested(args)) ConsoleWindow.Hide();
+
+static bool HideConsoleRequested(string[] a)
+{
+    var v = Environment.GetEnvironmentVariable("DESKHAND_HIDE_CONSOLE")?.Trim().ToLowerInvariant();
+    if (v is "1" or "true" or "yes" or "on") return true;
+    return a.Any(x => x is "--hidden" or "--no-window" or "--background");
+}
+
 // Per-Monitor-v2 DPI awareness MUST be set before anything touches windows or pixels.
 DpiHelper.EnablePerMonitorV2();
 

@@ -397,6 +397,43 @@ public static class DeskhandTools
     public static string RegistryBrowse([Description("Registry key path, e.g. \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\". Empty lists the hives.")] string? path = null)
         => Json(Deskhand.Core.Services.RegistryService.Browse(path));
 
+    [McpServerTool(Name = "deskhand_registry_write"), Description("Write the Windows Registry. op = set | create-key | delete-value | delete-key. set needs name + value + kind (string|expandstring|dword|qword|multistring|binary; multistring splits value on newlines, binary reads hex; empty name = the (Default) value). path like \"HKCU\\Software\\Deskhand\". OFF unless the host sets DESKHAND_ENABLE_REGISTRY_WRITE=1; also requires armed; audited. A bad write can break the OS — be careful. Returns { ok, op, path, name, error? }.")]
+    public static string RegistryWrite(ControlState state, AuditLog audit,
+        [Description("set | create-key | delete-value | delete-key")] string op,
+        [Description("Key path, e.g. \"HKCU\\Software\\Deskhand\".")] string path,
+        [Description("Value name (set/delete-value); empty = (Default).")] string? name = null,
+        [Description("Value data (set).")] string? value = null,
+        [Description("Value kind (set): string|expandstring|dword|qword|multistring|binary.")] string? kind = null)
+    {
+        if (!Deskhand.Core.Services.RegistryService.WriteEnabled) return "{\"error\":\"Registry write is disabled. Set DESKHAND_ENABLE_REGISTRY_WRITE=1.\",\"type\":\"registry_write_disabled\"}";
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var res = (op ?? "").Trim().ToLowerInvariant() switch
+        {
+            "set" => Deskhand.Core.Services.RegistryService.SetValue(path, name, value, kind),
+            "create-key" or "createkey" => Deskhand.Core.Services.RegistryService.CreateKey(path),
+            "delete-value" or "deletevalue" => Deskhand.Core.Services.RegistryService.DeleteValue(path, name),
+            "delete-key" or "deletekey" => Deskhand.Core.Services.RegistryService.DeleteKey(path),
+            _ => new Deskhand.Core.Services.RegWriteResultDto(false, op ?? "", path, Error: "op must be set|create-key|delete-value|delete-key."),
+        };
+        audit.Record("registry_write", $"{op} {path} {name}", res.Ok ? "ok" : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_folder_watch"), Description("Watch a folder for file changes (report-only). action = start | poll | stop | list. start(path, recursive?) returns a watchId; poll(id) returns the change events (created/deleted/changed/renamed) buffered since your last poll (with an overflowed flag); stop(id) ends it. Bounded number of concurrent watches.")]
+    public static string FolderWatch(
+        [Description("start | poll | stop | list")] string action,
+        [Description("start: folder to watch.")] string? path = null,
+        [Description("start: watch subfolders too.")] bool recursive = false,
+        [Description("poll/stop: the watchId from start.")] string? id = null)
+        => (action ?? "").Trim().ToLowerInvariant() switch
+        {
+            "start" => Json(Deskhand.Core.Services.FolderWatchService.Start(path, recursive)),
+            "poll" => Json(Deskhand.Core.Services.FolderWatchService.Poll(id ?? "")),
+            "stop" => Json(Deskhand.Core.Services.FolderWatchService.Stop(id ?? "")),
+            "list" => Json(Deskhand.Core.Services.FolderWatchService.List()),
+            _ => "{\"error\":\"action must be start|poll|stop|list\",\"type\":\"bad_request\"}",
+        };
+
     [McpServerTool(Name = "deskhand_firewall_rules"), Description("List Windows Firewall rules (read-only, no elevation). Filters keep the (often hundreds of) rules manageable. Returns { total, returned, rules[{name, direction, action, protocol, localPorts, remotePorts, enabled, profiles, grouping, applicationName, remoteAddresses, managed}], error? }. 'managed' marks rules Deskhand opened.")]
     public static string FirewallRules(
         [Description("Filter by direction: \"in\" or \"out\" (optional).")] string? direction = null,

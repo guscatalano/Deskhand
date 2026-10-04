@@ -485,6 +485,12 @@ api.MapGet("/fs/search", (string? path, string? q, int? max) =>
 api.MapGet("/fs/grep", (string? path, string? q, string? glob, bool? regex, bool? ignoreCase, int? max) =>
     Results.Ok(Deskhand.Core.Services.FileSystemService.SearchContent(path, q, glob, regex ?? false, ignoreCase ?? true, max is > 0 ? max.Value : 200)));
 
+// Folder watch (report-only): start a FileSystemWatcher, poll it for buffered change events, stop it.
+api.MapGet("/fs/watch", () => Results.Ok(Deskhand.Core.Services.FolderWatchService.List()));
+api.MapPost("/fs/watch/start", (FolderWatchStartRequest r) => Results.Ok(Deskhand.Core.Services.FolderWatchService.Start(r.Path, r.Recursive ?? false)));
+api.MapGet("/fs/watch/{id}", (string id) => Results.Ok(Deskhand.Core.Services.FolderWatchService.Poll(id)));
+api.MapPost("/fs/watch/{id}/stop", (string id) => Results.Ok(Deskhand.Core.Services.FolderWatchService.Stop(id)));
+
 // Read a file as text for the dashboard's viewer (front-of-file, capped). SENSITIVE — gated + audited.
 api.MapGet("/fs/read", (ControlState st, AuditLog al, string? path, long? maxBytes) =>
 {
@@ -1106,6 +1112,25 @@ api.MapGet("/outputs/{id}", (string id) =>
 
 // Read-only registry browsing. path = "" (hive roots) | "HKLM" | "HKLM\SOFTWARE\...".
 api.MapGet("/registry", (string? path) => Results.Ok(Deskhand.Core.Services.RegistryService.Browse(path)));
+// Registry WRITE (set|create-key|delete-value|delete-key). OPT-IN (DESKHAND_ENABLE_REGISTRY_WRITE=1) +
+// armed + audited — a bad write can break the OS.
+api.MapPost("/registry/write", (ControlState st, AuditLog al, RegistryWriteRequest r) =>
+{
+    if (!Deskhand.Core.Services.RegistryService.WriteEnabled)
+        return Results.Json(new { error = "Registry write is disabled. Set DESKHAND_ENABLE_REGISTRY_WRITE=1.", type = "registry_write_disabled" }, statusCode: 403);
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var op = (r.Op ?? "").Trim().ToLowerInvariant();
+    var res = op switch
+    {
+        "set" => Deskhand.Core.Services.RegistryService.SetValue(r.Path, r.Name, r.Value, r.Kind),
+        "create-key" or "createkey" => Deskhand.Core.Services.RegistryService.CreateKey(r.Path),
+        "delete-value" or "deletevalue" => Deskhand.Core.Services.RegistryService.DeleteValue(r.Path, r.Name),
+        "delete-key" or "deletekey" => Deskhand.Core.Services.RegistryService.DeleteKey(r.Path),
+        _ => new Deskhand.Core.Services.RegWriteResultDto(false, op, r.Path ?? "", Error: "op must be set|create-key|delete-value|delete-key."),
+    };
+    al.Record("registry_write", $"{op} {r.Path} {r.Name}", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return res.Ok ? Results.Ok(res) : Results.Json(res, statusCode: 400);
+});
 
 // Start Menu apps (launch one via /process/launch with its path).
 api.MapGet("/apps", () => Results.Ok(Deskhand.Core.Services.StartMenuService.List()));
@@ -1480,6 +1505,8 @@ record ServiceControlRequest(string Name, string Action, bool? Confirm);
 record EnvSetRequest(string Name, string? Value, string? Scope);
 record TaskActionRequest(string Task, string Action, string? Command, string? Schedule, string? StartTime, string? StartDate, bool? Highest);
 record PowerActionRequest(string Action, bool? Force, bool? Confirm);
+record RegistryWriteRequest(string? Op, string? Path, string? Name, string? Value, string? Kind);
+record FolderWatchStartRequest(string? Path, bool? Recursive);
 record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
 record UacRespondRequest(bool? Accept, int? TimeoutMs);
 record FetchRequest(string? Url, string? Path, long? MaxBytes, int? TimeoutMs);

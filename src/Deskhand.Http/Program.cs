@@ -445,6 +445,28 @@ api.MapGet("/security", () => Results.Ok(Deskhand.Core.Services.SecurityService.
 api.MapGet("/users", () => Results.Ok(Deskhand.Core.Services.UsersService.Users()));
 api.MapGet("/groups", () => Results.Ok(Deskhand.Core.Services.UsersService.Groups()));
 api.MapGet("/power", () => Results.Ok(Deskhand.Core.Services.PowerService.Get()));
+// Whole-machine power actions (shutdown|restart|signout|lock|sleep|hibernate). DISRUPTIVE: armed AND
+// confirm:true required — without confirm you get { confirmationRequired:true } and nothing happens.
+api.MapPost("/power/action", (ControlState st, AuditLog al, PowerActionRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    string action = (r.Action ?? "").Trim().ToLowerInvariant();
+    if (r.Confirm != true)
+        return Results.Ok(new { confirmationRequired = true, action, note = $"Pass confirm:true to {action} the machine." });
+    bool force = r.Force ?? false;
+    var res = action switch
+    {
+        "shutdown" => Deskhand.Core.Services.PowerActionService.Shutdown(force),
+        "restart" or "reboot" => Deskhand.Core.Services.PowerActionService.Restart(force),
+        "signout" or "logoff" => Deskhand.Core.Services.PowerActionService.SignOut(force),
+        "lock" => Deskhand.Core.Services.PowerActionService.Lock(),
+        "sleep" or "suspend" => Deskhand.Core.Services.PowerActionService.Sleep(force),
+        "hibernate" => Deskhand.Core.Services.PowerActionService.Hibernate(force),
+        _ => new Deskhand.Core.Services.PowerActionResultDto(false, action, "Unknown action. Use shutdown|restart|signout|lock|sleep|hibernate."),
+    };
+    al.Record("power_action", $"{action} force={force}", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return res.Ok ? Results.Ok(res) : Results.Json(res, statusCode: 400);
+});
 api.MapGet("/net/connections", () => Results.Ok(Deskhand.Core.Services.NetConnectionsService.List()));
 api.MapGet("/diagnostics/events", (int? count) => Results.Ok(Deskhand.Core.Services.DiagnosticsService.RecentErrors(count ?? 50)));
 api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.DiagnosticsService.DiskHealth()));
@@ -947,7 +969,9 @@ api.MapPost("/task", (ControlState st, AuditLog al, TaskActionRequest r) =>
         "end" => Deskhand.Core.Services.ScheduledTaskService.End(r.Task),
         "enable" => Deskhand.Core.Services.ScheduledTaskService.Enable(r.Task),
         "disable" => Deskhand.Core.Services.ScheduledTaskService.Disable(r.Task),
-        _ => new Deskhand.Core.Services.TaskActionDto(false, r.Task, r.Action ?? "", -1, Error: "action must be run|end|enable|disable."),
+        "delete" => Deskhand.Core.Services.ScheduledTaskService.Delete(r.Task),
+        "create" => Deskhand.Core.Services.ScheduledTaskService.Create(r.Task, r.Command ?? "", r.Schedule ?? "", r.StartTime, r.StartDate, r.Highest ?? false),
+        _ => new Deskhand.Core.Services.TaskActionDto(false, r.Task, r.Action ?? "", -1, Error: "action must be run|end|enable|disable|create|delete."),
     };
     al.Record("task", $"{res.Action} {r.Task}", res.Ok ? "ok" : $"FAIL {res.Error}");
     return Results.Json(res, statusCode: res.Ok ? 200 : 400);
@@ -1454,7 +1478,8 @@ record PasteRequest(string? Text);
 record ProcControlRequest(int Pid, string Action, bool? Tree, string? Level, bool? Force, bool? Confirm);
 record ServiceControlRequest(string Name, string Action, bool? Confirm);
 record EnvSetRequest(string Name, string? Value, string? Scope);
-record TaskActionRequest(string Task, string Action);
+record TaskActionRequest(string Task, string Action, string? Command, string? Schedule, string? StartTime, string? StartDate, bool? Highest);
+record PowerActionRequest(string Action, bool? Force, bool? Confirm);
 record UacConfigRequest(bool? Enabled, bool? PromptOnSecureDesktop, bool? AutoApprove, int? AdminBehavior);
 record UacRespondRequest(bool? Accept, int? TimeoutMs);
 record FetchRequest(string? Url, string? Path, long? MaxBytes, int? TimeoutMs);

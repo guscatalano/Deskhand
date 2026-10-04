@@ -765,8 +765,13 @@ public static class DeskhandTools
         return Json(res);
     }
 
-    [McpServerTool(Name = "deskhand_task_action"), Description("Run / end / enable / disable a Windows Scheduled Task by name (path), via schtasks. Returns { ok, task, action, exitCode, output, error? }. Requires armed; audited.")]
-    public static string TaskAction(ControlState state, AuditLog audit, string task, string action)
+    [McpServerTool(Name = "deskhand_task_action"), Description("Manage a Windows Scheduled Task by name (path), via schtasks. action = run|end|enable|disable|create|delete. CREATE needs command (the program/command to run) and schedule (ONCE|MINUTE|HOURLY|DAILY|WEEKLY|MONTHLY|ONLOGON|ONSTART|ONIDLE); ONCE/DAILY usually need startTime (HH:mm) and ONCE also startDate (MM/dd/yyyy); highest=true runs with highest privileges. Returns { ok, task, action, exitCode, output, error? }. Requires armed; audited.")]
+    public static string TaskAction(ControlState state, AuditLog audit, string task, string action,
+        [Description("CREATE: the program/command to run (schtasks /TR).")] string? command = null,
+        [Description("CREATE: schedule type — ONCE|MINUTE|HOURLY|DAILY|WEEKLY|MONTHLY|ONLOGON|ONSTART|ONIDLE.")] string? schedule = null,
+        [Description("CREATE: start time HH:mm (for ONCE/DAILY/…).")] string? startTime = null,
+        [Description("CREATE: start date MM/dd/yyyy (for ONCE).")] string? startDate = null,
+        [Description("CREATE: run with highest privileges.")] bool highest = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
         var res = (action ?? "").Trim().ToLowerInvariant() switch
@@ -775,9 +780,34 @@ public static class DeskhandTools
             "end" => Deskhand.Core.Services.ScheduledTaskService.End(task),
             "enable" => Deskhand.Core.Services.ScheduledTaskService.Enable(task),
             "disable" => Deskhand.Core.Services.ScheduledTaskService.Disable(task),
-            _ => new Deskhand.Core.Services.TaskActionDto(false, task, action ?? "", -1, Error: "action must be run|end|enable|disable."),
+            "delete" => Deskhand.Core.Services.ScheduledTaskService.Delete(task),
+            "create" => Deskhand.Core.Services.ScheduledTaskService.Create(task, command ?? "", schedule ?? "", startTime, startDate, highest),
+            _ => new Deskhand.Core.Services.TaskActionDto(false, task, action ?? "", -1, Error: "action must be run|end|enable|disable|create|delete."),
         };
         audit.Record("task", $"{res.Action} {task}", res.Ok ? "ok" : $"FAIL {res.Error}");
+        return Json(res);
+    }
+
+    [McpServerTool(Name = "deskhand_power_action"), Description("Whole-machine power action: action = shutdown|restart|signout|lock|sleep|hibernate. DISRUPTIVE — requires confirm=true (without it returns { confirmationRequired:true } and does nothing). force=true forces apps closed (shutdown/restart/signout). Requires armed; audited.")]
+    public static string PowerAction(ControlState state, AuditLog audit,
+        [Description("shutdown|restart|signout|lock|sleep|hibernate")] string action,
+        [Description("Must be true to actually perform the action.")] bool confirm = false,
+        [Description("Force applications closed (shutdown/restart/signout).")] bool force = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        action = (action ?? "").Trim().ToLowerInvariant();
+        if (!confirm) return Json(new { confirmationRequired = true, action, note = $"Pass confirm:true to {action} the machine." });
+        var res = action switch
+        {
+            "shutdown" => Deskhand.Core.Services.PowerActionService.Shutdown(force),
+            "restart" or "reboot" => Deskhand.Core.Services.PowerActionService.Restart(force),
+            "signout" or "logoff" => Deskhand.Core.Services.PowerActionService.SignOut(force),
+            "lock" => Deskhand.Core.Services.PowerActionService.Lock(),
+            "sleep" or "suspend" => Deskhand.Core.Services.PowerActionService.Sleep(force),
+            "hibernate" => Deskhand.Core.Services.PowerActionService.Hibernate(force),
+            _ => new Deskhand.Core.Services.PowerActionResultDto(false, action, "Unknown action. Use shutdown|restart|signout|lock|sleep|hibernate."),
+        };
+        audit.Record("power_action", $"{action} force={force}", res.Ok ? "ok" : $"FAIL {res.Error}");
         return Json(res);
     }
 

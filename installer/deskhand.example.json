@@ -13,6 +13,9 @@
   "enableSessionLaunch": false,
   "enableFirewallAdmin": false,
   "enableSelfUpdate": false,
+  "//autoUpdate": "true = check GitHub Releases on an interval and apply newer versions automatically (implies enableSelfUpdate)",
+  "autoUpdate": false,
+  "autoUpdateIntervalMin": 60,
 
   "maxToolChars": 200000,
   "maxUploadMb": 1024,

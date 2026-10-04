@@ -28,11 +28,29 @@ public static class UpdateService
 
     public static bool Enabled
     {
+        // Self-update is allowed when explicitly enabled, OR when auto-update is on (auto-update implies it).
+        get => Flag("DESKHAND_ENABLE_SELF_UPDATE") || AutoUpdate;
+    }
+
+    /// <summary>Auto-update mode: periodically check GitHub Releases and apply a newer version on its own
+    /// (<c>DESKHAND_AUTO_UPDATE=1</c>). Implies <see cref="Enabled"/>.</summary>
+    public static bool AutoUpdate => Flag("DESKHAND_AUTO_UPDATE");
+
+    /// <summary>How often auto-update checks, in minutes (<c>DESKHAND_AUTO_UPDATE_INTERVAL_MIN</c>, default 60;
+    /// clamped to 5 min – 1 week so it can't hammer the GitHub API).</summary>
+    public static int AutoUpdateIntervalMinutes
+    {
         get
         {
-            var v = Environment.GetEnvironmentVariable("DESKHAND_ENABLE_SELF_UPDATE")?.Trim().ToLowerInvariant();
-            return v is "1" or "true" or "yes" or "on";
+            var v = Environment.GetEnvironmentVariable("DESKHAND_AUTO_UPDATE_INTERVAL_MIN");
+            return int.TryParse(v, out var m) ? Math.Clamp(m, 5, 7 * 24 * 60) : 60;
         }
+    }
+
+    private static bool Flag(string name)
+    {
+        var v = Environment.GetEnvironmentVariable(name)?.Trim().ToLowerInvariant();
+        return v is "1" or "true" or "yes" or "on";
     }
 
     /// <summary>The most recent check result, cached for a fast /update/status (populated at startup).</summary>

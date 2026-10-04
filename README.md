@@ -332,7 +332,13 @@ The whole HTTP surface is described by an OpenAPI document at `/swagger/v1/swagg
 and reports `{ current, latest, updateAvailable, notes, … }` — read-only. `POST /update/apply` downloads the
 self-contained `deskhand.zip`, stages it, and hands off to a small detached updater that stops the server, copies
 the new files over the install directory, and relaunches. It only works on a zip/self-contained install and runs
-downloaded code, so it's **off unless `DESKHAND_ENABLE_SELF_UPDATE=1`**, requires *armed*, and is audited.
+downloaded code, so it's **off unless `DESKHAND_ENABLE_SELF_UPDATE=1`**, requires *armed*, and is audited. The
+download is verified against the sha256 + size GitHub publishes for the asset and fails closed on a mismatch.
+
+**Auto-update mode** — set **`DESKHAND_AUTO_UPDATE=1`** (implies self-update) and Deskhand checks GitHub Releases
+on an interval and applies a newer version on its own, then relaunches. The cadence is
+**`DESKHAND_AUTO_UPDATE_INTERVAL_MIN`** (default 60; clamped 5 min – 1 week). `GET /update/status` reports
+`autoUpdate` and `autoUpdateIntervalMin` alongside the cached check.
 
 #### OCR — read text off the screen (`/ocr/*`, `deskhand_ocr_*`)
 

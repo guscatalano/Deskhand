@@ -161,6 +161,38 @@ var app = builder.Build();
 // (served fast from the cache at /update/status). Never blocks startup; failures are swallowed.
 _ = Deskhand.Core.Services.UpdateService.CheckAsync();
 
+// Auto-update mode (DESKHAND_AUTO_UPDATE=1): periodically check GitHub Releases and apply a newer version on
+// its own, every DESKHAND_AUTO_UPDATE_INTERVAL_MIN minutes (default 60). ApplyAsync verifies the download
+// (sha256 + size) and hands off to a detached updater that stops + relaunches this process, so a successful
+// apply ends the loop. Stops cleanly on shutdown.
+if (Deskhand.Core.Services.UpdateService.AutoUpdate)
+{
+    int intervalMin = Deskhand.Core.Services.UpdateService.AutoUpdateIntervalMinutes;
+    Console.WriteLine($"Auto-update: ON — checking every {intervalMin} min.");
+    var stopping = app.Lifetime.ApplicationStopping;
+    _ = Task.Run(async () =>
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(30), stopping); } catch { return; }   // let startup settle
+        while (!stopping.IsCancellationRequested)
+        {
+            try
+            {
+                var chk = await Deskhand.Core.Services.UpdateService.CheckAsync();
+                if (chk.UpdateAvailable)
+                {
+                    Console.WriteLine($"Auto-update: {chk.Current} -> {chk.Latest} available; applying…");
+                    var res = await Deskhand.Core.Services.UpdateService.ApplyAsync();
+                    Console.WriteLine(res.Ok ? "Auto-update: staged; the server will relaunch on the new version."
+                                             : $"Auto-update: FAILED — {res.Error}");
+                    if (res.Ok) return;   // the detached updater will stop this process shortly
+                }
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"Auto-update: check failed — {ex.Message}"); }
+            try { await Task.Delay(TimeSpan.FromMinutes(intervalMin), stopping); } catch { return; }
+        }
+    });
+}
+
 // Trajectory recording: while an episode is active, every audited action becomes a step, paired with a small
 // screenshot grabbed from the RAW local backend (not audited → no reentrancy; downscaled JPEG to stay light).
 Deskhand.Core.Services.EpisodeRecorder.CaptureFn = () =>
@@ -1038,7 +1070,16 @@ api.MapPost("/update/apply", async (ControlState st, AuditLog al) =>
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
 // Fast cached update status (from the startup check) — for the dashboard banner.
-api.MapGet("/update/status", () => Results.Ok(Deskhand.Core.Services.UpdateService.Cached ?? new Deskhand.Core.Services.UpdateCheckDto(Deskhand.Core.BuildInfo.Version, null, false, null, null, null, null, 0, Deskhand.Core.Services.UpdateService.Enabled, "not checked yet")));
+api.MapGet("/update/status", () =>
+{
+    var c = Deskhand.Core.Services.UpdateService.Cached ?? new Deskhand.Core.Services.UpdateCheckDto(Deskhand.Core.BuildInfo.Version, null, false, null, null, null, null, 0, Deskhand.Core.Services.UpdateService.Enabled, "not checked yet");
+    return Results.Ok(new
+    {
+        c.Current, c.Latest, c.UpdateAvailable, c.Name, c.Notes, c.PublishedAt, c.AssetName, c.AssetSize, c.Enabled, c.Error,
+        autoUpdate = Deskhand.Core.Services.UpdateService.AutoUpdate,
+        autoUpdateIntervalMin = Deskhand.Core.Services.UpdateService.AutoUpdateIntervalMinutes,
+    });
+});
 
 // Prometheus metrics (text/plain). No token needed for scraping on loopback; harmless read-only gauges.
 api.MapGet("/metrics", (ControlState st) => Results.Text(Deskhand.Core.Services.MetricsService.Render(st.Armed, st.CaptureEnabled, Deskhand.Core.BuildInfo.Version), "text/plain; version=0.0.4"));

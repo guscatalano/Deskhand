@@ -207,6 +207,16 @@ public static class DeskhandTools
         [Description("Max results (default 200, cap 2000).")] int maxResults = 200)
         => Json(Deskhand.Core.Services.FileSystemService.Search(path, query, maxResults));
 
+    [McpServerTool(Name = "deskhand_search_file_contents"), Description("Recursively search file CONTENTS under a folder (grep). query is a plain substring, or a regex when regex=true. glob narrows which files are read (e.g. \"*.cs\", \"*.log\"). Text files only — binary files and files over ~5 MB are skipped. Returns { root, query, matches, filesMatched, truncated, timedOut, scannedFiles, results[{path, name, line, text}] } (1-based line numbers; each line trimmed/capped). Read-only; bounded by maxResults (default 200, cap 2000) and a 10s budget. path must be a folder.")]
+    public static string SearchFileContents(
+        [Description("Folder to search under, e.g. \"C:\\\\logs\". Required.")] string path,
+        [Description("Text to find in file contents: a substring, or a regex when regex=true.")] string query,
+        [Description("Only read files whose name matches this glob (optional), e.g. \"*.cs\".")] string? glob = null,
+        [Description("Treat query as a regular expression.")] bool regex = false,
+        [Description("Case-insensitive match (default true).")] bool ignoreCase = true,
+        [Description("Max matching lines (default 200, cap 2000).")] int maxResults = 200)
+        => Json(Deskhand.Core.Services.FileSystemService.SearchContent(path, query, glob, regex, ignoreCase, maxResults));
+
     [McpServerTool(Name = "deskhand_read_file"), Description("Download a file's contents as base64 (\"download\"). Returns { path, size, base64, error? }. Refused for files over ~25 MB (use the HTTP /fs/download endpoint for large files). SENSITIVE: returns real file bytes (may include secrets). Requires the kill switch to be armed; audited.")]
     public static string ReadFile(ControlState state, AuditLog audit,
         [Description("Full path of the file to read, e.g. \"C:\\\\Users\\\\me\\\\notes.txt\".")] string path)

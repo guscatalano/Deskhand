@@ -332,8 +332,8 @@ api.MapPost("/record/stop", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog
 { var s = rec.Stop(r.Reference); al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(s); });
 api.MapGet("/record/status/{id}", (Deskhand.Core.Services.ScreenRecorder rec, string id) => Results.Ok(rec.GetStatus(id)));
 api.MapGet("/record/list", (Deskhand.Core.Services.ScreenRecorder rec) => Results.Ok(rec.List()));
-api.MapGet("/recordings/{id}", (Deskhand.Core.Services.ScreenRecorder rec, string id) =>
-{ var (bytes, mime, name) = rec.Read(id); return Results.File(bytes, mime, name); });
+api.MapGet("/recordings/{id}", (Deskhand.Core.Services.ScreenRecorder rec, HttpContext ctx, string id) =>
+{ var (bytes, mime, name) = rec.Read(id); return FileBytesWithSha(ctx, bytes, mime, name); });
 
 // ---- record the USER's own mouse/keyboard, noting the element each click hit ----
 api.MapPost("/input/record/start", (Deskhand.Core.Services.InputRecorder ir, AuditLog al, InputRecordRequest? r) =>
@@ -438,6 +438,11 @@ api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystem
 // names only (like /fs) — bounded by maxResults + a time budget so it can't run away. q is the query.
 api.MapGet("/fs/search", (string? path, string? q, int? max) =>
     Results.Ok(Deskhand.Core.Services.FileSystemService.Search(path, q, max is > 0 ? max.Value : 200)));
+
+// Recursively search file CONTENTS under a folder (grep). q is the query; glob narrows which files are read
+// (e.g. *.cs); regex=true treats q as a regex. Read-only, text files only, bounded by max + a time budget.
+api.MapGet("/fs/grep", (string? path, string? q, string? glob, bool? regex, bool? ignoreCase, int? max) =>
+    Results.Ok(Deskhand.Core.Services.FileSystemService.SearchContent(path, q, glob, regex ?? false, ignoreCase ?? true, max is > 0 ? max.Value : 200)));
 
 // Read a file as text for the dashboard's viewer (front-of-file, capped). SENSITIVE — gated + audited.
 api.MapGet("/fs/read", (ControlState st, AuditLog al, string? path, long? maxBytes) =>
@@ -710,14 +715,14 @@ api.MapPost("/episode/stop", (AuditLog al, EpisodeStopRequest? r) =>
 });
 api.MapGet("/episode", () => Results.Ok(Deskhand.Core.Services.EpisodeRecorder.Status()));
 api.MapGet("/episodes", () => Results.Ok(new { episodes = Deskhand.Core.Services.EpisodeRecorder.List() }));
-api.MapGet("/episodes/{id}", (string id) =>
+api.MapGet("/episodes/{id}", (HttpContext ctx, string id) =>
 {
     var dir = Deskhand.Core.Services.EpisodeRecorder.DirFor(id);
     if (dir is null) return Results.NotFound(new { error = "no such episode", type = "not_found" });
     string zip = Path.Combine(Path.GetTempPath(), id + ".zip");
     try { if (File.Exists(zip)) File.Delete(zip); System.IO.Compression.ZipFile.CreateFromDirectory(dir, zip); }
     catch (Exception ex) { return Results.Json(new { error = ex.Message, type = "zip_failed" }, statusCode: 500); }
-    return Results.File(zip, "application/zip", id + ".zip");
+    return FilePathWithSha(ctx, zip, "application/zip", id + ".zip");
 });
 
 // Rule-based nag auto-dismisser (opt-in, allowlisted, hide-preferred, kill-switch-bound, logged).
@@ -1038,8 +1043,8 @@ api.MapPost("/desktops/move-window", (ControlState st, MoveWindowRequest r) =>
         : Deskhand.Core.Services.VirtualDesktopService.MoveWindowToDesktop((IntPtr)r.Hwnd, r.DesktopId);
     return ok ? Ok() : Results.Json(new { error = "move_failed", type = "move_failed" }, statusCode: 400);
 });
-api.MapGet("/dumps/{name}", (Deskhand.Core.Services.ProcessDumper d, string name) =>
-    Results.File(d.PathFor(name), "application/octet-stream", name));
+api.MapGet("/dumps/{name}", (Deskhand.Core.Services.ProcessDumper d, HttpContext ctx, string name) =>
+    FilePathWithSha(ctx, d.PathFor(name), "application/octet-stream", name));
 api.MapPost("/process/launch", (IAutomationBackend b, LaunchRequest r) =>
     Results.Ok(b.LaunchProcess(r.Path, r.Args, r.WorkingDir, r.WaitForWindowMs ?? 10000)));
 
@@ -1101,11 +1106,11 @@ api.MapPost("/capture/element", (IAutomationBackend b, HttpContext ctx, Deskhand
 
 // Saved screenshots: list + download.
 api.MapGet("/screenshots", (Deskhand.Core.Services.ScreenshotStore ss) => Results.Ok(ss.List()));
-api.MapGet("/screenshots/{name}", (Deskhand.Core.Services.ScreenshotStore ss, string name) =>
+api.MapGet("/screenshots/{name}", (Deskhand.Core.Services.ScreenshotStore ss, HttpContext ctx, string name) =>
 {
     var path = ss.PathFor(name);
     if (!File.Exists(path)) return Results.NotFound(new { error = "not found", type = "not_found" });
-    return Results.File(path, name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ? "image/jpeg" : "image/png", name);
+    return FilePathWithSha(ctx, path, name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ? "image/jpeg" : "image/png", name);
 });
 
 // Phase 2: capture the current input desktop (secure desktop when run as SYSTEM).
@@ -1286,6 +1291,22 @@ static IResult WriteCapture(HttpContext ctx, Deskhand.Core.Services.ScreenshotSt
 
     return Results.Ok(new CaptureJson(
         c.Desktop, c.Rect, c.Monitor, c.DpiScale, img.Format, Convert.ToBase64String(img.Bytes), img.Scale));
+}
+
+// Serve a file, attaching an X-Content-SHA256 header (whole-file digest) when the caller opts in with
+// ?sha256=true — so downloads of dumps/recordings/episodes/screenshots can be verified. Opt-in because it
+// re-reads the content to hash it.
+static bool WantsSha(HttpContext ctx) => string.Equals(ctx.Request.Query["sha256"], "true", StringComparison.OrdinalIgnoreCase);
+static IResult FileBytesWithSha(HttpContext ctx, byte[] bytes, string mime, string? name)
+{
+    if (WantsSha(ctx)) try { ctx.Response.Headers["X-Content-SHA256"] = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(); } catch { }
+    return Results.File(bytes, mime, name);
+}
+static IResult FilePathWithSha(HttpContext ctx, string path, string mime, string? name, bool range = false)
+{
+    if (WantsSha(ctx) && File.Exists(path))
+        try { using var fs = File.OpenRead(path); ctx.Response.Headers["X-Content-SHA256"] = Convert.ToHexString(SHA256.HashData(fs)).ToLowerInvariant(); } catch { }
+    return Results.File(path, mime, name, enableRangeProcessing: range);
 }
 
 static bool FixedEquals(string a, string b)

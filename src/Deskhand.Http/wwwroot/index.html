@@ -371,8 +371,9 @@
         <button class="btn sm a" id="fsDelSel" title="Delete selected (to Recycle Bin)">Delete</button>
       </div>
       <div class="row" id="fsSearchRow" style="margin-top:8px">
-        <input type="text" id="fsSearch" placeholder="Search this folder &amp; subfolders by name (substring, or a glob like *.log)" style="flex:1;font-family:var(--mono);font-size:12px">
-        <button class="btn" id="fsSearchBtn" title="Recursive name search under the current folder">Search</button>
+        <input type="text" id="fsSearch" placeholder="Search this folder &amp; subfolders (names, or file contents)" style="flex:1;font-family:var(--mono);font-size:12px">
+        <label class="lbl" title="Search inside files (grep) instead of file names" style="display:flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="fsSearchContents"> contents</label>
+        <button class="btn" id="fsSearchBtn" title="Recursive search under the current folder">Search</button>
         <button class="btn sm" id="fsSearchClear" title="Back to the folder listing" hidden>Clear</button>
       </div>
       <div class="coordbar" id="fsCrumb" style="margin:10px 0"></div>
@@ -1147,12 +1148,37 @@ const loadFiles=guard(async(path)=>{
   if(!d.entries.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(empty)"; sect.append(em); }
   body.append(sect);
 });
+// content search (grep): renders matching lines (file · line · text) in place of the listing.
+const fsGrepRender=async(q)=>{
+  const d=await api("/fs/grep?path="+encodeURIComponent(fsCurrent)+"&q="+encodeURIComponent(q)+"&max=500");
+  const body=$("#fsBody"); body.innerHTML=""; $("#fsSearchClear").hidden=false;
+  if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; return; }
+  const sect=elm("div","sect"), h=elm("div","h");
+  let note=`${d.matches} line${d.matches===1?"":"s"} in ${d.filesMatched} file${d.filesMatched===1?"":"s"} for "${d.query}"`;
+  if(d.truncated) note+=" · capped"; if(d.timedOut) note+=" · timed out, narrow the query";
+  h.innerHTML=`contents <span class="count">${note}</span>`; sect.append(h);
+  const root=(d.root||fsCurrent).replace(/\\+$/,""), rl=root.toLowerCase();
+  d.results.forEach(m=>{
+    const item=elm("div"); item.style.cssText="padding:5px 7px;border-bottom:1px solid var(--line)";
+    const head=elm("div"); head.style.cssText="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap";
+    const t=elm("a"); t.textContent=m.name; t.style.cursor="pointer"; t.title=m.path; t.onclick=guard(async()=>fsView(m.path,m.name));
+    const ln=elm("span"); ln.textContent="line "+m.line; ln.style.cssText="color:var(--ink-3);font-size:11px";
+    const parent=m.path.replace(/\\[^\\]*$/,""); let rel=parent; if(parent.toLowerCase().startsWith(rl)) rel=parent.slice(root.length).replace(/^\\+/,"");
+    const relSpan=elm("span"); relSpan.textContent=rel||""; relSpan.style.cssText="color:var(--ink-3);font-size:11px";
+    head.append(t,ln,relSpan);
+    const code=elm("div"); code.textContent=m.text; code.style.cssText="font-family:var(--mono);font-size:11px;color:var(--ink-2);white-space:pre-wrap;word-break:break-all;margin-top:2px";
+    item.append(head,code); sect.append(item);
+  });
+  if(!d.results.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(no matches in file contents)"; sect.append(em); }
+  body.append(sect);
+};
 // recursive name search under the current folder; renders matches (with their subfolder) in place of the listing.
 const fsSearchRun=guard(async()=>{
   const q=$("#fsSearch").value.trim();
   if(!q) return;
   if(fsIsRoot||!fsCurrent){ toast("Open a drive or folder first, then search inside it.",true); return; }
   const body=$("#fsBody"); body.innerHTML='<div style="color:var(--ink-3);font-size:12px;padding:8px 7px">Searching…</div>';
+  if($("#fsSearchContents").checked){ await fsGrepRender(q); return; }
   const d=await api("/fs/search?path="+encodeURIComponent(fsCurrent)+"&q="+encodeURIComponent(q)+"&max=500");
   body.innerHTML=""; $("#fsSearchClear").hidden=false;
   if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; return; }

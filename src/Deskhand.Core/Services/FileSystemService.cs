@@ -5,6 +5,8 @@ namespace Deskhand.Core.Services;
 public record FileEntryDto(string Name, string Path, bool IsDirectory, long? Size, DateTime? Modified, string? Extension);
 public record DirListingDto(string Path, string? Parent, bool IsRoot, IReadOnlyList<FileEntryDto> Entries, string? Error = null);
 public record FileSearchDto(string Root, string Query, int Matches, bool Truncated, bool TimedOut, long ScannedDirs, IReadOnlyList<FileEntryDto> Results, string? Error = null);
+public record ContentMatchDto(string Path, string Name, int Line, string Text);
+public record ContentSearchDto(string Root, string Query, int Matches, int FilesMatched, bool Truncated, bool TimedOut, long ScannedFiles, IReadOnlyList<ContentMatchDto> Results, string? Error = null);
 public record FileContentDto(string Path, long Size, string? Base64, string? Error = null);
 public record FileTextDto(string Path, string Name, long Size, long ReadBytes, bool Truncated, bool Binary, string? Text, string? Error = null);
 public record WriteResultDto(string Path, long Size, bool Overwritten, string? Error = null);
@@ -160,6 +162,107 @@ public static class FileSystemService
             .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         return new FileSearchDto(full, query, ordered.Count, truncated, timedOut, scanned, ordered);
+    }
+
+    /// <summary>Recursively search file CONTENTS under a folder for lines matching <paramref name="query"/> —
+    /// a plain substring, or a regex when <paramref name="regex"/> is true. <paramref name="nameGlob"/> narrows
+    /// which files are read (e.g. <c>*.cs</c>). Text files only: binary files (a NUL byte in the sampled head)
+    /// and files over <paramref name="maxFileBytes"/> are skipped. Bounded by maxResults, a time budget, and
+    /// depth; access-denied subtrees and reparse points are skipped. Returns matching lines with 1-based line
+    /// numbers (each line trimmed and capped).</summary>
+    public static ContentSearchDto SearchContent(string? path, string? query, string? nameGlob = null,
+        bool regex = false, bool ignoreCase = true, int maxResults = 200, long maxFileBytes = 5_000_000,
+        int maxDepth = 24, int timeBudgetMs = 10_000)
+    {
+        path = (path ?? "").Trim().Trim('"');
+        query ??= "";
+        var empty = Array.Empty<ContentMatchDto>();
+        if (query.Length == 0) return new ContentSearchDto(path, "", 0, 0, false, false, 0, empty, "No search query.");
+        if (path.Length == 0) return new ContentSearchDto(path, query, 0, 0, false, false, 0, empty, "Content search needs a folder to search in — open a drive or folder first.");
+
+        string full;
+        try { full = System.IO.Path.GetFullPath(path); }
+        catch (Exception ex) { return new ContentSearchDto(path, query, 0, 0, false, false, 0, empty, "Invalid path: " + ex.Message); }
+        if (!Directory.Exists(full)) return new ContentSearchDto(full, query, 0, 0, false, false, 0, empty, "Directory not found.");
+
+        maxResults = Math.Clamp(maxResults, 1, 2000);
+        maxDepth = Math.Clamp(maxDepth, 1, 64);
+        timeBudgetMs = Math.Clamp(timeBudgetMs, 500, 60_000);
+        maxFileBytes = Math.Clamp(maxFileBytes, 1024, 50_000_000);
+
+        Func<string, bool> nameMatch = nameGlob is { Length: > 0 } ? BuildMatcher(nameGlob) : (_ => true);
+        Func<string, bool> lineMatch;
+        if (regex)
+        {
+            System.Text.RegularExpressions.Regex re;
+            try
+            {
+                re = new System.Text.RegularExpressions.Regex(query,
+                    (ignoreCase ? System.Text.RegularExpressions.RegexOptions.IgnoreCase : 0)
+                    | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            }
+            catch (Exception ex) { return new ContentSearchDto(full, query, 0, 0, false, false, 0, empty, "Invalid regex: " + ex.Message); }
+            lineMatch = s => re.IsMatch(s);
+        }
+        else
+        {
+            var cmp = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            lineMatch = s => s.Contains(query, cmp);
+        }
+
+        var results = new List<ContentMatchDto>();
+        var filesWith = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long scannedFiles = 0; bool truncated = false, timedOut = false;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var queue = new Queue<(DirectoryInfo dir, int depth)>();
+        queue.Enqueue((new DirectoryInfo(full), 0));
+
+        while (queue.Count > 0)
+        {
+            if (results.Count >= maxResults) { truncated = true; break; }
+            if (sw.ElapsedMilliseconds > timeBudgetMs) { timedOut = true; break; }
+            var (dir, depth) = queue.Dequeue();
+
+            foreach (var f in Safe(() => dir.EnumerateFiles()))
+            {
+                if (results.Count >= maxResults) { truncated = true; break; }
+                if (sw.ElapsedMilliseconds > timeBudgetMs) { timedOut = true; break; }
+                if (!nameMatch(f.Name)) continue;
+                long flen; try { flen = f.Length; } catch { continue; }
+                if (flen > maxFileBytes) continue;
+                scannedFiles++;
+
+                byte[] bytes;
+                try { bytes = File.ReadAllBytes(f.FullName); } catch { continue; }
+                int headLen = Math.Min(bytes.Length, 4096);
+                if (Array.IndexOf(bytes, (byte)0, 0, headLen) >= 0) continue;  // looks binary
+                int bom = (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) ? 3 : 0;
+                string text;
+                try { text = System.Text.Encoding.UTF8.GetString(bytes, bom, bytes.Length - bom); } catch { continue; }
+
+                int line = 0;
+                foreach (var raw in text.Split('\n'))
+                {
+                    line++;
+                    string s = raw.TrimEnd('\r');
+                    if (!lineMatch(s)) continue;
+                    filesWith.Add(f.FullName);
+                    string shown = s.Trim();
+                    if (shown.Length > 400) shown = shown[..400] + "…";
+                    results.Add(new ContentMatchDto(f.FullName, f.Name, line, shown));
+                    if (results.Count >= maxResults) { truncated = true; break; }
+                }
+            }
+
+            if (depth >= maxDepth) continue;
+            foreach (var d in Safe(() => dir.EnumerateDirectories()))
+            {
+                try { if ((d.Attributes & FileAttributes.ReparsePoint) != 0) continue; } catch { continue; }
+                queue.Enqueue((d, depth + 1));
+            }
+        }
+
+        return new ContentSearchDto(full, query, results.Count, filesWith.Count, truncated, timedOut, scannedFiles, results);
     }
 
     // substring (default) or glob (when the query has * or ?), matched against the entry name, case-insensitive.

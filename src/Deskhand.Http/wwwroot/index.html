@@ -515,6 +515,7 @@
           <select id="monSel"></select>
           <select id="fmtSel"><option value="png">png</option><option value="jpeg">jpeg</option></select>
           <button class="btn p" id="capBtn">Capture</button>
+          <button class="btn" id="liveBtn" title="Live MJPEG view (~4 fps)">▶ Live</button>
           <button class="btn" id="saveBtn" title="Download the current screenshot">⬇ Save</button>
         </header>
         <div class="body">
@@ -964,6 +965,27 @@ function finishRec(st){
 }
 function saveImg(src, base){ if(!src){ toast("capture something first",true); return; } const a=document.createElement("a"); a.href=src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); a.download=`${base}-${ts}.${src.startsWith("data:image/jpeg")?"jpg":"png"}`; document.body.appendChild(a); a.click(); a.remove(); toast("saved"); }
 $("#saveBtn").onclick=()=>{ const img=$("#viewer img"); saveImg(img&&img.src, "deskhand-screen"); };
+// live MJPEG view: point an <img> at /capture/stream (multipart/x-mixed-replace). Stop by clearing its src.
+let liveOn=false;
+function liveStop(){
+  liveOn=false; const b=$("#liveBtn"); if(b){ b.textContent="▶ Live"; b.classList.remove("a"); }
+  const v=$("#viewer"); const im=v.querySelector("img.live"); if(im){ im.src=""; im.remove(); }
+  const e=v.querySelector(".vempty"); if(e&&!v.querySelector("img")) e.style.display="";
+  const cb=$("#capBtn"); if(cb) cb.disabled=false;
+}
+function liveStart(){
+  liveOn=true; const b=$("#liveBtn"); b.textContent="■ Stop"; b.classList.add("a");
+  const monVal=$("#monSel").value;
+  let url="/capture/stream?fps=4&quality=55"+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
+  if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
+  const v=$("#viewer"); v.querySelectorAll("img").forEach(n=>n.remove());
+  const e=v.querySelector(".vempty"); if(e) e.style.display="none";
+  const img=new Image(); img.className="live"; img.style.cssText="display:block;max-width:100%;height:auto";
+  img.onerror=()=>{ if(liveOn){ toast("live stream ended",true); liveStop(); } };
+  v.insertBefore(img,$("#marker")); $("#marker").style.display="none"; img.src=url;
+  $("#capBtn").disabled=true;
+}
+$("#liveBtn").onclick=()=>{ liveOn?liveStop():liveStart(); };
 $("#secBtn").onclick=guard(async()=>{
   const res=await api("/capture/input-desktop","POST",{format:"png"});
   const kindColor = res.kind==="secure" ? "var(--crit)" : "var(--good)";
@@ -1682,6 +1704,7 @@ $("#swRefresh").onclick=loadSoftware;
 
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
+  if(b.dataset.tab!=="screen"&&typeof liveOn!=="undefined"&&liveOn) liveStop();   // stop the live stream when leaving Screen
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   b.classList.add("active"); $("#tab-"+b.dataset.tab).classList.add("active");

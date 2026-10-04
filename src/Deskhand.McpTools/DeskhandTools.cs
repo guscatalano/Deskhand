@@ -196,6 +196,22 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_disk_health"), Description("Disk health (read-only): per drive { model, serial, status, predictFailure (SMART) }. SMART predict needs elevation on some drivers.")]
     public static string DiskHealth() => Json(Deskhand.Core.Services.DiagnosticsService.DiskHealth());
 
+    [McpServerTool(Name = "deskhand_list_displays"), Description("List connected displays (read-only): [{ device, adapter, primary, current:{width,height,refreshHz,bpp}, modes:[...] }]. `device` (e.g. \"\\\\\\\\.\\\\DISPLAY1\") is what deskhand_set_resolution targets; `modes` are the supported resolutions/refresh rates, highest first.")]
+    public static string ListDisplays() => Json(Deskhand.Core.Services.DisplayService.List());
+
+    [McpServerTool(Name = "deskhand_set_resolution"), Description("Change a display's resolution (and optionally refresh rate). device is from deskhand_list_displays (empty = the primary display); width/height are required; refreshHz 0 keeps the current rate. The mode is validated first and a bad one is rejected with a clear error (use a mode from the list). Persists (CDS_UPDATEREGISTRY). Returns { ok, device, applied:{...}, error? }. Requires armed; audited.")]
+    public static string SetResolution(ControlState state, AuditLog audit,
+        [Description("Target display device name from deskhand_list_displays; empty = primary.")] string? device,
+        [Description("Horizontal pixels.")] int width,
+        [Description("Vertical pixels.")] int height,
+        [Description("Refresh rate in Hz (optional; 0 = keep current).")] int refreshHz = 0)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.DisplayService.SetResolution(device, width, height, refreshHz);
+        audit.Record("display_resolution", $"{r.Device} -> {width}x{height}{(refreshHz > 0 ? "@" + refreshHz : "")}", r.Ok ? "ok" : $"FAIL {r.Error}");
+        return Json(r);
+    }
+
     [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));

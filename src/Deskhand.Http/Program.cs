@@ -740,6 +740,17 @@ api.MapGet("/windows/all", () => Results.Ok(Deskhand.Core.Services.WindowWatchSe
 api.MapPost("/windows/baseline", () => Results.Ok(Deskhand.Core.Services.WindowWatchService.Baseline()));
 api.MapGet("/windows/changes", (string? baseline) => Results.Ok(Deskhand.Core.Services.WindowWatchService.Changes(baseline)));
 
+// Displays: list connected monitors + their modes (read-only); change a display's resolution/refresh
+// (armed + audited — it alters the desktop; validated with a test pass first).
+api.MapGet("/display", () => Results.Ok(Deskhand.Core.Services.DisplayService.List()));
+api.MapPost("/display/resolution", (ControlState st, AuditLog al, DisplayResRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.DisplayService.SetResolution(r.Device, r.Width, r.Height, r.RefreshHz ?? 0);
+    al.Record("display_resolution", $"{res.Device} -> {r.Width}x{r.Height}{(r.RefreshHz is > 0 ? "@" + r.RefreshHz : "")}", res.Ok ? "ok" : $"FAIL {res.Error}");
+    return res.Ok ? Results.Ok(res) : Results.Json(res, statusCode: 400);
+});
+
 // Dismiss open dialogs/modals non-committally (Cancel/Close/No before OK; never Yes unless asked). Armed + audited.
 api.MapPost("/dismiss-modals", (IAutomationBackend b, ControlState st, AuditLog al, DismissRequest? r) =>
 {
@@ -1082,6 +1093,44 @@ api.MapPost("/uia/select", (IAutomationBackend b, RefRequest r) => { b.Select(r.
 api.MapPost("/uia/set-focus", (IAutomationBackend b, RefRequest r) => { b.SetFocus(r.Reference); return Ok(); });
 
 // ---- capture ----
+// Live screen view: an MJPEG stream (multipart/x-mixed-replace) a browser <img> or a player can consume
+// directly, so you can WATCH a machine instead of re-capturing by hand. fps default 4 (cap 15); quality is
+// JPEG 10-95; maxWidth downscales for bandwidth. Frames are captured directly (no per-frame toast/audit) —
+// one capture toast fires at stream start if capture-notify is on, and the open stream is audited once.
+// Gated on captureEnabled; ends when the client disconnects.
+api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier tn, HttpContext ctx, int? monitor, int? fps, int? quality, int? maxWidth) =>
+{
+    if (!st.CaptureEnabled) { ctx.Response.StatusCode = 403; await ctx.Response.WriteAsJsonAsync(new { error = "capture disabled", type = "capability_disabled" }); return; }
+    int frames = Math.Clamp(fps ?? 4, 1, 15);
+    int q = Math.Clamp(quality ?? 55, 10, 95);
+    int delayMs = 1000 / frames;
+    if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is live-streaming the screen · {frames} fps"); } catch { } }
+    al.Record("capture_stream", $"monitor={monitor} fps={frames} q={q}", "started");
+    ctx.Response.Headers.CacheControl = "no-cache, no-store";
+    ctx.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
+    var ct = ctx.RequestAborted;
+    var crlf = System.Text.Encoding.ASCII.GetBytes("\r\n");
+    try
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            byte[] jpeg;
+            try { var c = localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q); jpeg = Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, maxWidth, null, q).Bytes; }
+            catch { break; }
+            var head = System.Text.Encoding.ASCII.GetBytes($"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n");
+            await ctx.Response.Body.WriteAsync(head, ct);
+            await ctx.Response.Body.WriteAsync(jpeg, ct);
+            await ctx.Response.Body.WriteAsync(crlf, ct);
+            await ctx.Response.Body.FlushAsync(ct);
+            int rest = delayMs - (int)sw.ElapsedMilliseconds;
+            if (rest > 0) await Task.Delay(rest, ct);
+        }
+    }
+    catch (OperationCanceledException) { }
+    catch { }
+});
+
 // By default the image is returned to the caller (base64 JSON, or raw bytes with ?raw=true / Accept:image/*).
 // Pass save=true (body or ?save=true) to instead SAVE it on this machine (screenshots dir, audited, 24h
 // auto-delete) and return the file path + a /screenshots/{name} download URL.
@@ -1341,6 +1390,7 @@ record FirewallOpenRequest(int Port, string? Protocol, string? Direction, string
 record FirewallCloseRequest(int Port, string? Protocol, string? Direction, bool? All);
 record ClipboardSetRequest(string? Text);
 record WindowActionRequest(long Hwnd, string Action, int? X, int? Y, int? Width, int? Height);
+record DisplayResRequest(string? Device, int Width, int Height, int? RefreshHz);
 record OcrScreenRequest(int? Monitor);
 record VisionFindRequest(string? TemplateBase64, string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height,
     long? Hwnd, string? Reference, double? Threshold, int? MaxResults);

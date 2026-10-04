@@ -409,6 +409,25 @@ api.MapGet("/hardware/detail", () => Results.Ok(Deskhand.Core.Services.HardwareI
 api.MapGet("/sessions", () => Results.Ok(Deskhand.Core.Services.SessionsService.List()));
 // Default audio endpoints (Core Audio): playback + recording device, volume %, mute.
 api.MapGet("/audio/default", () => Results.Ok(Deskhand.Core.Services.AudioService.Defaults()));
+// Set the default endpoint's volume / mute (armed + audited). capture=true targets the microphone.
+api.MapPost("/audio/volume", (ControlState st, AuditLog al, AudioVolumeRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var res = Deskhand.Core.Services.AudioService.SetVolume(r.Percent, r.Capture ?? false);
+    al.Record("audio_volume", $"{(r.Capture ?? false ? "mic" : "out")}={r.Percent}%", res is null ? "FAIL no endpoint" : "ok");
+    return res is null ? Results.Json(new { error = "no audio endpoint", type = "not_found" }, statusCode: 404) : Results.Ok(res);
+});
+api.MapPost("/audio/mute", (ControlState st, AuditLog al, AudioMuteRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    bool cap = r.Capture ?? false;
+    var res = (r.Toggle ?? false) ? Deskhand.Core.Services.AudioService.ToggleMute(cap)
+                                  : Deskhand.Core.Services.AudioService.SetMute(r.Mute ?? true, cap);
+    al.Record("audio_mute", $"{(cap ? "mic" : "out")} toggle={r.Toggle ?? false} mute={r.Mute}", res is null ? "FAIL no endpoint" : $"muted={res.Muted}");
+    return res is null ? Results.Json(new { error = "no audio endpoint", type = "not_found" }, statusCode: 404) : Results.Ok(res);
+});
+// Current mouse cursor position (read-only).
+api.MapGet("/mouse/position", () => { var (x, y) = Deskhand.Core.Services.InputInjector.GetCursorPosition(); return Results.Ok(new { x, y }); });
 
 // Software / configuration inventory (read-only).
 api.MapGet("/software/programs", () => Results.Ok(Deskhand.Core.Services.SoftwareService.InstalledPrograms()));
@@ -715,7 +734,9 @@ api.MapPost("/window", (ControlState st, AuditLog al, WindowActionRequest r) =>
         "move" => Deskhand.Core.Services.WindowService.Move(r.Hwnd, r.X ?? 0, r.Y ?? 0),
         "resize" => Deskhand.Core.Services.WindowService.Resize(r.Hwnd, r.Width ?? 0, r.Height ?? 0),
         "bounds" or "set_bounds" => Deskhand.Core.Services.WindowService.SetBounds(r.Hwnd, r.X ?? 0, r.Y ?? 0, r.Width ?? 0, r.Height ?? 0),
-        _ => new Deskhand.Core.Services.WindowActionResultDto(false, r.Hwnd, r.Action ?? "", Error: "Unknown action. Use activate|minimize|maximize|restore|close|move|resize|bounds."),
+        "topmost" => Deskhand.Core.Services.WindowService.TopMost(r.Hwnd, true),
+        "notopmost" or "untopmost" => Deskhand.Core.Services.WindowService.TopMost(r.Hwnd, false),
+        _ => new Deskhand.Core.Services.WindowActionResultDto(false, r.Hwnd, r.Action ?? "", Error: "Unknown action. Use activate|minimize|maximize|restore|close|move|resize|bounds|topmost|notopmost."),
     };
     al.Record("window", $"{res.Action} hwnd={r.Hwnd}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
     return Results.Json(res, statusCode: res.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
@@ -1412,6 +1433,8 @@ record FirewallCloseRequest(int Port, string? Protocol, string? Direction, bool?
 record ClipboardSetRequest(string? Text);
 record ClipboardImageRequest(string? ImageBase64);
 record ClipboardFilesRequest(string[]? Paths);
+record AudioVolumeRequest(int Percent, bool? Capture);
+record AudioMuteRequest(bool? Mute, bool? Toggle, bool? Capture);
 record WindowActionRequest(long Hwnd, string Action, int? X, int? Y, int? Width, int? Height);
 record DisplayResRequest(string? Device, int Width, int Height, int? RefreshHz);
 record OcrScreenRequest(int? Monitor);

@@ -72,6 +72,10 @@ public static class WindowService
         SetWindowPos(h, IntPtr.Zero, x, y, Math.Max(0, width), Math.Max(0, height), SWP_NOZORDER | SWP_NOACTIVATE);
     });
 
+    // Pin above (or unpin from above) all non-topmost windows.
+    public static WindowActionResultDto TopMost(long hwnd, bool on) => Do(hwnd, on ? "topmost" : "notopmost", h =>
+        SetWindowPos(h, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
+
     private static WindowActionResultDto Do(long hwnd, string action, Action<IntPtr> act)
     {
         var h = (IntPtr)hwnd;

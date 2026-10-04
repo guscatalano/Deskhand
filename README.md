@@ -437,6 +437,8 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /firewall/rules` | `?direction=&port=&enabledOnly=&contains=&managedOnly=&max=` | List Windows Firewall rules (read-only) |
 | `POST /firewall/open` | `{port, protocol?, direction?, remoteAddresses?, name?}` | Open a port (adds a Deskhand-tagged Allow rule) |
 | `POST /firewall/close` | `{port, protocol?, direction?}` or `{all:true}` | Close a port **Deskhand opened** (never touches other rules) |
+| `GET /audio/default` · `POST /audio/volume` · `POST /audio/mute` | `{percent, capture?}` · `{mute?, toggle?, capture?}` | Read default endpoints · **set volume** (0–100) · **mute/unmute/toggle** (armed + audited; `capture` = microphone) |
+| `GET /mouse/position` | — | Current cursor position `{x, y}` |
 | `GET /clipboard` · `POST /clipboard` | `{text}` | Read / set the clipboard **text** (armed) |
 | `GET/POST /clipboard/image` · `GET/POST /clipboard/files` | `{imageBase64}` · `{paths[]}` | Read / set the clipboard **image** (base64 PNG ↔ CF_DIB) and **file list** (CF_HDROP) (armed; sets audited) |
 | `POST /window` | `{hwnd, action, x?, y?, width?, height?}` | activate·minimize·maximize·restore·close·move·resize·bounds a window (armed) |

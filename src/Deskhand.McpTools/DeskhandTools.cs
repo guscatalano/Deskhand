@@ -148,6 +148,29 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_audio_defaults"), Description("Default audio endpoints (read-only, Core Audio): { playback, recording } each with { name, id, volumePercent (0-100), muted }.")]
     public static string AudioDefaults() => Json(Deskhand.Core.Services.AudioService.Defaults());
 
+    [McpServerTool(Name = "deskhand_set_volume"), Description("Set the default audio endpoint's master volume to percent (0-100). capture=true targets the default microphone instead of playback. Returns the new { name, id, volumePercent, muted } (null if there's no such endpoint). Requires armed; audited.")]
+    public static string SetVolume(ControlState state, AuditLog audit,
+        [Description("Volume 0-100.")] int percent,
+        [Description("Target the microphone instead of playback.")] bool capture = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.AudioService.SetVolume(percent, capture);
+        audit.Record("audio_volume", $"{(capture ? "mic" : "out")}={percent}%", r is null ? "FAIL no endpoint" : "ok");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_set_mute"), Description("Mute/unmute the default audio endpoint. Pass toggle=true to flip it, else mute=true/false. capture=true targets the default microphone. Returns the new endpoint state. Requires armed; audited.")]
+    public static string SetMute(ControlState state, AuditLog audit,
+        [Description("Mute (true) or unmute (false). Ignored when toggle=true.")] bool mute = true,
+        [Description("Flip the current mute state.")] bool toggle = false,
+        [Description("Target the microphone instead of playback.")] bool capture = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = toggle ? Deskhand.Core.Services.AudioService.ToggleMute(capture) : Deskhand.Core.Services.AudioService.SetMute(mute, capture);
+        audit.Record("audio_mute", $"{(capture ? "mic" : "out")} toggle={toggle} mute={mute}", r is null ? "FAIL no endpoint" : $"muted={r.Muted}");
+        return Json(r);
+    }
+
     [McpServerTool(Name = "deskhand_hardware_detail"), Description("Detailed hardware inventory (read-only, WMI): computer manufacturer/model, BIOS (version/date/serial/SMBIOS), motherboard (manufacturer/product/serial), GPUs (name/driver/VRAM/resolution/refresh), monitors (manufacturer/model/serial/year), and RAM sticks (slot/capacity/speed/manufacturer/part/type e.g. DDR5).")]
     public static string HardwareDetail() => Json(Deskhand.Core.Services.HardwareInfoService.Detail());
 
@@ -470,7 +493,7 @@ public static class DeskhandTools
         return Json(r);
     }
 
-    [McpServerTool(Name = "deskhand_window"), Description("Manage a top-level window by its nativeWindowHandle (from deskhand_list_windows): action = activate|minimize|maximize|restore|close|move|resize|bounds. move needs x,y; resize needs width,height; bounds needs all four (screen pixels). Returns { ok, hwnd, action, title, state, bounds, error? }. Requires armed; audited.")]
+    [McpServerTool(Name = "deskhand_window"), Description("Manage a top-level window by its nativeWindowHandle (from deskhand_list_windows): action = activate|minimize|maximize|restore|close|move|resize|bounds|topmost|notopmost. move needs x,y; resize needs width,height; bounds needs all four (screen pixels); topmost/notopmost pin/unpin above other windows. Returns { ok, hwnd, action, title, state, bounds, error? }. Requires armed; audited.")]
     public static string Window(ControlState state, AuditLog audit,
         [Description("Native window handle (nativeWindowHandle from list_windows).")] long hwnd,
         [Description("activate|minimize|maximize|restore|close|move|resize|bounds")] string action,
@@ -490,6 +513,8 @@ public static class DeskhandTools
             "move" => Deskhand.Core.Services.WindowService.Move(hwnd, x ?? 0, y ?? 0),
             "resize" => Deskhand.Core.Services.WindowService.Resize(hwnd, width ?? 0, height ?? 0),
             "bounds" or "set_bounds" => Deskhand.Core.Services.WindowService.SetBounds(hwnd, x ?? 0, y ?? 0, width ?? 0, height ?? 0),
+            "topmost" => Deskhand.Core.Services.WindowService.TopMost(hwnd, true),
+            "notopmost" or "untopmost" => Deskhand.Core.Services.WindowService.TopMost(hwnd, false),
             _ => new Deskhand.Core.Services.WindowActionResultDto(false, hwnd, action ?? "", Error: "Unknown action. Use activate|minimize|maximize|restore|close|move|resize|bounds."),
         };
         audit.Record("window", $"{res.Action} hwnd={hwnd}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
@@ -1180,6 +1205,9 @@ public static class DeskhandTools
 
     [McpServerTool(Name = "deskhand_mouse_move"), Description("Move the mouse to a virtual-desktop pixel coordinate.")]
     public static string MouseMove(IAutomationBackend b, int x, int y) { b.MouseMove(x, y); return "ok"; }
+
+    [McpServerTool(Name = "deskhand_mouse_position"), Description("Get the current mouse cursor position in virtual-desktop pixels: { x, y }. Read-only.")]
+    public static string MousePosition() { var (x, y) = Deskhand.Core.Services.InputInjector.GetCursorPosition(); return Json(new { x, y }); }
 
     [McpServerTool(Name = "deskhand_mouse_click"), Description("Click at a virtual-desktop pixel. x and y are REQUIRED — a click with no target is rejected (so it can't fire wherever the cursor happens to be). button: left|right|middle. count: 2 for double-click. To click where the cursor already is, move there first with deskhand_mouse_move.")]
     public static string MouseClick(IAutomationBackend b, int? x = null, int? y = null, string button = "left", int count = 1)

@@ -209,6 +209,14 @@ public static class InputInjector
             "left" => (ushort)0x25,
             "right" => (ushort)0x27,
             "printscreen" or "prtsc" => (ushort)0x2C,
+            // media / volume keys
+            "volumemute" or "mute" => (ushort)0xAD,
+            "volumedown" or "voldown" => (ushort)0xAE,
+            "volumeup" or "volup" => (ushort)0xAF,
+            "medianext" or "nexttrack" => (ushort)0xB0,
+            "mediaprev" or "prevtrack" or "mediaprevious" => (ushort)0xB1,
+            "mediastop" => (ushort)0xB2,
+            "mediaplaypause" or "playpause" or "mediaplay" => (ushort)0xB3,
             _ => null,
         };
         if (named is not null) return (named.Value, false);
@@ -227,4 +235,13 @@ public static class InputInjector
 
         throw new ArgumentException($"Unknown key token '{token}'.");
     }
+
+    /// <summary>Current mouse cursor position in virtual-desktop pixels.</summary>
+    public static (int X, int Y) GetCursorPosition()
+    {
+        return GetCursorPos(out POINT p) ? (p.X, p.Y) : (0, 0);
+    }
+
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X; public int Y; }
 }

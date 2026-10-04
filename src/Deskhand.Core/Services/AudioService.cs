@@ -15,6 +15,44 @@ public static class AudioService
 {
     public static AudioDefaultsDto Defaults() => new(Get(EDataFlow.eRender), Get(EDataFlow.eCapture));
 
+    /// <summary>Set the default endpoint's master volume (0–100 %). capture=true targets the microphone.
+    /// Returns the new endpoint state (null if there's no such endpoint).</summary>
+    public static AudioEndpointDto? SetVolume(int percent, bool capture = false)
+        => Apply(capture ? EDataFlow.eCapture : EDataFlow.eRender,
+                 v => v.SetMasterVolumeLevelScalar(Math.Clamp(percent, 0, 100) / 100f, IntPtr.Zero));
+
+    /// <summary>Mute or unmute the default endpoint. capture=true targets the microphone.</summary>
+    public static AudioEndpointDto? SetMute(bool mute, bool capture = false)
+        => Apply(capture ? EDataFlow.eCapture : EDataFlow.eRender, v => v.SetMute(mute ? 1 : 0, IntPtr.Zero));
+
+    /// <summary>Toggle mute on the default endpoint.</summary>
+    public static AudioEndpointDto? ToggleMute(bool capture = false)
+        => Apply(capture ? EDataFlow.eCapture : EDataFlow.eRender,
+                 v => { if (v.GetMute(out int m) == 0) v.SetMute(m != 0 ? 0 : 1, IntPtr.Zero); });
+
+    private static AudioEndpointDto? Apply(EDataFlow flow, Action<IAudioEndpointVolume> action)
+    {
+        object? enumObj = null, devObj = null, volObj = null;
+        try
+        {
+            enumObj = new MMDeviceEnumerator();
+            var en = (IMMDeviceEnumerator)enumObj;
+            if (en.GetDefaultAudioEndpoint(flow, ERole.eMultimedia, out IMMDevice dev) != 0 || dev is null) return null;
+            devObj = dev;
+            var iid = typeof(IAudioEndpointVolume).GUID;
+            if (dev.Activate(ref iid, 23 /*CLSCTX_ALL*/, IntPtr.Zero, out object vo) == 0 && vo is IAudioEndpointVolume v)
+            { volObj = vo; action(v); }
+            else return null;
+        }
+        catch { return null; }
+        finally
+        {
+            foreach (var o in new[] { volObj, devObj, enumObj })
+                if (o is not null && Marshal.IsComObject(o)) try { Marshal.ReleaseComObject(o); } catch { }
+        }
+        return Get(flow);
+    }
+
     private static AudioEndpointDto? Get(EDataFlow flow)
     {
         object? enumObj = null, devObj = null, volObj = null, storeObj = null;

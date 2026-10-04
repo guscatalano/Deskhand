@@ -68,6 +68,7 @@ internal static class NativeMethods
     public const int SW_MINIMIZE = 6;
     public const int SW_SHOWNORMAL = 1;
     public const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010;
+    public static readonly IntPtr HWND_TOPMOST = new(-1), HWND_NOTOPMOST = new(-2);
     public const uint WM_CLOSE = 0x0010;
 
     [DllImport("user32.dll", SetLastError = true)]

@@ -12,6 +12,46 @@ public static class ServiceControlService
     public static ServiceControlDto Start(string name) => Invoke(name, "start", "StartService");
     public static ServiceControlDto Stop(string name) => Invoke(name, "stop", "StopService");
 
+    /// <summary>Create a Windows service (via sc.exe). binPath is the full command line for the service
+    /// executable. startMode: auto|demand|disabled (default demand). Needs elevation.</summary>
+    public static ServiceControlDto Create(string name, string? binPath, string? displayName, string? startMode)
+    {
+        name = (name ?? "").Trim();
+        binPath = (binPath ?? "").Trim();
+        if (name.Length == 0) return new ServiceControlDto(false, name, "create", Error: "No service name.");
+        if (binPath.Length == 0) return new ServiceControlDto(false, name, "create", Error: "No binPath (the service executable command line).");
+        string start = (startMode ?? "demand").Trim().ToLowerInvariant() switch
+        {
+            "auto" or "automatic" => "auto",
+            "disabled" => "disabled",
+            "boot" => "boot",
+            "system" => "system",
+            _ => "demand",
+        };
+        var args = new List<string> { "create", name, "binPath=", binPath, "start=", start };
+        if (!string.IsNullOrWhiteSpace(displayName)) { args.Add("DisplayName="); args.Add(displayName!); }
+        return Sc(name, "create", args);
+    }
+
+    public static ServiceControlDto Delete(string name) => Sc(name, "delete", new List<string> { "delete", (name ?? "").Trim() });
+
+    private static ServiceControlDto Sc(string name, string action, List<string> args)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("sc.exe")
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            foreach (var a in args) psi.ArgumentList.Add(a);
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            string outp = (p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd()).Trim();
+            p.WaitForExit(20000);
+            return p.ExitCode == 0
+                ? new ServiceControlDto(true, name, action, State(name))
+                : new ServiceControlDto(false, name, action, Error: outp.Length > 0 ? outp : $"sc exited {p.ExitCode} (service changes usually need elevation).");
+        }
+        catch (Exception ex) { return new ServiceControlDto(false, name, action, Error: ex.Message); }
+    }
+
     public static ServiceControlDto Restart(string name)
     {
         var stop = Invoke(name, "restart", "StopService");

@@ -440,6 +440,10 @@ All bodies and responses are JSON (camelCase). `reference` values (`el_…`) com
 | `GET /audio/default` · `POST /audio/volume` · `POST /audio/mute` | `{percent, capture?}` · `{mute?, toggle?, capture?}` | Read default endpoints · **set volume** (0–100) · **mute/unmute/toggle** (armed + audited; `capture` = microphone) |
 | `GET /mouse/position` | — | Current cursor position `{x, y}` |
 | `POST /power/action` | `{action, force?, confirm?}` | **shutdown / restart / signout / lock / sleep / hibernate** — armed **and `confirm:true`** required |
+| `GET /net/adapters` · `GET /net/ping` | `?host=&timeoutMs=` | Network **adapters** (IPs/gateways/DNS/MAC/speed) · **ping** a host for reachability |
+| `GET /net/connections` | — | Active connections + listening ports (netstat-like) |
+| `POST /capture/clipboard` | `{target?, …}` | Capture screen/region/window **straight onto the clipboard** (armed + capture) |
+| `POST /fs/mkdir` | `{path}` | Create a folder (and parents); idempotent (armed + audited) |
 | `GET /clipboard` · `POST /clipboard` | `{text}` | Read / set the clipboard **text** (armed) |
 | `GET/POST /clipboard/image` · `GET/POST /clipboard/files` | `{imageBase64}` · `{paths[]}` | Read / set the clipboard **image** (base64 PNG ↔ CF_DIB) and **file list** (CF_HDROP) (armed; sets audited) |
 | `POST /window` | `{hwnd, action, x?, y?, width?, height?}` | activate·minimize·maximize·restore·close·move·resize·bounds a window (armed) |

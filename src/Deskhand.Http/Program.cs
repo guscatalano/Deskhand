@@ -468,6 +468,9 @@ api.MapPost("/power/action", (ControlState st, AuditLog al, PowerActionRequest r
     return res.Ok ? Results.Ok(res) : Results.Json(res, statusCode: 400);
 });
 api.MapGet("/net/connections", () => Results.Ok(Deskhand.Core.Services.NetConnectionsService.List()));
+// Network adapters (IPs/gateways/DNS) and ping reachability — read-only.
+api.MapGet("/net/adapters", () => Results.Ok(Deskhand.Core.Services.NetworkService.Adapters()));
+api.MapGet("/net/ping", (string? host, int? timeoutMs) => Results.Ok(Deskhand.Core.Services.NetworkService.Ping(host, timeoutMs ?? 3000)));
 api.MapGet("/diagnostics/events", (int? count) => Results.Ok(Deskhand.Core.Services.DiagnosticsService.RecentErrors(count ?? 50)));
 api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.DiagnosticsService.DiskHealth()));
 
@@ -614,6 +617,8 @@ static IResult FsOp(ControlState st, AuditLog al, string auditAction, Func<Deskh
 }
 api.MapPost("/fs/delete", (ControlState st, AuditLog al, FsDeleteRequest r) =>
     FsOp(st, al, "file_delete", () => Deskhand.Core.Services.FileSystemService.Delete(r.Path, r.Permanent ?? false)));
+api.MapPost("/fs/mkdir", (ControlState st, AuditLog al, FsPathRequest r) =>
+    FsOp(st, al, "create_folder", () => Deskhand.Core.Services.FileSystemService.CreateFolder(r.Path)));
 api.MapPost("/fs/rename", (ControlState st, AuditLog al, FsRenameRequest r) =>
     FsOp(st, al, "file_rename", () => Deskhand.Core.Services.FileSystemService.Rename(r.Path, r.NewName)));
 api.MapPost("/fs/move", (ControlState st, AuditLog al, FsMoveRequest r) =>
@@ -942,14 +947,16 @@ api.MapPost("/service/control", (ControlState st, AuditLog al, ServiceControlReq
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
     var actn = (r.Action ?? "").Trim().ToLowerInvariant();
-    if (actn is "stop" or "restart" && r.Confirm != true)
+    if (actn is "stop" or "restart" or "delete" && r.Confirm != true)
         return Results.Json(new { ok = false, confirmationRequired = true, action = actn, name = r.Name, message = $"'{actn}' on service '{r.Name}' is destructive — resend with confirm=true." }, statusCode: 409);
     var res = actn switch
     {
         "start" => Deskhand.Core.Services.ServiceControlService.Start(r.Name),
         "stop" => Deskhand.Core.Services.ServiceControlService.Stop(r.Name),
         "restart" => Deskhand.Core.Services.ServiceControlService.Restart(r.Name),
-        _ => new Deskhand.Core.Services.ServiceControlDto(false, r.Name, r.Action ?? "", Error: "action must be start|stop|restart."),
+        "create" => Deskhand.Core.Services.ServiceControlService.Create(r.Name, r.BinPath, r.DisplayName, r.StartMode),
+        "delete" => Deskhand.Core.Services.ServiceControlService.Delete(r.Name),
+        _ => new Deskhand.Core.Services.ServiceControlDto(false, r.Name, r.Action ?? "", Error: "action must be start|stop|restart|create|delete."),
     };
     al.Record("service_control", $"{res.Action} {r.Name}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
     return Results.Json(res, statusCode: res.Ok ? 200 : 400);
@@ -1241,6 +1248,23 @@ api.MapPost("/capture/window", (IAutomationBackend b, HttpContext ctx, Deskhand.
     return WriteCapture(ctx, ss, result, r.Save ?? false, r.MaxWidth, r.MaxBytes);
 });
 
+// Capture + put straight on the clipboard (so it can be pasted). target screen|region|window. Armed +
+// capture-gated; the capture itself toasts/audits via the governed backend.
+api.MapPost("/capture/clipboard", (IAutomationBackend b, ControlState st, AuditLog al, CaptureClipboardRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
+    var cap = (r.Target ?? "screen").Trim().ToLowerInvariant() switch
+    {
+        "region" => b.CaptureRegion(r.X ?? 0, r.Y ?? 0, r.Width ?? 0, r.Height ?? 0, ImageFormat.Png, 100),
+        "window" => r.Reference is not null ? b.CaptureWindowByRef(r.Reference, ImageFormat.Png, 100) : b.CaptureWindow(r.Hwnd ?? 0, ImageFormat.Png, 100),
+        _ => b.CaptureScreen(r.Monitor, ImageFormat.Png, 100),
+    };
+    var res = Deskhand.Core.Services.ClipboardService.SetImage(Convert.ToBase64String(cap.Bytes));
+    al.Record("capture_clipboard", r.Target ?? "screen", res.Ok ? $"{res.Width}x{res.Height}" : $"FAIL {res.Error}");
+    return res.Ok ? Results.Ok(new { ok = true, width = res.Width, height = res.Height, target = r.Target ?? "screen" })
+                  : Results.Json(res, statusCode: 400);
+});
 api.MapPost("/capture/element", (IAutomationBackend b, HttpContext ctx, Deskhand.Core.Services.ScreenshotStore ss, ElementCaptureRequest r) =>
     WriteCapture(ctx, ss, b.CaptureElement(r.Reference, ParseFormat(r.Format), r.Quality ?? 80), r.Save ?? false, r.MaxWidth, r.MaxBytes));
 
@@ -1468,6 +1492,7 @@ record PointRequest(int X, int Y);
 record ProcessWaitRequest(string? Event, string? Name, int? Pid, int? TimeoutMs);
 record PidRequest(int Pid);
 record FsPathsRequest(IReadOnlyList<string>? Paths);
+record FsPathRequest(string? Path);
 record FsDeleteRequest(string Path, bool? Permanent);
 record FsRenameRequest(string Path, string NewName);
 record FsMoveRequest(string Source, string Dest, bool? Overwrite);
@@ -1501,7 +1526,8 @@ record VisionClickTextRequest(string? Text, string? Target, int? Monitor, int? X
     long? Hwnd, string? Reference, string? Button, int? Count, int? TimeoutMs);
 record PasteRequest(string? Text);
 record ProcControlRequest(int Pid, string Action, bool? Tree, string? Level, bool? Force, bool? Confirm);
-record ServiceControlRequest(string Name, string Action, bool? Confirm);
+record ServiceControlRequest(string Name, string Action, bool? Confirm, string? BinPath, string? DisplayName, string? StartMode);
+record CaptureClipboardRequest(string? Target, int? Monitor, int? X, int? Y, int? Width, int? Height, long? Hwnd, string? Reference);
 record EnvSetRequest(string Name, string? Value, string? Scope);
 record TaskActionRequest(string Task, string Action, string? Command, string? Schedule, string? StartTime, string? StartDate, bool? Highest);
 record PowerActionRequest(string Action, bool? Force, bool? Confirm);

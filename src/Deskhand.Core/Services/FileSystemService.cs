@@ -383,6 +383,21 @@ public static class FileSystemService
 
     /// <summary>Delete a file or folder. By default it goes to the Recycle Bin (recoverable);
     /// <paramref name="permanent"/> true deletes it irreversibly.</summary>
+    /// <summary>Create a folder (and any missing parents). Idempotent — succeeds if it already exists.</summary>
+    public static FsOpResultDto CreateFolder(string? path)
+    {
+        path = (path ?? "").Trim().Trim('"');
+        if (path.Length == 0) return new FsOpResultDto("create_folder", "", null, false, null, "No path given.");
+        try
+        {
+            var full = System.IO.Path.GetFullPath(path);
+            bool existed = Directory.Exists(full);
+            Directory.CreateDirectory(full);
+            return new FsOpResultDto("create_folder", full, null, true, existed ? "already existed" : "created");
+        }
+        catch (Exception ex) { return new FsOpResultDto("create_folder", path, null, false, null, ex.Message); }
+    }
+
     public static FsOpResultDto Delete(string? path, bool permanent)
     {
         var r = Full(path, "delete");

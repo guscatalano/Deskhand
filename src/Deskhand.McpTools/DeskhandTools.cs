@@ -213,6 +213,13 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_net_connections"), Description("Active network connections + listening ports (read-only, netstat-like, IPv4): { protocol, localAddress, remoteAddress, state, pid, process }.")]
     public static string NetConnections() => Json(Deskhand.Core.Services.NetConnectionsService.List());
 
+    [McpServerTool(Name = "deskhand_net_adapters"), Description("Network adapters (read-only): [{ name, description, type, status, isUp, mac, speedMbps, addresses:[{address,family,prefixLength}], gateways, dnsServers, dhcpServer }]. The machine's IPs, gateways and DNS.")]
+    public static string NetAdapters() => Json(Deskhand.Core.Services.NetworkService.Adapters());
+
+    [McpServerTool(Name = "deskhand_ping"), Description("Ping a host to test reachability (read-only). Returns { host, address, success, status, roundtripMs, ttl }. timeoutMs default 3000.")]
+    public static string Ping([Description("Hostname or IP to ping.")] string host, [Description("Timeout in ms (default 3000).")] int timeoutMs = 3000)
+        => Json(Deskhand.Core.Services.NetworkService.Ping(host, timeoutMs));
+
     [McpServerTool(Name = "deskhand_event_errors"), Description("Recent error/warning events (read-only) from the System + Application logs, newest first: { log, level, eventId, source, time, message }. count = max per log (default 50).")]
     public static string EventErrors(int count = 50) => Json(Deskhand.Core.Services.DiagnosticsService.RecentErrors(count));
 
@@ -275,6 +282,15 @@ public static class DeskhandTools
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
         var r = Deskhand.Core.Services.FileSystemService.WriteFileBase64(path, contentBase64, overwrite);
         if (r.Error is null) audit.Record("file_write", r.Path, $"{r.Size}B{(r.Overwritten ? " (overwrote)" : "")}");
+        return Json(r);
+    }
+
+    [McpServerTool(Name = "deskhand_create_folder"), Description("Create a folder (and any missing parent folders). Idempotent — succeeds if it already exists. Returns { op, path, ok, detail, error? }. Requires armed; audited.")]
+    public static string CreateFolder(ControlState state, AuditLog audit, [Description("Folder path to create, e.g. \"C:\\\\Temp\\\\new\".")] string path)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.CreateFolder(path);
+        audit.Record("create_folder", r.Path, r.Ok ? (r.Detail ?? "ok") : $"FAIL {r.Error}");
         return Json(r);
     }
 
@@ -772,19 +788,24 @@ public static class DeskhandTools
         return Json(res);
     }
 
-    [McpServerTool(Name = "deskhand_service_control"), Description("Start / stop / restart a Windows service by name (via WMI). Returns { ok, name, action, state, error? }. DESTRUCTIVE actions (stop, restart) require confirm=true. Deskhand REFUSES to stop the service hosting itself. Most service changes need elevation. Requires armed; audited.")]
-    public static string ServiceControl(ControlState state, AuditLog audit, string name, string action, bool confirm = false)
+    [McpServerTool(Name = "deskhand_service_control"), Description("Manage a Windows service by name: action = start|stop|restart|create|delete. CREATE needs binPath (the service executable command line); displayName and startMode (auto|demand|disabled) optional. DESTRUCTIVE actions (stop, restart, delete) require confirm=true. Deskhand REFUSES to stop the service hosting itself. Most service changes need elevation. Returns { ok, name, action, state, error? }. Requires armed; audited.")]
+    public static string ServiceControl(ControlState state, AuditLog audit, string name, string action, bool confirm = false,
+        [Description("CREATE: full command line for the service executable.")] string? binPath = null,
+        [Description("CREATE: display name (optional).")] string? displayName = null,
+        [Description("CREATE: start mode auto|demand|disabled (default demand).")] string? startMode = null)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
         var actn = (action ?? "").Trim().ToLowerInvariant();
-        if (actn is "stop" or "restart" && !confirm)
+        if (actn is "stop" or "restart" or "delete" && !confirm)
             return Json(new { ok = false, confirmationRequired = true, action = actn, name, message = $"'{actn}' on service '{name}' is destructive — re-issue with confirm=true to proceed." });
         var res = actn switch
         {
             "start" => Deskhand.Core.Services.ServiceControlService.Start(name),
             "stop" => Deskhand.Core.Services.ServiceControlService.Stop(name),
             "restart" => Deskhand.Core.Services.ServiceControlService.Restart(name),
-            _ => new Deskhand.Core.Services.ServiceControlDto(false, name, action ?? "", Error: "action must be start|stop|restart."),
+            "create" => Deskhand.Core.Services.ServiceControlService.Create(name, binPath, displayName, startMode),
+            "delete" => Deskhand.Core.Services.ServiceControlService.Delete(name),
+            _ => new Deskhand.Core.Services.ServiceControlDto(false, name, action ?? "", Error: "action must be start|stop|restart|create|delete."),
         };
         audit.Record("service_control", $"{res.Action} {name}", res.Ok ? (res.State ?? "ok") : $"FAIL {res.Error}");
         return Json(res);
@@ -1160,6 +1181,25 @@ public static class DeskhandTools
     {
         var c = b.CaptureScreen(monitor, Fmt(format), (withTargets || marks) ? 100 : 80);
         return marks ? WithMarks(b, ss, c, save, maxWidth, maxBytes, maxMarks, markFilter, markOnly) : Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+    }
+
+    [McpServerTool(Name = "deskhand_capture_to_clipboard"), Description("Capture the screen (or a region/window) straight onto the clipboard so it can be pasted. target = screen (default) | region (needs x,y,width,height) | window (needs reference or hwnd). Returns { ok, width, height, target, error? }. Requires armed + capture enabled; audited.")]
+    public static string CaptureToClipboard(IAutomationBackend b, ControlState state, AuditLog audit,
+        [Description("screen | region | window")] string? target = null,
+        int? monitor = null, int? x = null, int? y = null, int? width = null, int? height = null,
+        long? hwnd = null, [Description("Element ref of the window (for target=window).")] string? reference = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        if (!state.CaptureEnabled) return "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}";
+        var cap = (target ?? "screen").Trim().ToLowerInvariant() switch
+        {
+            "region" => b.CaptureRegion(x ?? 0, y ?? 0, width ?? 0, height ?? 0, ImageFormat.Png, 100),
+            "window" => reference is not null ? b.CaptureWindowByRef(reference, ImageFormat.Png, 100) : b.CaptureWindow(hwnd ?? 0, ImageFormat.Png, 100),
+            _ => b.CaptureScreen(monitor, ImageFormat.Png, 100),
+        };
+        var res = Deskhand.Core.Services.ClipboardService.SetImage(Convert.ToBase64String(cap.Bytes));
+        audit.Record("capture_clipboard", target ?? "screen", res.Ok ? $"{res.Width}x{res.Height}" : $"FAIL {res.Error}");
+        return res.Ok ? Json(new { ok = true, width = res.Width, height = res.Height, target = target ?? "screen" }) : Json(res);
     }
 
     [McpServerTool(Name = "deskhand_capture_region"), Description("Screenshot an arbitrary rectangle in virtual-desktop pixels. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget; withTargets=true also returns clickable text + controls (see capture_screen).")]

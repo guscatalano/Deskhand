@@ -228,7 +228,7 @@
   <span class="stat">desktop <span class="pill unknown" id="statDesktop">?</span></span>
   <span class="stat" id="statMon"></span>
   <span class="spacer"></span>
-  <a class="ghost" style="text-decoration:none" href="http://localhost:8799/" target="_blank" title="Fleet dashboard — other PCs">⛶ Fleet</a>
+  <a class="ghost" id="fleetLink" style="text-decoration:none" href="http://localhost:8799/" target="_blank" title="Fleet dashboard — other PCs">⛶ Fleet</a>
   <button class="ghost" id="armBtn" title="Toggle kill switch (Ctrl+Alt+Pause)">● armed</button>
   <button class="ghost" id="logBtn">Log</button>
   <button class="ghost" id="themeBtn">Theme</button>
@@ -1829,6 +1829,8 @@ $("#clickAction").dispatchEvent(new Event("change"));
 
 refresh().then(loadWindows).catch(()=>{ $("#statMachine").textContent="server unreachable"; toast("cannot reach server",true); });
 refreshControl(); macStatus();
+// No-fleet mode: hide fleet-only UI (the Fleet link) when the server reports it.
+api("/health").then(h=>{ if(h&&h.noFleet){ const fl=$("#fleetLink"); if(fl) fl.style.display="none"; } }).catch(()=>{});
 setInterval(()=>{ refresh().catch(()=>{}); refreshControl(); macStatus(); },5000);
 
 /* ---------- live UI events (SSE) ---------- */

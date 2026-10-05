@@ -39,6 +39,10 @@ builder.Host.UseWindowsService(o => o.ServiceName = "Deskhand");
 
 int port = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_PORT"), out var p) ? p : 8791;
 
+// No-fleet mode: a single-machine deployment that isn't part of a fleet. The server already runs no fleet
+// code; this just tells the dashboard to hide fleet-only UI (the Fleet link). DESKHAND_NO_FLEET=1.
+bool noFleet = (Environment.GetEnvironmentVariable("DESKHAND_NO_FLEET")?.Trim().ToLowerInvariant()) is "1" or "true" or "yes" or "on";
+
 // Token is OPTIONAL. The browser dashboard never needs one (it is same-origin).
 // If DESKHAND_TOKEN is set, non-browser clients (curl/scripts) must present it.
 string? token = Environment.GetEnvironmentVariable("DESKHAND_TOKEN")?.Trim();
@@ -416,7 +420,7 @@ api.MapGet("/events", async (HttpContext ctx, Deskhand.Core.Events.EventHub hub)
 });
 
 // ---- health & orientation ----
-api.MapGet("/health", () => Results.Ok(new { ok = true, service = "deskhand-http", version = Deskhand.Core.BuildInfo.Version, requiresToken = requireToken, tls }));
+api.MapGet("/health", () => Results.Ok(new { ok = true, service = "deskhand-http", version = Deskhand.Core.BuildInfo.Version, requiresToken = requireToken, tls, noFleet }));
 api.MapGet("/machine", (IAutomationBackend b) => Results.Ok(b.GetMachineInfo()));
 api.MapGet("/desktop/state", (IAutomationBackend b) => Results.Ok(b.GetDesktopState()));
 api.MapGet("/foreground", (IAutomationBackend b) => Results.Ok(b.GetForegroundWindow()));

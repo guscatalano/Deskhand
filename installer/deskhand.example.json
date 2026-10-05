@@ -22,5 +22,8 @@
   "uiaTimeoutMs": 2000,
 
   "//hideConsole": "true = run windowless in the logged-in session (no cmd window); still drives the desktop (unlike a session-0 service)",
-  "hideConsole": false
+  "hideConsole": false,
+
+  "//noFleet": "true = single-machine deployment; hides fleet-only UI (the Fleet link) in the dashboard",
+  "noFleet": false
 }

@@ -1430,7 +1430,44 @@ Console.WriteLine();
 
 using var killSwitch = new KillSwitch(controlState, auditLog);
 
-app.Run();
+// If the port is momentarily held — e.g. an auto-update relaunch before the old process has released it — wait
+// a few seconds for it to free up before binding. If it stays in use (another instance), exit cleanly with a
+// clear message instead of crashing with an unhandled exception + a Windows Error Reporting dialog. (The bind
+// can only be attempted once, so we probe the port first rather than retrying StartAsync.)
+for (int attempt = 1; attempt <= 5 && !PortAvailable(port); attempt++)
+{
+    Console.Error.WriteLine($"Port {port} is in use; waiting for it to free up ({attempt}/5)…");
+    await Task.Delay(1000);
+}
+try { await app.StartAsync(); }
+catch (Exception ex) when (IsAddressInUse(ex))
+{
+    Console.Error.WriteLine($"Deskhand could not start: port {port} is already in use — another Deskhand instance is probably running. Stop it, or set DESKHAND_PORT to a free port.");
+    Environment.Exit(2);
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"Deskhand failed to start: {ex.Message}");
+    Environment.Exit(1);
+}
+await app.WaitForShutdownAsync();
+
+static bool PortAvailable(int port)
+{
+    try { var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port); l.Start(); l.Stop(); return true; }
+    catch (System.Net.Sockets.SocketException) { return false; }
+    catch { return true; }   // any other probe error: don't block startup on the probe
+}
+
+static bool IsAddressInUse(Exception ex)
+{
+    for (Exception? e = ex; e is not null; e = e.InnerException)
+        if (e is Microsoft.AspNetCore.Connections.AddressInUseException
+            || e.Message.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+            || e.Message.Contains("Only one usage of each socket address", StringComparison.OrdinalIgnoreCase))
+            return true;
+    return false;
+}
 return;
 
 // ---- helpers ----

@@ -1471,6 +1471,33 @@ const loadSystem=guard(async()=>{
       +kv("Pending reboot",sec.pendingReboot?('<span style="color:var(--warn)">yes</span> — '+(sec.rebootReasons||[]).join(", ")):yn(false)));
   }catch{}
   try{ const us=await api("/users"); let uh=""; us.forEach(u=>uh+=kv(u.name+(u.fullName&&u.fullName!==u.name?(" ("+u.fullName+")"):""), u.disabled?'<span style="color:var(--ink-3)">disabled</span>':'<span style="color:var(--good)">enabled</span>')); if(uh) card("Local users", uh); }catch{}
+  // Displays — interactive: current mode + pick a supported mode and apply (changes the real screen).
+  try{
+    const disp=await api("/display");
+    if(disp&&disp.length){
+      const c=elm("div","syscard"); c.innerHTML="<h4>Displays</h4>";
+      disp.forEach(dp=>{
+        const cur=dp.current||{};
+        const wrap=elm("div"); wrap.style.cssText="margin:0 0 11px";
+        const title=elm("div"); title.style.cssText="font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:3px"; title.textContent=`${dp.device}${dp.primary?" (primary)":""}`;
+        const now=elm("div","syskv"); now.innerHTML=`<span class="k">Current</span><span class="v">${cur.width}×${cur.height} @ ${cur.refreshHz}Hz</span>`;
+        const row=elm("div"); row.style.cssText="display:flex;gap:6px;align-items:center;margin-top:4px";
+        const sel=elm("select"); sel.style.cssText="flex:1;font-family:var(--mono);font-size:11px";
+        (dp.modes||[]).forEach(m=>sel.append(new Option(`${m.width}×${m.height} @ ${m.refreshHz}Hz`, JSON.stringify([m.width,m.height,m.refreshHz]))));
+        try{ sel.value=JSON.stringify([cur.width,cur.height,cur.refreshHz]); }catch{}
+        const btn=elm("button","btn sm"); btn.textContent="Apply";
+        btn.onclick=guard(async()=>{
+          const [w,h,hz]=JSON.parse(sel.value);
+          if(!confirm(`Change ${dp.device} to ${w}×${h} @ ${hz}Hz? Your screen will switch mode.`)) return;
+          const r=await api("/display/resolution","POST",{device:dp.device,width:w,height:h,refreshHz:hz});
+          toast(r.ok?`set ${w}×${h} @ ${hz}Hz`:("display: "+(r.error||"failed")), !r.ok);
+          if(r.ok) loadSystem();
+        });
+        row.append(sel,btn); wrap.append(title,now,row); c.append(wrap);
+      });
+      g.append(c);
+    }
+  }catch{}
 });
 $("#sysRefresh").onclick=loadSystem;
 

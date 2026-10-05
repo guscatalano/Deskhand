@@ -25,7 +25,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrator')) {
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
   throw 'Run this elevated (Administrator).'
 }
 if (-not (Test-Path $ExePath)) { throw "deskhand-http.exe not found at $ExePath (point -ExePath at your install)." }

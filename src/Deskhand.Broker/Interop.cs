@@ -38,6 +38,14 @@ internal static class Interop
         IntPtr procAttrs, IntPtr threadAttrs, bool inherit, uint creationFlags, IntPtr env,
         string? currentDir, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
 
+    // Unlike CreateProcessAsUser (which needs SeAssignPrimaryTokenPrivilege, held only by SYSTEM-class
+    // accounts), CreateProcessWithTokenW needs only SeImpersonatePrivilege — which an elevated admin has —
+    // so this is the one that works when the broker runs as the elevated Deskhand user.
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool CreateProcessWithTokenW(IntPtr token, uint logonFlags, string? appName,
+        string cmdLine, uint creationFlags, IntPtr env, string? currentDir, ref STARTUPINFO si,
+        out PROCESS_INFORMATION pi);
+
     [DllImport("userenv.dll", SetLastError = true)]
     public static extern bool CreateEnvironmentBlock(out IntPtr env, IntPtr token, bool inherit);
 

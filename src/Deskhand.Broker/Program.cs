@@ -59,12 +59,21 @@ try
         CreateEnvironmentBlock(out IntPtr env, dupTok, false);
         var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"Winsta0\Default" };
         string cmd = $"\"{helper}\" {helperArgs}";
+        uint flags = CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW;
+        string? dir = Path.GetDirectoryName(helper);
 
-        bool ok = CreateProcessAsUser(dupTok, helper, cmd, IntPtr.Zero, IntPtr.Zero, false,
-            CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, env, Path.GetDirectoryName(helper), ref si, out var pi);
+        // Preferred: CreateProcessWithTokenW (needs SeImpersonatePrivilege, which an elevated admin has).
+        bool ok = CreateProcessWithTokenW(dupTok, 0, helper, cmd, flags, env, dir, ref si, out var pi);
+        int err = Marshal.GetLastWin32Error();
+        if (!ok)
+        {
+            Console.WriteLine($"CreateProcessWithTokenW failed (Win32 {err}); trying CreateProcessAsUser…");
+            ok = CreateProcessAsUser(dupTok, helper, cmd, IntPtr.Zero, IntPtr.Zero, false, flags, env, dir, ref si, out pi);
+            err = Marshal.GetLastWin32Error();
+        }
 
         if (env != IntPtr.Zero) DestroyEnvironmentBlock(env);
-        if (!ok) return Fail($"CreateProcessAsUser failed (Win32 {Marshal.GetLastWin32Error()}).");
+        if (!ok) return Fail($"could not launch helper as SYSTEM (Win32 {err}).");
 
         Console.WriteLine($"launched helper as SYSTEM, pid = {pi.dwProcessId}");
         WaitForSingleObject(pi.hProcess, INFINITE);

@@ -22,16 +22,22 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     // When FollowInputDesktop is set (interactive mode), input is routed through a thread that stays
     // attached to whichever desktop currently owns input, so clicks/keys follow a desktop switch.
     private readonly Services.InputDesktopPump _inputPump = new();
+    // The SECURE desktop can't be touched from a user-session process; delegate those to the SYSTEM helper.
+    private readonly Lazy<Services.SecureHelperClient> _secure = new(() => new Services.SecureHelperClient());
     public bool FollowInputDesktop { get; set; }
-    private void Inject(Action a)
+
+    /// <summary>Route an input action: inline on the default desktop (fast, no regression); through the
+    /// desktop-attached pump on a non-secure foreign desktop (screensaver/custom); and to the SYSTEM
+    /// secure helper on the secure desktop, which a user-session process cannot drive itself.</summary>
+    private void RouteInput(Func<object> secureRequest, Action local)
     {
-        // On the default desktop (the common case) inject inline — the proven, lowest-latency path, and
-        // no regression when following is on. Only when input has actually left the default desktop
-        // (secure/screensaver/custom) do we hop onto a thread attached to that desktop to reach it.
-        if (FollowInputDesktop && Services.DesktopInfo.GetDesktopState().Desktop != "default")
-            _inputPump.Run(a);
-        else
-            lock (_inputGate) a();
+        if (FollowInputDesktop)
+        {
+            string kind = Services.DesktopInfo.GetDesktopState().Desktop;
+            if (kind == "secure") { _secure.Value.EnsureStarted(); _secure.Value.Input(secureRequest()); return; }
+            if (kind != "default") { _inputPump.Run(local); return; }
+        }
+        lock (_inputGate) local();
     }
 
     public LocalAutomationBackend()
@@ -228,42 +234,53 @@ public sealed class LocalAutomationBackend : IAutomationBackend
 
     // Runs on its own throwaway thread (see SecureCapture) — must NOT use the UIA STA thread.
     public Services.SecureCapture.InputDesktopResult CaptureInputDesktop(ImageFormat format, int jpegQuality)
-        => Services.SecureCapture.CaptureInputDesktop(format, jpegQuality);
+    {
+        // While following desktops (interactive mode), the secure desktop can't be grabbed by this
+        // user-session process — delegate that one frame to the SYSTEM helper. Everything else (default,
+        // screensaver, custom) this process can capture itself.
+        if (FollowInputDesktop && Services.DesktopInfo.GetDesktopState().Desktop == "secure")
+        {
+            try
+            {
+                _secure.Value.EnsureStarted();
+                var (name, kind, bytes) = _secure.Value.Capture(format == ImageFormat.Jpeg ? "jpeg" : "png", jpegQuality);
+                var v = Services.DesktopInfo.VirtualScreen();
+                var cap = new CaptureResultDto(kind, new RectDto(v.X, v.Y, v.Width, v.Height), -1, 1.0,
+                    format == ImageFormat.Jpeg ? "jpeg" : "png", bytes);
+                return new Services.SecureCapture.InputDesktopResult(true, name, kind, cap, "Captured via the SYSTEM secure helper.");
+            }
+            catch (Exception ex)
+            {
+                return new Services.SecureCapture.InputDesktopResult(false, "", "secure", null,
+                    "Secure desktop active and the SYSTEM helper is unavailable: " + ex.Message);
+            }
+        }
+        return Services.SecureCapture.CaptureInputDesktop(format, jpegQuality);
+    }
 
     // ---- input (SendInput: thread-agnostic → OFF the STA thread, serialized on _inputGate so
     //      concurrent actions stay atomic instead of interleaving keystrokes/clicks) ----
-    public void MouseMove(int x, int y) => Inject(() => InputInjector.MouseMove(x, y));
-    public void MouseClick(string button, int? x, int? y, int count) => Inject(() => InputInjector.MouseClick(button, x, y, count));
-    public void MouseDown(string button, int? x, int? y) => Inject(() => InputInjector.MouseDown(button, x, y));
-    public void MouseUp(string button, int? x, int? y) => Inject(() => InputInjector.MouseUp(button, x, y));
-    public void MouseScroll(int dx, int dy) => Inject(() => InputInjector.MouseScroll(dx, dy));
+    public void MouseMove(int x, int y) => RouteInput(() => new { op = "move", x, y }, () => InputInjector.MouseMove(x, y));
+    public void MouseClick(string button, int? x, int? y, int count) => RouteInput(() => new { op = "click", button, x, y, count }, () => InputInjector.MouseClick(button, x, y, count));
+    public void MouseDown(string button, int? x, int? y) => RouteInput(() => new { op = "down", button, x, y }, () => InputInjector.MouseDown(button, x, y));
+    public void MouseUp(string button, int? x, int? y) => RouteInput(() => new { op = "up", button, x, y }, () => InputInjector.MouseUp(button, x, y));
+    public void MouseScroll(int dx, int dy) => RouteInput(() => new { op = "scroll", dx, dy }, () => InputInjector.MouseScroll(dx, dy));
     public void Drag(int fromX, int fromY, int toX, int toY, string button, int steps, int holdMs)
     {
         steps = Math.Clamp(steps, 1, 500);
         holdMs = Math.Clamp(holdMs, 0, 5000);
         button = string.IsNullOrWhiteSpace(button) ? "left" : button;
-        Inject(() =>   // whole gesture is atomic so nothing interleaves between press and release
-        {
-            InputInjector.MouseMove(fromX, fromY);
-            InputInjector.MouseDown(button, fromX, fromY);
-            if (holdMs > 0) Thread.Sleep(holdMs);
-            for (int i = 1; i <= steps; i++)
-            {
-                double t = i / (double)steps;
-                InputInjector.MouseMove(fromX + (int)Math.Round((toX - fromX) * t), fromY + (int)Math.Round((toY - fromY) * t));
-                Thread.Sleep(8);
-            }
-            if (holdMs > 0) Thread.Sleep(holdMs);
-            InputInjector.MouseUp(button, toX, toY);
-        });
+        RouteInput(() => new { op = "drag", fromX, fromY, toX, toY, button, steps, holdMs },
+            () => InputInjector.Drag(fromX, fromY, toX, toY, button, steps, holdMs));
     }
-    public void TypeText(string text) => Inject(() => InputInjector.TypeText(text));
-    public void SendKeys(string chord) => Inject(() => InputInjector.SendKeys(chord));
+    public void TypeText(string text) => RouteInput(() => new { op = "type", text }, () => InputInjector.TypeText(text));
+    public void SendKeys(string chord) => RouteInput(() => new { op = "keys", chord }, () => InputInjector.SendKeys(chord));
 
     public void Dispose()
     {
         try { _sta.Invoke(() => _uia.Dispose()); } catch { }
         _sta.Dispose();
         _inputPump.Dispose();
+        if (_secure.IsValueCreated) _secure.Value.Dispose();
     }
 }

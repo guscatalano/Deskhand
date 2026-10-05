@@ -76,6 +76,13 @@ jobs:
           # expects: it Expand-Archive's deskhand.zip to C:\Deskhand and runs deskhand-http.exe there).
           dotnet publish src/Deskhand.Http -c Release -r win-x64 --self-contained true -o publish/http --nologo
           if (-not (Test-Path publish/http/deskhand-http.exe)) { throw 'publish missing deskhand-http.exe' }
+          # Secure-desktop support: the broker (relaunches the helper as SYSTEM in the console session) and the
+          # helper (captures/drives the secure desktop). Published into the SAME folder so the shared runtime is
+          # deduplicated and both exes sit beside deskhand-http.exe, where SecureHelperClient looks for them.
+          dotnet publish src/Deskhand.Broker -c Release -r win-x64 --self-contained true -o publish/http --nologo
+          dotnet publish src/Deskhand.SecureHelper -c Release -r win-x64 --self-contained true -o publish/http --nologo
+          if (-not (Test-Path publish/http/deskhand-broker.exe)) { throw 'publish missing deskhand-broker.exe' }
+          if (-not (Test-Path publish/http/deskhand-secure.exe)) { throw 'publish missing deskhand-secure.exe' }
           # Bundle the install helper + example config so the zip is self-contained for a logon-task install.
           Copy-Item installer/install-logon-task.ps1, installer/deskhand.example.json publish/http/ -Force
           New-Item -ItemType Directory -Force installer/out | Out-Null

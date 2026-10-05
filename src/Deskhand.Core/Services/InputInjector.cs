@@ -90,6 +90,25 @@ public static class InputInjector
         Send(Mouse(flag));
     }
 
+    /// <summary>A full press → move → release drag gesture (atomic when run on one thread).</summary>
+    public static void Drag(int fromX, int fromY, int toX, int toY, string button, int steps, int holdMs)
+    {
+        steps = Math.Clamp(steps, 1, 500);
+        holdMs = Math.Clamp(holdMs, 0, 5000);
+        button = string.IsNullOrWhiteSpace(button) ? "left" : button;
+        MouseMove(fromX, fromY);
+        MouseDown(button, fromX, fromY);
+        if (holdMs > 0) Thread.Sleep(holdMs);
+        for (int i = 1; i <= steps; i++)
+        {
+            double t = i / (double)steps;
+            MouseMove(fromX + (int)Math.Round((toX - fromX) * t), fromY + (int)Math.Round((toY - fromY) * t));
+            Thread.Sleep(8);
+        }
+        if (holdMs > 0) Thread.Sleep(holdMs);
+        MouseUp(button, toX, toY);
+    }
+
     /// <summary>Scroll in wheel notches. Positive dy scrolls up, positive dx scrolls right.</summary>
     public static void MouseScroll(int dx, int dy)
     {

@@ -462,6 +462,8 @@ api.MapGet("/input/desktop-follow", () => Results.Ok(new { following = localBack
 api.MapPost("/input/desktop-follow", (ControlState st, AuditLog al, DesktopFollowRequest r) =>
 {
     localBackend.FollowInputDesktop = r.On;
+    // The SYSTEM secure helper is started lazily, only if/when input actually reaches the secure desktop —
+    // least privilege: no SYSTEM process is spawned just because interactive mode is on.
     al.Record("input_desktop_follow", r.On ? "on" : "off", "ok");
     return Results.Ok(new { following = localBackend.FollowInputDesktop });
 });

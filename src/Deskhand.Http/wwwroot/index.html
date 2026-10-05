@@ -444,22 +444,24 @@
   <div class="tab" id="tab-software">
     <div style="padding:14px 16px 60px;width:100%;max-width:1100px">
       <div class="row"><button class="btn p" id="swRefresh">↻ Refresh</button><span class="lbl" id="swWhen" style="color:var(--ink-3)"></span></div>
-      <div class="sect" style="margin-top:12px"><div class="h">Installed programs <span class="count" id="swProgCount"></span></div></div>
-      <input class="swfilter" data-t="prog" placeholder="filter programs…"><div id="swProg"></div>
-      <div class="sect" style="margin-top:16px"><div class="h">Services <span class="count" id="swSvcCount"></span></div></div>
-      <input class="swfilter" data-t="svc" placeholder="filter services…"><div id="swSvc"></div>
-      <div class="sect" style="margin-top:16px"><div class="h">Startup items <span class="count" id="swStartCount"></span></div></div>
-      <div id="swStart"></div>
-      <div class="sect" style="margin-top:16px"><div class="h">Scheduled tasks <span class="count" id="swTaskCount"></span></div></div>
-      <input class="swfilter" data-t="task" placeholder="filter tasks…"><div id="swTask"></div>
-      <div class="sect" style="margin-top:16px"><div class="h">Network connections <span class="count" id="swConnCount"></span></div></div>
-      <input class="swfilter" data-t="conn" placeholder="filter by port / process / address…"><div id="swConn"></div>
-      <div class="sect" style="margin-top:16px"><div class="h">Recent errors <span class="count" id="swEvtCount"></span></div></div>
-      <div id="swEvt"></div>
-      <div class="sect" style="margin-top:16px"><div class="h">Printers · shares · disk health</div></div>
-      <div id="swMisc"></div>
-      <div class="sect" style="margin-top:16px"><div class="h">Environment variables <span class="count" id="swEnvCount"></span></div></div>
-      <input class="swfilter" data-t="env" placeholder="filter env…"><div id="swEnv"></div>
+      <div class="swnav" id="swNav" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 10px">
+        <button class="btn sm" data-sec="prog">Programs</button>
+        <button class="btn sm" data-sec="svc">Services</button>
+        <button class="btn sm" data-sec="start">Startup</button>
+        <button class="btn sm" data-sec="task">Tasks</button>
+        <button class="btn sm" data-sec="conn">Connections</button>
+        <button class="btn sm" data-sec="logs">Logs</button>
+        <button class="btn sm" data-sec="misc">Printers · Shares · Disks</button>
+        <button class="btn sm" data-sec="env">Environment</button>
+      </div>
+      <div class="swsec" data-sec="prog"><input class="swfilter" data-t="prog" placeholder="filter programs…"><div id="swProg"></div></div>
+      <div class="swsec" data-sec="svc" hidden><input class="swfilter" data-t="svc" placeholder="filter services…"><div id="swSvc"></div></div>
+      <div class="swsec" data-sec="start" hidden><div id="swStart"></div></div>
+      <div class="swsec" data-sec="task" hidden><input class="swfilter" data-t="task" placeholder="filter tasks…"><div id="swTask"></div></div>
+      <div class="swsec" data-sec="conn" hidden><input class="swfilter" data-t="conn" placeholder="filter by port / process / address…"><div id="swConn"></div></div>
+      <div class="swsec" data-sec="logs" hidden><input class="swfilter" data-t="logs" placeholder="filter logs (level, source, message…)"><div id="swEvt"></div></div>
+      <div class="swsec" data-sec="misc" hidden><div id="swMisc"></div></div>
+      <div class="swsec" data-sec="env" hidden><input class="swfilter" data-t="env" placeholder="filter env…"><div id="swEnv"></div></div>
     </div>
   </div>
 
@@ -1708,7 +1710,7 @@ function swRender(t){
   const el=$(cfg.el); el.innerHTML="";
   filtered.slice(0,600).forEach(x=>el.append(cfg.row(x)));
   if(filtered.length>600){ const e=elm("div"); e.style.cssText="color:var(--ink-3);font-size:11px;padding:4px 7px"; e.textContent="…"+(filtered.length-600)+" more (filter to narrow)"; el.append(e); }
-  $(cfg.cnt).textContent=q?(filtered.length+" / "+items.length):items.length;
+  const cnt=$(cfg.cnt); if(cnt) cnt.textContent=q?(filtered.length+" / "+items.length):items.length;
 }
 const loadSoftware=guard(async()=>{
   swLoaded=true; $("#swWhen").textContent="loading…";
@@ -1716,17 +1718,45 @@ const loadSoftware=guard(async()=>{
     api("/software/programs"),api("/software/services"),api("/software/startup"),api("/software/tasks"),
     api("/net/connections"),api("/diagnostics/events?count=30"),api("/software/printers"),api("/software/shares"),
     api("/diagnostics/disk-health"),api("/software/env")]);
-  Object.assign(swData,{prog,svc,task,conn,env});
+  Object.assign(swData,{prog,svc,task,conn,env,logs:evt});
   ["prog","svc","task","conn","env"].forEach(swRender);
-  const st=$("#swStart"); st.innerHTML=""; start.forEach(s=>st.append(hwKv(s.name,[s.command,s.location].filter(Boolean).join("  ·  ")))); $("#swStartCount").textContent=start.length;
-  const ev=$("#swEvt"); ev.innerHTML=""; evt.forEach(e=>ev.append(hwKv(`[${e.log}] ${e.level} #${e.eventId} · ${e.source||""}`, (e.time||"")+(e.message?("  —  "+e.message):"")))); $("#swEvtCount").textContent=evt.length;
+  const st=$("#swStart"); st.innerHTML=""; start.forEach(s=>st.append(hwKv(s.name,[s.command,s.location].filter(Boolean).join("  ·  "))));
+  renderLogs();
   const mc=$("#swMisc"); mc.innerHTML="";
   printers.forEach(p=>mc.append(hwKv("Printer: "+(p.name||""),[p.driver,p.port,p.default&&"default",p.status].filter(Boolean).join(" · "))));
   shares.forEach(s=>mc.append(hwKv("Share: "+(s.name||""),[s.path,s.description].filter(Boolean).join(" · "))));
   disk.forEach(d=>mc.append(hwKv("Disk: "+(d.model||""),"status "+(d.status||"?")+(d.predictFailure!=null?(" · SMART "+(d.predictFailure?"FAIL":"ok")):""))));
+  // counts on the sub-nav buttons
+  const counts={prog:prog.length,svc:svc.length,start:start.length,task:task.length,conn:conn.length,logs:evt.length,misc:(printers.length+shares.length+disk.length),env:env.length};
+  document.querySelectorAll('#swNav [data-sec]').forEach(b=>{ b.dataset.base=b.dataset.base||b.textContent; const c=counts[b.dataset.sec]; b.textContent=c!=null?`${b.dataset.base} (${c})`:b.dataset.base; });
   $("#swWhen").textContent="as of "+new Date().toLocaleTimeString();
 });
-document.querySelectorAll(".swfilter").forEach(f=>f.addEventListener("input",()=>{ if(swLoaded) swRender(f.dataset.t); }));
+// readable Windows event-log view: a colored level badge + meta line, then the full message in a wrapped block.
+function renderLogs(){
+  const ev=$("#swEvt"); if(!ev) return; ev.innerHTML="";
+  const q=(document.querySelector('.swfilter[data-t="logs"]')?.value||"").toLowerCase();
+  const list=(swData.logs||[]).filter(e=>!q||JSON.stringify(e).toLowerCase().includes(q));
+  list.forEach(e=>{
+    const item=elm("div"); item.style.cssText="padding:7px 9px;border-bottom:1px solid var(--line)";
+    const lvl=(e.level||"").toLowerCase();
+    const color=lvl.includes("err")||lvl.includes("crit")?"var(--crit)":lvl.includes("warn")?"var(--warn)":"var(--ink-3)";
+    const head=elm("div"); head.style.cssText="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap";
+    const badge=elm("span"); badge.textContent=e.level||"?"; badge.style.cssText=`color:${color};font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.4px`;
+    const meta=elm("span"); meta.style.cssText="color:var(--ink-3);font-family:var(--mono);font-size:11px"; meta.textContent=`${e.log} · #${e.eventId} · ${e.source||""} · ${e.time?new Date(e.time).toLocaleString():""}`;
+    head.append(badge,meta);
+    const msg=elm("div"); msg.style.cssText="font-family:var(--mono);font-size:11.5px;color:var(--ink-2);white-space:pre-wrap;word-break:break-word;margin-top:3px"; msg.textContent=e.message||"";
+    item.append(head,msg); ev.append(item);
+  });
+  if(!list.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);padding:8px;font-size:12px"; em.textContent="(no matching events)"; ev.append(em); }
+}
+// sub-nav: show one section at a time
+function swShow(sec){
+  document.querySelectorAll('#swNav [data-sec]').forEach(b=>{ const on=b.dataset.sec===sec; b.style.background=on?"var(--accent)":""; b.style.color=on?"#fff":""; });
+  document.querySelectorAll('#tab-software .swsec').forEach(s=>s.hidden=s.dataset.sec!==sec);
+}
+document.querySelectorAll('#swNav [data-sec]').forEach(b=>b.onclick=()=>swShow(b.dataset.sec));
+swShow("prog");
+document.querySelectorAll(".swfilter").forEach(f=>f.addEventListener("input",()=>{ if(!swLoaded) return; if(f.dataset.t==="logs") renderLogs(); else swRender(f.dataset.t); }));
 $("#swRefresh").onclick=loadSoftware;
 
 /* ---------- chrome ---------- */

@@ -914,7 +914,7 @@ const capture=guard(async()=>{
   img.src=`data:image/${c.format};base64,${c.imageBase64}`;
 });
 $("#viewer").addEventListener("click", guard(async(ev)=>{
-  if(interactOn){ const p=mapPoint(ev); if(p){ await api("/mouse/click","POST",{button:"left",x:p.x,y:p.y,count:1}); } $("#viewer").focus(); return; }
+  if(interactOn){ $("#viewer").focus(); return; } // interact clicks/drags handled by mousedown→up below
   const img=$("#viewer img"); if(!img||!lastCap) return;
   const r=img.getBoundingClientRect(); const fx=(ev.clientX-r.left)/r.width, fy=(ev.clientY-r.top)/r.height;
   const dx=Math.round(lastCap.rect.x+fx*lastCap.rect.width), dy=Math.round(lastCap.rect.y+fy*lastCap.rect.height);
@@ -1022,17 +1022,36 @@ $("#interactBtn").onclick=()=>{ interactOn?interactStop():interactStart(); };
 // right-click, scroll, and keyboard pass through to the machine while interacting
 $("#viewer").addEventListener("contextmenu",(ev)=>{ if(!interactOn) return; ev.preventDefault(); const p=mapPoint(ev); if(p) api("/mouse/click","POST",{button:"right",x:p.x,y:p.y,count:1}); });
 $("#viewer").addEventListener("wheel",(ev)=>{ if(!interactOn) return; ev.preventDefault(); api("/mouse/scroll","POST",{dx:0,dy:ev.deltaY<0?1:-1}); },{passive:false});
+// press → move → release: a tap is a click, a press-and-drag moves windows/selects text
+let dragging=false, dragBtn="left", lastMove=0;
+$("#viewer").addEventListener("mousedown",(ev)=>{
+  if(!interactOn) return; ev.preventDefault(); $("#viewer").focus();
+  dragBtn = ev.button===2?"right":(ev.button===1?"middle":"left");
+  if(dragBtn==="right") return; // right-click comes through the contextmenu handler
+  const p=mapPoint(ev); if(!p) return;
+  dragging=true; api("/mouse/down","POST",{button:dragBtn,x:p.x,y:p.y});
+});
+$("#viewer").addEventListener("mousemove",(ev)=>{
+  if(!interactOn||!dragging) return;
+  const now=performance.now(); if(now-lastMove<33) return; lastMove=now; // ~30fps throttle
+  const p=mapPoint(ev); if(p) api("/mouse/move","POST",{x:p.x,y:p.y});
+});
+window.addEventListener("mouseup",(ev)=>{
+  if(!interactOn||!dragging) return; ev.preventDefault(); dragging=false;
+  const p=mapPoint(ev); if(p) api("/mouse/up","POST",{button:dragBtn,x:p.x,y:p.y}); else api("/mouse/up","POST",{button:dragBtn});
+});
 const KEYNAMES={"Enter":"enter","Tab":"tab","Escape":"esc","Backspace":"backspace","Delete":"delete","Insert":"insert","Home":"home","End":"end","PageUp":"pageup","PageDown":"pagedown","ArrowUp":"up","ArrowDown":"down","ArrowLeft":"left","ArrowRight":"right"," ":"space"};
-$("#viewer").addEventListener("keydown",(ev)=>{
+// capture at the document so typing works regardless of which element holds browser focus
+document.addEventListener("keydown",(ev)=>{
   if(!interactOn) return;
-  ev.preventDefault(); ev.stopPropagation();
+  ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
   const k=ev.key;
   // a bare printable character (incl. shifted symbols / capitals) — type it literally
   if(k.length===1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey){ api("/keyboard/type","POST",{text:k}); return; }
   const mods=[]; if(ev.ctrlKey)mods.push("ctrl"); if(ev.altKey)mods.push("alt"); if(ev.shiftKey)mods.push("shift"); if(ev.metaKey)mods.push("win");
   let tok=KEYNAMES[k]; if(!tok){ if(/^F\d{1,2}$/.test(k)) tok=k.toLowerCase(); else if(k.length===1) tok=k.toLowerCase(); else return; }
   api("/keyboard/keys","POST",{chord:[...mods,tok].join("+")});
-});
+}, true);
 $("#secBtn").onclick=guard(async()=>{
   const res=await api("/capture/input-desktop","POST",{format:"png"});
   const kindColor = res.kind==="secure" ? "var(--crit)" : "var(--good)";

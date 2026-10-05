@@ -123,9 +123,22 @@ session** — not as a classic Windows service, which lives in **session 0** and
 `installer/install-service.ps1` can register it as a service, but that path only fits session-0-safe uses;
 for desktop automation, run it in the user session. To avoid a stray console window there, set
 **`DESKHAND_HIDE_CONSOLE=1`** (or `hideConsole: true` in `deskhand.json`, or pass `--hidden`) — Deskhand hides
-its console at startup but keeps running in the session so it can still drive the screen. The intended
-auto-start is a **logon scheduled task** (or the Fleet **Launcher**, which spawns a per-session agent as the
-logged-in user) running the exe windowless.
+its console at startup but keeps running in the session so it can still drive the screen.
+
+**`installer/install-logon-task.ps1`** does exactly this — the recommended auto-start. Run it elevated and it
+registers a scheduled task that, at logon, launches Deskhand **in the interactive session** with **highest
+privileges** (so it comes up **elevated with no UAC prompt** — needed to drive elevated apps and answer
+normal-desktop UAC prompts) and **`--hidden`** (no console window):
+
+```powershell
+installer\install-logon-task.ps1 -ExePath C:\Deskhand\deskhand-http.exe -Start   # this user
+installer\install-logon-task.ps1 -AllUsers                                        # any user who logs on
+installer\install-logon-task.ps1 -Uninstall
+```
+
+(Standard users can't get the elevated token, so "highest privileges" only elevates for admins; the task
+still runs, unelevated. The Fleet **Launcher** is the SYSTEM-level alternative that spawns a per-session agent
+as the logged-in user.) Put a `deskhand.json` next to the exe for token/port/etc.
 
 ## Web dashboard
 

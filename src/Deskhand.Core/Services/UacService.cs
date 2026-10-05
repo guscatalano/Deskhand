@@ -4,7 +4,21 @@ namespace Deskhand.Core.Services;
 
 public record UacStatusDto(
     bool? Enabled, int? AdminConsentBehavior, string? AdminConsentDescription, bool? PromptOnSecureDesktop,
-    bool Automatable, string Summary, string? Error = null);
+    bool Automatable, string Summary, string? Error = null, UacPolicyDto? Policy = null);
+
+/// <summary>The raw UAC policy, as it lives under HKLM\…\Policies\System. Null values mean the policy isn't
+/// set (Windows uses its default). This is the complete picture of how UAC is configured on the machine.</summary>
+public record UacPolicyDto(
+    int? EnableLUA,
+    int? ConsentPromptBehaviorAdmin, string? ConsentPromptBehaviorAdminText,
+    int? ConsentPromptBehaviorUser, string? ConsentPromptBehaviorUserText,
+    int? PromptOnSecureDesktop,
+    int? FilterAdministratorToken,
+    int? EnableInstallerDetection,
+    int? EnableSecureUIAPaths,
+    int? EnableVirtualization,
+    int? ValidateAdminCodeSignatures,
+    int? EnableUIADesktopToggle);
 
 public record UacConfigDto(bool Ok, string Setting, object? Value, bool RebootRequired, string? Error = null);
 
@@ -32,15 +46,28 @@ public static class UacService
         try
         {
             using var k = Registry.LocalMachine.OpenSubKey(Key);
+            int? Dw(string n) => k?.GetValue(n) as int?;
             bool? enabled = ToBool(k?.GetValue("EnableLUA"));
-            int? behavior = k?.GetValue("ConsentPromptBehaviorAdmin") as int?;
+            int? behavior = Dw("ConsentPromptBehaviorAdmin");
+            int? userBehavior = Dw("ConsentPromptBehaviorUser");
             bool? secure = ToBool(k?.GetValue("PromptOnSecureDesktop"));
             bool automatable = enabled == true && secure == false;   // prompt is on the normal desktop
             string summary = enabled == false ? "UAC is OFF (EnableLUA=0)."
                 : behavior == 0 ? "UAC on; admins elevate silently (no prompt)."
                 : secure == false ? "UAC on; prompts on the normal desktop (automatable if elevated)."
                 : "UAC on; prompts on the secure desktop (not automatable).";
-            return new UacStatusDto(enabled, behavior, BehaviorText(behavior), secure, automatable, summary);
+            var policy = new UacPolicyDto(
+                Dw("EnableLUA"),
+                behavior, BehaviorText(behavior),
+                userBehavior, UserBehaviorText(userBehavior),
+                Dw("PromptOnSecureDesktop"),
+                Dw("FilterAdministratorToken"),
+                Dw("EnableInstallerDetection"),
+                Dw("EnableSecureUIAPaths"),
+                Dw("EnableVirtualization"),
+                Dw("ValidateAdminCodeSignatures"),
+                Dw("EnableUIADesktopToggle"));
+            return new UacStatusDto(enabled, behavior, BehaviorText(behavior), secure, automatable, summary, null, policy);
         }
         catch (Exception ex) { return new UacStatusDto(null, null, null, null, false, "unreadable", ex.Message); }
     }
@@ -142,6 +169,14 @@ public static class UacService
         3 => "Prompt for credentials",
         4 => "Prompt for consent",
         5 => "Prompt for consent for non-Windows binaries (default)",
+        _ => null,
+    };
+
+    private static string? UserBehaviorText(int? b) => b switch
+    {
+        0 => "Automatically deny elevation requests",
+        1 => "Prompt for credentials on the secure desktop (default)",
+        3 => "Prompt for credentials",
         _ => null,
     };
 

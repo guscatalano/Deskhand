@@ -869,7 +869,7 @@ public static class DeskhandTools
         return Json(res);
     }
 
-    [McpServerTool(Name = "deskhand_uac_status"), Description("Read UAC configuration: { enabled, adminConsentBehavior(+description), promptOnSecureDesktop, automatable, summary }. 'automatable' means prompts are on the normal desktop so they can be answered (if Deskhand is elevated).")]
+    [McpServerTool(Name = "deskhand_uac_status"), Description("Read the UAC configuration/policy: { enabled, adminConsentBehavior(+description), promptOnSecureDesktop, automatable, summary, policy:{ enableLUA, consentPromptBehaviorAdmin(+text), consentPromptBehaviorUser(+text), promptOnSecureDesktop, filterAdministratorToken, enableInstallerDetection, enableSecureUIAPaths, enableVirtualization, validateAdminCodeSignatures, enableUIADesktopToggle } }. 'policy' is the full set of UAC registry values (null = not set / Windows default). 'automatable' means prompts are on the normal desktop so they can be answered (if Deskhand is elevated).")]
     public static string UacStatus() => Json(Deskhand.Core.Services.UacService.Status());
 
     [McpServerTool(Name = "deskhand_uac_config"), Description("Configure UAC (registry, needs elevation): pass ONE of enabled (EnableLUA on/off — reboot required), promptOnSecureDesktop (false moves prompts to the normal desktop so they're automatable), autoApprove (true = admins elevate silently with NO prompt), or adminBehavior (0..5; 0=silent, 5=default prompt). Returns { ok, setting, value, rebootRequired, error? }. Requires armed; audited.")]

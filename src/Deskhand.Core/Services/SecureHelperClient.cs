@@ -112,18 +112,26 @@ public sealed class SecureHelperClient : IDisposable
         if ((DateTime.UtcNow - _lastSpawn).TotalSeconds < 3) return;
         _lastSpawn = DateTime.UtcNow;
 
-        string dir = AppContext.BaseDirectory;
-        string broker = Path.Combine(dir, "deskhand-broker.exe");
-        string helper = Path.Combine(dir, "deskhand-secure.exe");
-        if (!File.Exists(broker) || !File.Exists(helper))
+        // Deployed layout keeps the helper/broker in a `secure/` subfolder with their own self-contained
+        // runtime (they can't share the server's folder — different System.Text.Json versions collide).
+        // Fall back to the server's own folder for dev/side-by-side layouts.
+        string baseDir = AppContext.BaseDirectory;
+        string broker = "", helper = "";
+        foreach (var dir in new[] { Path.Combine(baseDir, "secure"), baseDir })
+        {
+            var b = Path.Combine(dir, "deskhand-broker.exe");
+            var h = Path.Combine(dir, "deskhand-secure.exe");
+            if (File.Exists(b) && File.Exists(h)) { broker = b; helper = h; break; }
+        }
+        if (broker.Length == 0)
             throw new DesktopUnavailableException(
-                $"Secure helper not deployed: expected deskhand-broker.exe and deskhand-secure.exe beside the server in '{dir}'.");
+                $"Secure helper not deployed: expected deskhand-broker.exe and deskhand-secure.exe in '{Path.Combine(baseDir, "secure")}'.");
 
         var psi = new ProcessStartInfo(broker)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
-            WorkingDirectory = dir,
+            WorkingDirectory = Path.GetDirectoryName(broker)!,
         };
         psi.ArgumentList.Add(helper);
         psi.ArgumentList.Add("serve");

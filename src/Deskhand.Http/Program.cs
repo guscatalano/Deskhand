@@ -455,6 +455,16 @@ api.MapGet("/events", async (HttpContext ctx, Deskhand.Core.Events.EventHub hub)
 api.MapGet("/health", () => Results.Ok(new { ok = true, service = "deskhand-http", version = Deskhand.Core.BuildInfo.Version, requiresToken = requireToken, tls, noFleet }));
 api.MapGet("/machine", (IAutomationBackend b) => Results.Ok(b.GetMachineInfo()));
 api.MapGet("/desktop/state", (IAutomationBackend b) => Results.Ok(b.GetDesktopState()));
+// Follow the input desktop: while on, synthetic input is routed to whichever desktop currently owns
+// input (so clicks/keys track a UAC/secure/screensaver/custom-desktop switch). Interactive mode turns
+// this on. Driving the SECURE desktop still needs SYSTEM; on it, input calls return desktop_unavailable.
+api.MapGet("/input/desktop-follow", () => Results.Ok(new { following = localBackend.FollowInputDesktop, desktop = Deskhand.Core.Services.DesktopInfo.GetDesktopState() }));
+api.MapPost("/input/desktop-follow", (ControlState st, AuditLog al, DesktopFollowRequest r) =>
+{
+    localBackend.FollowInputDesktop = r.On;
+    al.Record("input_desktop_follow", r.On ? "on" : "off", "ok");
+    return Results.Ok(new { following = localBackend.FollowInputDesktop });
+});
 api.MapGet("/foreground", (IAutomationBackend b) => Results.Ok(b.GetForegroundWindow()));
 api.MapGet("/focused", (IAutomationBackend b) => Results.Ok(b.GetFocusedElement()));
 api.MapGet("/windows", (IAutomationBackend b) => Results.Ok(b.GetTopLevelWindows()));
@@ -1301,14 +1311,15 @@ api.MapPost("/uia/set-focus", (IAutomationBackend b, RefRequest r) => { b.SetFoc
 // JPEG 10-95; maxWidth downscales for bandwidth. Frames are captured directly (no per-frame toast/audit) —
 // one capture toast fires at stream start if capture-notify is on, and the open stream is audited once.
 // Gated on captureEnabled; ends when the client disconnects.
-api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier tn, HttpContext ctx, int? monitor, int? fps, int? quality, int? maxWidth) =>
+api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier tn, HttpContext ctx, int? monitor, int? fps, int? quality, int? maxWidth, bool? inputDesktop) =>
 {
     if (!st.CaptureEnabled) { ctx.Response.StatusCode = 403; await ctx.Response.WriteAsJsonAsync(new { error = "capture disabled", type = "capability_disabled" }); return; }
     int frames = Math.Clamp(fps ?? 4, 1, 15);
     int q = Math.Clamp(quality ?? 55, 10, 95);
+    bool follow = inputDesktop ?? false;   // follow whatever desktop currently owns input (UAC/secure/screensaver)
     int delayMs = 1000 / frames;
     if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is live-streaming the screen · {frames} fps"); } catch { } }
-    al.Record("capture_stream", $"monitor={monitor} fps={frames} q={q}", "started");
+    al.Record("capture_stream", $"monitor={monitor} fps={frames} q={q} inputDesktop={follow}", "started");
     ctx.Response.Headers.CacheControl = "no-cache, no-store";
     ctx.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
     var ct = ctx.RequestAborted;
@@ -1319,7 +1330,21 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             byte[] jpeg;
-            try { var c = localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q); jpeg = Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, maxWidth, null, q).Bytes; }
+            try
+            {
+                CaptureResultDto c;
+                // Follow the input desktop: cheap BitBlt while it's the default desktop; when it switches
+                // (UAC/secure/screensaver) attach a thread to the input desktop and grab that instead, so the
+                // view tracks the switch automatically. If the secure desktop isn't capturable (not SYSTEM),
+                // fall back to the default capture so the stream stays alive — the client banner explains why.
+                if (follow && Deskhand.Core.Services.DesktopInfo.GetDesktopState().Desktop != "default")
+                {
+                    var r = localBackend.CaptureInputDesktop(ImageFormat.Jpeg, q);
+                    c = r.Success && r.Capture is not null ? r.Capture : localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q);
+                }
+                else c = localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q);
+                jpeg = Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, maxWidth, null, q).Bytes;
+            }
             catch { break; }
             var head = System.Text.Encoding.ASCII.GetBytes($"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n");
             await ctx.Response.Body.WriteAsync(head, ct);
@@ -1724,6 +1749,7 @@ record RegionRequest(int X, int Y, int Width, int Height, string? Format, int? Q
 record WindowCaptureRequest(long? Hwnd, string? Reference, string? Format, int? Quality, bool? Save, int? MaxWidth, int? MaxBytes);
 record ElementCaptureRequest(string Reference, string? Format, int? Quality, bool? Save, int? MaxWidth, int? MaxBytes);
 record InputDesktopRequest(string? Format, int? Quality);
+record DesktopFollowRequest(bool On);
 record ControlRequest(bool? Armed, bool? InputEnabled, bool? CaptureEnabled, bool? NotifyOnCapture);
 record MacroPlayRequest(Deskhand.Core.Macros.Macro? Macro, double? Speed, int? MaxStepDelayMs);
 record MacroExpectRequest(string? Name, string? AutomationId, string? ControlType, string? ClassName, int? TimeoutMs);

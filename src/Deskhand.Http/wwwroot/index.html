@@ -539,6 +539,7 @@
           <button class="btn" id="saveBtn" title="Download the current screenshot">⬇ Save</button>
         </header>
         <div class="body">
+          <div id="deskBanner" hidden style="margin-bottom:8px;padding:7px 10px;border-radius:6px;font-size:12px;font-weight:600"></div>
           <div class="viewer" id="viewer">
             <div class="vempty">No capture yet — pick a monitor and press Capture.</div>
             <div class="marker" id="marker" style="display:none"></div>
@@ -1000,7 +1001,8 @@ function liveStart(opts){
   const monVal=$("#monSel").value;
   // interactive control wants a snappier feed; passive viewing stays light on bandwidth
   const fps=(opts&&opts.fps)||4, q=(opts&&opts.quality)||55, mw=(opts&&opts.maxWidth)||0;
-  let url="/capture/stream?fps="+fps+"&quality="+q+(mw?"&maxWidth="+mw:"")+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
+  const idt=(opts&&opts.inputDesktop)?"&inputDesktop=1":"";   // follow whatever desktop owns input
+  let url="/capture/stream?fps="+fps+"&quality="+q+(mw?"&maxWidth="+mw:"")+idt+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
   if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
   const v=$("#viewer"); v.querySelectorAll("img").forEach(n=>n.remove());
   const e=v.querySelector(".vempty"); if(e) e.style.display="none";
@@ -1026,18 +1028,38 @@ function mapPoint(ev){
   const rect=interactOn?liveRect:(lastCap&&lastCap.rect); if(!rect) return null;
   return {x:Math.round(rect.x+fx*rect.width), y:Math.round(rect.y+fy*rect.height)};
 }
+let deskPollTimer=null;
+function showDeskBanner(ds){
+  const el=$("#deskBanner"); if(!el) return;
+  if(!ds || ds.desktop==="default"){ el.hidden=true; return; }
+  el.hidden=false;
+  if(ds.inputAvailable){
+    el.style.background="color-mix(in srgb, var(--warn) 18%, transparent)"; el.style.color="var(--warn)";
+    el.textContent="Following the "+ds.desktop+" desktop ("+(ds.rawDesktopName||"?")+") — view & input switched to it automatically.";
+  } else {
+    el.style.background="color-mix(in srgb, var(--crit) 18%, transparent)"; el.style.color="var(--crit)";
+    el.textContent="⚠ Secure desktop active ("+(ds.rawDesktopName||"UAC / lock")+"). Viewing and driving it needs Deskhand running as SYSTEM; input is blocked here.";
+  }
+}
+async function pollDesktop(){
+  try{ const r=await api("/input/desktop-follow","GET",undefined,{quiet:true}); showDeskBanner(r&&r.desktop); }catch{}
+}
 function interactStop(){
   if(dragging){ dragging=false; pendingMove=null; api("/mouse/up","POST",{button:dragBtn},{quiet:true}); } // release any held button
   interactOn=false; const b=$("#interactBtn"); if(b){ b.textContent="🖱 Interact"; b.classList.remove("a"); }
+  if(deskPollTimer){ clearInterval(deskPollTimer); deskPollTimer=null; } const db=$("#deskBanner"); if(db) db.hidden=true;
+  api("/input/desktop-follow","POST",{on:false},{quiet:true});   // stop following; normal input path resumes
   const v=$("#viewer"); v.style.cursor=""; v.removeAttribute("tabindex");
   liveStop();
 }
 function interactStart(){
   interactOn=true; const b=$("#interactBtn"); b.textContent="■ Stop control"; b.classList.add("a");
   liveRect=monitorRect();
-  if(!liveOn) liveStart({fps:12, quality:50, maxWidth:1600});   // snappier feed while actively controlling
+  api("/input/desktop-follow","POST",{on:true},{quiet:true});    // route input to whichever desktop owns it
+  if(!liveOn) liveStart({fps:12, quality:50, maxWidth:1600, inputDesktop:true});   // snappier feed that follows desktop switches
+  pollDesktop(); deskPollTimer=setInterval(pollDesktop,1500);    // banner when input leaves the default desktop
   const v=$("#viewer"); v.style.cursor="crosshair"; v.setAttribute("tabindex","0"); v.focus();
-  toast("Live control: click, scroll & type on the screen (needs armed). Ctrl+Alt+Pause still kills input.");
+  toast("Live control: click, scroll & type on the screen (needs armed). Follows desktop switches. Ctrl+Alt+Pause kills input.");
 }
 $("#interactBtn").onclick=()=>{ interactOn?interactStop():interactStart(); };
 // right-click, scroll, and keyboard pass through to the machine while interacting

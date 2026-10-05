@@ -19,6 +19,20 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     // Input is off the STA thread (SendInput is thread-safe), but each action is serialized so two
     // concurrent Type/click calls can't interleave their SendInput streams into a scrambled sequence.
     private readonly object _inputGate = new();
+    // When FollowInputDesktop is set (interactive mode), input is routed through a thread that stays
+    // attached to whichever desktop currently owns input, so clicks/keys follow a desktop switch.
+    private readonly Services.InputDesktopPump _inputPump = new();
+    public bool FollowInputDesktop { get; set; }
+    private void Inject(Action a)
+    {
+        // On the default desktop (the common case) inject inline — the proven, lowest-latency path, and
+        // no regression when following is on. Only when input has actually left the default desktop
+        // (secure/screensaver/custom) do we hop onto a thread attached to that desktop to reach it.
+        if (FollowInputDesktop && Services.DesktopInfo.GetDesktopState().Desktop != "default")
+            _inputPump.Run(a);
+        else
+            lock (_inputGate) a();
+    }
 
     public LocalAutomationBackend()
     {
@@ -218,17 +232,17 @@ public sealed class LocalAutomationBackend : IAutomationBackend
 
     // ---- input (SendInput: thread-agnostic → OFF the STA thread, serialized on _inputGate so
     //      concurrent actions stay atomic instead of interleaving keystrokes/clicks) ----
-    public void MouseMove(int x, int y) { lock (_inputGate) InputInjector.MouseMove(x, y); }
-    public void MouseClick(string button, int? x, int? y, int count) { lock (_inputGate) InputInjector.MouseClick(button, x, y, count); }
-    public void MouseDown(string button, int? x, int? y) { lock (_inputGate) InputInjector.MouseDown(button, x, y); }
-    public void MouseUp(string button, int? x, int? y) { lock (_inputGate) InputInjector.MouseUp(button, x, y); }
-    public void MouseScroll(int dx, int dy) { lock (_inputGate) InputInjector.MouseScroll(dx, dy); }
+    public void MouseMove(int x, int y) => Inject(() => InputInjector.MouseMove(x, y));
+    public void MouseClick(string button, int? x, int? y, int count) => Inject(() => InputInjector.MouseClick(button, x, y, count));
+    public void MouseDown(string button, int? x, int? y) => Inject(() => InputInjector.MouseDown(button, x, y));
+    public void MouseUp(string button, int? x, int? y) => Inject(() => InputInjector.MouseUp(button, x, y));
+    public void MouseScroll(int dx, int dy) => Inject(() => InputInjector.MouseScroll(dx, dy));
     public void Drag(int fromX, int fromY, int toX, int toY, string button, int steps, int holdMs)
     {
         steps = Math.Clamp(steps, 1, 500);
         holdMs = Math.Clamp(holdMs, 0, 5000);
         button = string.IsNullOrWhiteSpace(button) ? "left" : button;
-        lock (_inputGate)   // whole gesture is atomic so nothing interleaves between press and release
+        Inject(() =>   // whole gesture is atomic so nothing interleaves between press and release
         {
             InputInjector.MouseMove(fromX, fromY);
             InputInjector.MouseDown(button, fromX, fromY);
@@ -241,14 +255,15 @@ public sealed class LocalAutomationBackend : IAutomationBackend
             }
             if (holdMs > 0) Thread.Sleep(holdMs);
             InputInjector.MouseUp(button, toX, toY);
-        }
+        });
     }
-    public void TypeText(string text) { lock (_inputGate) InputInjector.TypeText(text); }
-    public void SendKeys(string chord) { lock (_inputGate) InputInjector.SendKeys(chord); }
+    public void TypeText(string text) => Inject(() => InputInjector.TypeText(text));
+    public void SendKeys(string chord) => Inject(() => InputInjector.SendKeys(chord));
 
     public void Dispose()
     {
         try { _sta.Invoke(() => _uia.Dispose()); } catch { }
         _sta.Dispose();
+        _inputPump.Dispose();
     }
 }

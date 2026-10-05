@@ -660,20 +660,21 @@ let AUTH_TOKEN = "";
   }catch{}
 })();
 
-async function api(path, method="GET", body){
+async function api(path, method="GET", body, opts){
+  const quiet = !!(opts&&opts.quiet);   // suppress the DOM log row for high-frequency calls (live input)
   let res,data,txt="";
   const headers = body?{"Content-Type":"application/json"}:{};
   if(AUTH_TOKEN) headers["Authorization"]="Bearer "+AUTH_TOKEN;
   try {
     res = await fetch(path,{ method, headers, body: body?JSON.stringify(body):undefined });
     txt = await res.text(); try{ data = txt?JSON.parse(txt):null }catch{ data=txt }
-  } catch(e){ logRow(method,path,"ERR"); throw e; }
+  } catch(e){ if(!quiet) logRow(method,path,"ERR"); throw e; }
   if(res.status===401 && !AUTH_TOKEN){
     const t=prompt("This Deskhand is exposed to the network and needs its access token:");
     if(t){ AUTH_TOKEN=t.trim(); try{ sessionStorage.setItem("deskhand_token",AUTH_TOKEN); }catch{}
-           return api(path,method,body); }
+           return api(path,method,body,opts); }
   }
-  logRow(method,path,res.status);
+  if(!quiet) logRow(method,path,res.status);
   if(!res.ok){ const err=new Error((data&&data.error)||res.statusText); err.status=res.status; err.data=data; throw err; }
   return data;
 }
@@ -994,10 +995,12 @@ function liveStop(){
   const e=v.querySelector(".vempty"); if(e&&!v.querySelector("img")) e.style.display="";
   const cb=$("#capBtn"); if(cb) cb.disabled=false;
 }
-function liveStart(){
+function liveStart(opts){
   liveOn=true; const b=$("#liveBtn"); b.textContent="■ Stop"; b.classList.add("a");
   const monVal=$("#monSel").value;
-  let url="/capture/stream?fps=4&quality=55"+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
+  // interactive control wants a snappier feed; passive viewing stays light on bandwidth
+  const fps=(opts&&opts.fps)||4, q=(opts&&opts.quality)||55, mw=(opts&&opts.maxWidth)||0;
+  let url="/capture/stream?fps="+fps+"&quality="+q+(mw?"&maxWidth="+mw:"")+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
   if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
   const v=$("#viewer"); v.querySelectorAll("img").forEach(n=>n.remove());
   const e=v.querySelector(".vempty"); if(e) e.style.display="none";
@@ -1024,6 +1027,7 @@ function mapPoint(ev){
   return {x:Math.round(rect.x+fx*rect.width), y:Math.round(rect.y+fy*rect.height)};
 }
 function interactStop(){
+  if(dragging){ dragging=false; pendingMove=null; api("/mouse/up","POST",{button:dragBtn},{quiet:true}); } // release any held button
   interactOn=false; const b=$("#interactBtn"); if(b){ b.textContent="🖱 Interact"; b.classList.remove("a"); }
   const v=$("#viewer"); v.style.cursor=""; v.removeAttribute("tabindex");
   liveStop();
@@ -1031,31 +1035,45 @@ function interactStop(){
 function interactStart(){
   interactOn=true; const b=$("#interactBtn"); b.textContent="■ Stop control"; b.classList.add("a");
   liveRect=monitorRect();
-  if(!liveOn) liveStart();
+  if(!liveOn) liveStart({fps:12, quality:50, maxWidth:1600});   // snappier feed while actively controlling
   const v=$("#viewer"); v.style.cursor="crosshair"; v.setAttribute("tabindex","0"); v.focus();
   toast("Live control: click, scroll & type on the screen (needs armed). Ctrl+Alt+Pause still kills input.");
 }
 $("#interactBtn").onclick=()=>{ interactOn?interactStop():interactStart(); };
 // right-click, scroll, and keyboard pass through to the machine while interacting
 $("#viewer").addEventListener("contextmenu",(ev)=>{ if(!interactOn) return; ev.preventDefault(); const p=mapPoint(ev); if(p) api("/mouse/click","POST",{button:"right",x:p.x,y:p.y,count:1}); });
-$("#viewer").addEventListener("wheel",(ev)=>{ if(!interactOn) return; ev.preventDefault(); api("/mouse/scroll","POST",{dx:0,dy:ev.deltaY<0?1:-1}); },{passive:false});
+$("#viewer").addEventListener("wheel",(ev)=>{ if(!interactOn) return; ev.preventDefault(); api("/mouse/scroll","POST",{dx:0,dy:ev.deltaY<0?1:-1},{quiet:true}); },{passive:false});
 // press → move → release: a tap is a click, a press-and-drag moves windows/selects text
-let dragging=false, dragBtn="left", lastMove=0;
+let dragging=false, dragBtn="left";
+// coalesce moves: keep at most ONE /mouse/move in flight and always send the latest point, so a slow
+// server never lets a backlog build (the cause of laggy, "stuck-after-you-stop" dragging).
+let moveInFlight=false, pendingMove=null;
+function sendMove(x,y){
+  pendingMove={x,y};
+  if(moveInFlight) return;
+  moveInFlight=true;
+  (async()=>{
+    while(pendingMove){ const m=pendingMove; pendingMove=null;
+      try{ await api("/mouse/move","POST",m,{quiet:true}); }catch{} }
+    moveInFlight=false;
+  })();
+}
 $("#viewer").addEventListener("mousedown",(ev)=>{
   if(!interactOn) return; ev.preventDefault(); $("#viewer").focus();
   dragBtn = ev.button===2?"right":(ev.button===1?"middle":"left");
   if(dragBtn==="right") return; // right-click comes through the contextmenu handler
   const p=mapPoint(ev); if(!p) return;
-  dragging=true; api("/mouse/down","POST",{button:dragBtn,x:p.x,y:p.y});
+  dragging=true; api("/mouse/down","POST",{button:dragBtn,x:p.x,y:p.y},{quiet:true});
 });
 $("#viewer").addEventListener("mousemove",(ev)=>{
   if(!interactOn||!dragging) return;
-  const now=performance.now(); if(now-lastMove<33) return; lastMove=now; // ~30fps throttle
-  const p=mapPoint(ev); if(p) api("/mouse/move","POST",{x:p.x,y:p.y});
+  const p=mapPoint(ev); if(p) sendMove(p.x,p.y);
 });
 window.addEventListener("mouseup",(ev)=>{
   if(!interactOn||!dragging) return; ev.preventDefault(); dragging=false;
-  const p=mapPoint(ev); if(p) api("/mouse/up","POST",{button:dragBtn,x:p.x,y:p.y}); else api("/mouse/up","POST",{button:dragBtn});
+  pendingMove=null; // drop queued moves so none land after the button is released
+  const p=mapPoint(ev);
+  api("/mouse/up","POST",p?{button:dragBtn,x:p.x,y:p.y}:{button:dragBtn},{quiet:true});
 });
 const KEYNAMES={"Enter":"enter","Tab":"tab","Escape":"esc","Backspace":"backspace","Delete":"delete","Insert":"insert","Home":"home","End":"end","PageUp":"pageup","PageDown":"pagedown","ArrowUp":"up","ArrowDown":"down","ArrowLeft":"left","ArrowRight":"right"," ":"space"};
 // capture at the document so typing works regardless of which element holds browser focus
@@ -1064,10 +1082,10 @@ document.addEventListener("keydown",(ev)=>{
   ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
   const k=ev.key;
   // a bare printable character (incl. shifted symbols / capitals) — type it literally
-  if(k.length===1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey){ api("/keyboard/type","POST",{text:k}); return; }
+  if(k.length===1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey){ api("/keyboard/type","POST",{text:k},{quiet:true}); return; }
   const mods=[]; if(ev.ctrlKey)mods.push("ctrl"); if(ev.altKey)mods.push("alt"); if(ev.shiftKey)mods.push("shift"); if(ev.metaKey)mods.push("win");
   let tok=KEYNAMES[k]; if(!tok){ if(/^F\d{1,2}$/.test(k)) tok=k.toLowerCase(); else if(k.length===1) tok=k.toLowerCase(); else return; }
-  api("/keyboard/keys","POST",{chord:[...mods,tok].join("+")});
+  api("/keyboard/keys","POST",{chord:[...mods,tok].join("+")},{quiet:true});
 }, true);
 $("#secBtn").onclick=guard(async()=>{
   const res=await api("/capture/input-desktop","POST",{format:"png"});

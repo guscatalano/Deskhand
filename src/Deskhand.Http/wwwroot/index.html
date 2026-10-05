@@ -1001,7 +1001,7 @@ function liveStart(opts){
   const monVal=$("#monSel").value;
   // interactive control wants a snappier feed; passive viewing stays light on bandwidth
   const fps=(opts&&opts.fps)||4, q=(opts&&opts.quality)||55, mw=(opts&&opts.maxWidth)||0;
-  const idt=(opts&&opts.inputDesktop)?"&inputDesktop=1":"";   // follow whatever desktop owns input
+  const idt=(opts&&opts.inputDesktop)?"&inputDesktop=true":"";   // follow whatever desktop owns input (bool query → "true")
   let url="/capture/stream?fps="+fps+"&quality="+q+(mw?"&maxWidth="+mw:"")+idt+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
   if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
   const v=$("#viewer"); v.querySelectorAll("img").forEach(n=>n.remove());

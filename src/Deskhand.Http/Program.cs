@@ -137,6 +137,12 @@ builder.Services.AddSingleton(screenshotStore);
 builder.Services.AddSingleton(inputRecorder);
 builder.Services.AddSingleton(new Deskhand.Core.Services.ShellJobStore());
 builder.Services.AddSingleton(new Deskhand.Core.Services.WebhookService());
+// Request log: an always-on ring buffer of recent HTTP requests with timing, to investigate lag.
+var requestLog = new Deskhand.Core.Diagnostics.RequestLog(
+    int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_REQLOG_SIZE"), out var rls) && rls > 0 ? rls : 2000);
+double slowRequestMs = double.TryParse(Environment.GetEnvironmentVariable("DESKHAND_SLOW_REQUEST_MS"),
+    System.Globalization.CultureInfo.InvariantCulture, out var srm) && srm > 0 ? srm : 1000;
+builder.Services.AddSingleton(requestLog);
 builder.Services.AddHostedService<WebhookForwarder>();
 builder.Services.AddHostedService<AutoDismissWorker>();   // continuously-present nag auto-dismisser (kill-switch bound)
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
@@ -224,6 +230,32 @@ app.UseStaticFiles(new StaticFileOptions
         var p = ctx.File.Name;
         if (p.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
             ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+    }
+});
+
+// ---- request timing: record every request (metadata only) into the ring buffer, warn on slow ones ----
+// First in the pipeline so it measures total time including auth and errors.
+app.Use(async (ctx, next) =>
+{
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    long startMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    try { await next(); }
+    finally
+    {
+        sw.Stop();
+        var path = ctx.Request.Path.Value ?? "";
+        requestLog.Add(new Deskhand.Core.Diagnostics.RequestLogEntry(
+            startMs, ctx.Request.Method, path,
+            ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : null,
+            ctx.Response.StatusCode, sw.Elapsed.TotalMilliseconds,
+            ctx.Connection.RemoteIpAddress?.ToString(), ctx.Request.ContentLength));
+        // Long-lived streams (MJPEG, MCP SSE, event stream) are expected to be "slow"; don't warn on them.
+        bool streaming = path.StartsWith("/capture/stream", StringComparison.Ordinal)
+            || path.StartsWith("/mcp", StringComparison.Ordinal)
+            || path.StartsWith("/events", StringComparison.Ordinal);
+        if (!streaming && sw.Elapsed.TotalMilliseconds >= slowRequestMs)
+            app.Logger.LogWarning("slow request: {Method} {Path} -> {Status} in {Ms:F0}ms",
+                ctx.Request.Method, path, ctx.Response.StatusCode, sw.Elapsed.TotalMilliseconds);
     }
 });
 
@@ -1099,6 +1131,21 @@ api.MapPost("/fetch", async (ControlState st, AuditLog al, FetchRequest r) =>
 
 // Audit log viewer: tail today's JSONL. Read-only.
 api.MapGet("/audit/recent", (AuditLog al, int? limit) => Results.Ok(ReadAudit(al, limit ?? 200)));
+
+// Request log: recent HTTP requests with timing (metadata only), newest first. Filter by ?minMs= and ?path=.
+// Use this to see which requests lagged. ?minMs=1000 shows only requests that took >=1s.
+api.MapGet("/requests/recent", (Deskhand.Core.Diagnostics.RequestLog rl, int? limit, double? minMs, string? path) =>
+{
+    var items = rl.Recent(limit ?? 200, minMs, path);
+    return Results.Ok(new
+    {
+        total = rl.Total,
+        capacity = rl.Capacity,
+        slowThresholdMs = slowRequestMs,
+        count = items.Count,
+        requests = items,
+    });
+});
 
 // Webhooks: register outbound sinks for UI events. List is read; add/remove armed + audited.
 api.MapGet("/webhooks", (Deskhand.Core.Services.WebhookService wh) => Results.Ok(new { urls = wh.List() }));

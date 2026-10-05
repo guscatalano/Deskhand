@@ -248,6 +248,7 @@
   <button class="tabbtn" data-tab="shell">Shell</button>
   <button class="tabbtn" data-tab="screen">Screen</button>
   <button class="tabbtn" data-tab="audit">Audit</button>
+  <button class="tabbtn" data-tab="requests">Requests</button>
   <span class="spacer"></span>
   <button class="tabbtn" data-tab="connect">Connect</button>
 </nav>
@@ -349,6 +350,22 @@
       </div>
       <div class="coordbar" id="auditMeta" style="margin:10px 0 6px"></div>
       <div id="auditBody"></div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-requests">
+    <div style="padding:14px 16px 60px;max-width:1100px;width:100%">
+      <div class="sect"><div class="h">Request log <span class="count" id="reqCount"></span></div></div>
+      <div class="row" style="margin-top:8px;align-items:center;gap:10px;flex-wrap:wrap">
+        <input type="text" id="reqFilter" placeholder="filter path…" style="flex:1;min-width:160px;font-size:12px">
+        <label class="lbl" style="display:flex;align-items:center;gap:6px">slow only ≥
+          <input type="number" id="reqMinMs" value="0" min="0" step="100" style="width:72px;font-size:12px"> ms</label>
+        <label class="lbl" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="reqAuto"> auto-refresh</label>
+        <button class="btn p" id="reqRefresh">Refresh</button>
+      </div>
+      <div class="coordbar" id="reqMeta" style="margin:10px 0 6px"></div>
+      <div id="reqBody"></div>
     </div>
   </div>
 
@@ -1490,6 +1507,46 @@ const loadAudit=guard(async()=>{
 $("#auditRefresh").onclick=loadAudit;
 $("#auditFilter").addEventListener("input",()=>{ if(auditLoaded) loadAudit(); });
 
+/* ---------- request log ---------- */
+let reqLoaded=false, reqTimer=null;
+function reqTimeStr(ms){ try{ return new Date(ms).toLocaleTimeString(); }catch{ return ""+ms; } }
+function reqColor(ms){ if(ms>=2000) return "var(--crit)"; if(ms>=1000) return "var(--warn)"; if(ms>=300) return "var(--ink)"; return "var(--ink-3)"; }
+const loadRequests=guard(async()=>{
+  reqLoaded=true;
+  const minMs=Math.max(0,+($("#reqMinMs").value||0));
+  const path=($("#reqFilter").value||"").trim();
+  const qs=new URLSearchParams({limit:"400"}); if(minMs>0)qs.set("minMs",minMs); if(path)qs.set("path",path);
+  const d=await api("/requests/recent?"+qs.toString());
+  const rows=d.requests||[];
+  $("#reqCount").textContent=rows.length;
+  const body=$("#reqBody"); body.innerHTML="";
+  const t=elm("table","fwtable");
+  t.innerHTML='<thead><tr><th>Time</th><th style="text-align:right">ms</th><th>Status</th><th>Method</th><th>Path</th><th>From</th></tr></thead>';
+  const tb=elm("tbody");
+  rows.forEach(r=>{
+    const ms=r.elapsedMs||0, bad=(r.status||0)>=400;
+    const tr=elm("tr");
+    const q=r.query?('<span style="color:var(--ink-3)">'+fwEsc(r.query)+'</span>'):"";
+    tr.innerHTML='<td class="mono" style="white-space:nowrap">'+fwEsc(reqTimeStr(r.startedUnixMs))+'</td>'+
+      '<td class="mono" style="text-align:right;color:'+reqColor(ms)+'">'+ms.toFixed(0)+'</td>'+
+      '<td style="color:'+(bad?'var(--crit)':'var(--good)')+'">'+fwEsc(""+(r.status||""))+'</td>'+
+      '<td class="mono">'+fwEsc(r.method||"")+'</td>'+
+      '<td class="fwname mono" title="'+fwEsc((r.path||"")+(r.query||""))+'">'+fwEsc(r.path||"")+q+'</td>'+
+      '<td class="mono" style="color:var(--ink-3)">'+fwEsc(r.remoteIp||"")+'</td>';
+    tb.append(tr);
+  });
+  t.append(tb); body.append(t);
+  $("#reqMeta").innerHTML='showing <b>'+rows.length+'</b> (newest first) · <b>'+(d.total||0)+'</b> total since start · buffer '+(d.capacity||0)+' · slow ≥ '+(d.slowThresholdMs||0)+'ms logged to console';
+  if(!rows.length) body.innerHTML='<div class="lbl" style="color:var(--ink-3);padding:8px">No matching requests.</div>';
+});
+$("#reqRefresh").onclick=loadRequests;
+$("#reqFilter").addEventListener("input",()=>{ if(reqLoaded) loadRequests(); });
+$("#reqMinMs").addEventListener("input",()=>{ if(reqLoaded) loadRequests(); });
+$("#reqAuto").addEventListener("change",()=>{
+  if($("#reqAuto").checked){ reqTimer=setInterval(()=>{ if(!document.hidden) loadRequests(); },2000); }
+  else { clearInterval(reqTimer); reqTimer=null; }
+});
+
 /* ---------- update banner ---------- */
 (async()=>{
   try{
@@ -1826,6 +1883,7 @@ $("#swRefresh").onclick=loadSoftware;
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab!=="screen"){ if(typeof interactOn!=="undefined"&&interactOn) interactStop(); else if(typeof liveOn!=="undefined"&&liveOn) liveStop(); }   // stop live/interact when leaving Screen
+  if(b.dataset.tab!=="requests"&&typeof reqTimer!=="undefined"&&reqTimer){ clearInterval(reqTimer); reqTimer=null; const a=$("#reqAuto"); if(a)a.checked=false; }
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   b.classList.add("active"); $("#tab-"+b.dataset.tab).classList.add("active");
@@ -1839,6 +1897,7 @@ document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="software"&&!swLoaded) loadSoftware();
   if(b.dataset.tab==="firewall"&&!fwLoaded) loadFirewall();
   if(b.dataset.tab==="audit"&&!auditLoaded) loadAudit();
+  if(b.dataset.tab==="requests") loadRequests();
   history.replaceState(null,"","#"+b.dataset.tab);   // deep-link the tab so refresh returns here
 });
 function explorerError(msg){

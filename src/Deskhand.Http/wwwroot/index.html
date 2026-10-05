@@ -518,6 +518,7 @@
           <select id="fmtSel"><option value="png">png</option><option value="jpeg">jpeg</option></select>
           <button class="btn p" id="capBtn">Capture</button>
           <button class="btn" id="liveBtn" title="Live MJPEG view (~4 fps)">▶ Live</button>
+          <button class="btn" id="interactBtn" title="Live control — click, scroll &amp; type directly on the live screen (needs armed)">🖱 Interact</button>
           <button class="btn" id="saveBtn" title="Download the current screenshot">⬇ Save</button>
         </header>
         <div class="body">
@@ -913,6 +914,7 @@ const capture=guard(async()=>{
   img.src=`data:image/${c.format};base64,${c.imageBase64}`;
 });
 $("#viewer").addEventListener("click", guard(async(ev)=>{
+  if(interactOn){ const p=mapPoint(ev); if(p){ await api("/mouse/click","POST",{button:"left",x:p.x,y:p.y,count:1}); } $("#viewer").focus(); return; }
   const img=$("#viewer img"); if(!img||!lastCap) return;
   const r=img.getBoundingClientRect(); const fx=(ev.clientX-r.left)/r.width, fy=(ev.clientY-r.top)/r.height;
   const dx=Math.round(lastCap.rect.x+fx*lastCap.rect.width), dy=Math.round(lastCap.rect.y+fy*lastCap.rect.height);
@@ -988,6 +990,49 @@ function liveStart(){
   $("#capBtn").disabled=true;
 }
 $("#liveBtn").onclick=()=>{ liveOn?liveStop():liveStart(); };
+
+// ---------- interactive mode: click, scroll & type directly on the live screen ----------
+let interactOn=false, liveRect=null;
+function monitorRect(){
+  const v=$("#monSel").value;
+  if(v!==""){ const m=monitors.find(x=>String(x.index)===String(v)); if(m&&m.bounds) return m.bounds; }
+  if(monitors.length){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; monitors.forEach(m=>{const b=m.bounds; if(!b) return; x0=Math.min(x0,b.x); y0=Math.min(y0,b.y); x1=Math.max(x1,b.x+b.width); y1=Math.max(y1,b.y+b.height);}); if(x1>x0) return {x:x0,y:y0,width:x1-x0,height:y1-y0}; }
+  return {x:0,y:0,width:1920,height:1080};
+}
+function mapPoint(ev){
+  const img=$("#viewer img"); if(!img) return null;
+  const r=img.getBoundingClientRect(); if(!r.width||!r.height) return null;
+  const fx=(ev.clientX-r.left)/r.width, fy=(ev.clientY-r.top)/r.height;
+  const rect=interactOn?liveRect:(lastCap&&lastCap.rect); if(!rect) return null;
+  return {x:Math.round(rect.x+fx*rect.width), y:Math.round(rect.y+fy*rect.height)};
+}
+function interactStop(){
+  interactOn=false; const b=$("#interactBtn"); if(b){ b.textContent="🖱 Interact"; b.classList.remove("a"); }
+  const v=$("#viewer"); v.style.cursor=""; v.removeAttribute("tabindex");
+  liveStop();
+}
+function interactStart(){
+  interactOn=true; const b=$("#interactBtn"); b.textContent="■ Stop control"; b.classList.add("a");
+  liveRect=monitorRect();
+  if(!liveOn) liveStart();
+  const v=$("#viewer"); v.style.cursor="crosshair"; v.setAttribute("tabindex","0"); v.focus();
+  toast("Live control: click, scroll & type on the screen (needs armed). Ctrl+Alt+Pause still kills input.");
+}
+$("#interactBtn").onclick=()=>{ interactOn?interactStop():interactStart(); };
+// right-click, scroll, and keyboard pass through to the machine while interacting
+$("#viewer").addEventListener("contextmenu",(ev)=>{ if(!interactOn) return; ev.preventDefault(); const p=mapPoint(ev); if(p) api("/mouse/click","POST",{button:"right",x:p.x,y:p.y,count:1}); });
+$("#viewer").addEventListener("wheel",(ev)=>{ if(!interactOn) return; ev.preventDefault(); api("/mouse/scroll","POST",{dx:0,dy:ev.deltaY<0?1:-1}); },{passive:false});
+const KEYNAMES={"Enter":"enter","Tab":"tab","Escape":"esc","Backspace":"backspace","Delete":"delete","Insert":"insert","Home":"home","End":"end","PageUp":"pageup","PageDown":"pagedown","ArrowUp":"up","ArrowDown":"down","ArrowLeft":"left","ArrowRight":"right"," ":"space"};
+$("#viewer").addEventListener("keydown",(ev)=>{
+  if(!interactOn) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const k=ev.key;
+  // a bare printable character (incl. shifted symbols / capitals) — type it literally
+  if(k.length===1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey){ api("/keyboard/type","POST",{text:k}); return; }
+  const mods=[]; if(ev.ctrlKey)mods.push("ctrl"); if(ev.altKey)mods.push("alt"); if(ev.shiftKey)mods.push("shift"); if(ev.metaKey)mods.push("win");
+  let tok=KEYNAMES[k]; if(!tok){ if(/^F\d{1,2}$/.test(k)) tok=k.toLowerCase(); else if(k.length===1) tok=k.toLowerCase(); else return; }
+  api("/keyboard/keys","POST",{chord:[...mods,tok].join("+")});
+});
 $("#secBtn").onclick=guard(async()=>{
   const res=await api("/capture/input-desktop","POST",{format:"png"});
   const kindColor = res.kind==="secure" ? "var(--crit)" : "var(--good)";
@@ -1761,7 +1806,7 @@ $("#swRefresh").onclick=loadSoftware;
 
 /* ---------- chrome ---------- */
 document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{
-  if(b.dataset.tab!=="screen"&&typeof liveOn!=="undefined"&&liveOn) liveStop();   // stop the live stream when leaving Screen
+  if(b.dataset.tab!=="screen"){ if(typeof interactOn!=="undefined"&&interactOn) interactStop(); else if(typeof liveOn!=="undefined"&&liveOn) liveStop(); }   // stop live/interact when leaving Screen
   document.querySelectorAll(".tabbtn").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   b.classList.add("active"); $("#tab-"+b.dataset.tab).classList.add("active");

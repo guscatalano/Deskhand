@@ -147,6 +147,9 @@ Open **http://127.0.0.1:8791** in any browser. The single-page console lets you:
 - see live machine / desktop / monitor status (auto-refreshing);
 - capture a monitor (or the whole virtual desktop) and click the screenshot to read desktop
   coordinates — or, in *control mode*, to move/click there for real;
+- **Interact** (Screen tab) — a live remote-control view: the screen streams and you **click, right-click,
+  scroll, and type directly on it** (keystrokes and shortcuts pass through to the machine); needs the kill
+  switch armed, and **Ctrl+Alt+Pause** still cuts all input;
 - explore the UIA tree (foreground / focused / desktop root, lazy-expand), and per element
   **Invoke / Focus / Capture / Highlight** it on the screenshot;
 - drive mouse and keyboard from the Input panel;

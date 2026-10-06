@@ -21,6 +21,7 @@ public static class SecureHelperServer
     public static int Run(string pipeName, string whoAmI)
     {
         Console.WriteLine($"Deskhand secure helper serving on \\\\.\\pipe\\{pipeName} as {whoAmI}");
+        Log($"serve start: as {whoAmI}, process desktop = {CurrentDesktopName()}");
         var pump = new InputDesktopPump();
         int idleSec = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_SECURE_IDLE_SEC"), out var s) ? s : 90;
 
@@ -106,17 +107,65 @@ public static class SecureHelperServer
                     format = res.Capture.Format, width = res.Capture.Rect.Width, height = res.Capture.Rect.Height,
                     bytes = res.Capture.Bytes.Length }), res.Capture.Bytes);
             }
-            case "move": pump.Run(() => InputInjector.MouseMove(Int(r, "x", 0), Int(r, "y", 0))); return Ok();
-            case "down": pump.Run(() => InputInjector.MouseDown(Str(r, "button", "left"), NInt(r, "x"), NInt(r, "y"))); return Ok();
-            case "up":   pump.Run(() => InputInjector.MouseUp(Str(r, "button", "left"), NInt(r, "x"), NInt(r, "y"))); return Ok();
-            case "click": pump.Run(() => InputInjector.MouseClick(Str(r, "button", "left"), NInt(r, "x"), NInt(r, "y"), Int(r, "count", 1))); return Ok();
-            case "scroll": pump.Run(() => InputInjector.MouseScroll(Int(r, "dx", 0), Int(r, "dy", 0))); return Ok();
-            case "drag": pump.Run(() => InputInjector.Drag(Int(r, "fromX", 0), Int(r, "fromY", 0), Int(r, "toX", 0), Int(r, "toY", 0),
-                Str(r, "button", "left"), Int(r, "steps", 20), Int(r, "holdMs", 60))); return Ok();
-            case "type": { string t = Str(r, "text"); pump.Run(() => InputInjector.TypeText(t)); return Ok(); }
-            case "keys": { string c = Str(r, "chord"); pump.Run(() => InputInjector.SendKeys(c)); return Ok(); }
+            case "move": return DoInput(pump, "move", () => InputInjector.MouseMove(Int(r, "x", 0), Int(r, "y", 0)));
+            case "down": return DoInput(pump, "down", () => InputInjector.MouseDown(Str(r, "button", "left"), NInt(r, "x"), NInt(r, "y")));
+            case "up":   return DoInput(pump, "up", () => InputInjector.MouseUp(Str(r, "button", "left"), NInt(r, "x"), NInt(r, "y")));
+            case "click": return DoInput(pump, "click", () => InputInjector.MouseClick(Str(r, "button", "left"), NInt(r, "x"), NInt(r, "y"), Int(r, "count", 1)));
+            case "scroll": return DoInput(pump, "scroll", () => InputInjector.MouseScroll(Int(r, "dx", 0), Int(r, "dy", 0)));
+            case "drag": return DoInput(pump, "drag", () => InputInjector.Drag(Int(r, "fromX", 0), Int(r, "fromY", 0), Int(r, "toX", 0), Int(r, "toY", 0),
+                Str(r, "button", "left"), Int(r, "steps", 20), Int(r, "holdMs", 60)));
+            case "type": { string t = Str(r, "text"); return DoInput(pump, "type", () => InputInjector.TypeText(t)); }
+            case "keys": { string c = Str(r, "chord"); return DoInput(pump, "keys", () => InputInjector.SendKeys(c)); }
             default: return (Err($"unknown op '{op}'"), null);
         }
+    }
+
+    // Runs an input action on the pump (which attaches to the current input desktop) and logs exactly what
+    // happened — input desktop, the thread's actually-attached desktop, and the SendInput result — so we can
+    // tell a real Windows block apart from an attach problem on our side.
+    private static (byte[], byte[]?) DoInput(InputDesktopPump pump, string op, Action act)
+    {
+        string inputDesk; try { inputDesk = DesktopInfo.GetDesktopState().RawDesktopName; } catch { inputDesk = "?"; }
+        try
+        {
+            pump.Run(act);
+            Log($"{op}: inputDesktop={inputDesk} threadDesktop={pump.LastAttached} -> OK");
+            return (Json(new { ok = true, inputDesktop = inputDesk, threadDesktop = pump.LastAttached }), null);
+        }
+        catch (Exception ex)
+        {
+            Log($"{op}: inputDesktop={inputDesk} threadDesktop={pump.LastAttached} -> FAIL {ex.Message}");
+            return (Json(new { ok = false, error = ex.Message, inputDesktop = inputDesk, threadDesktop = pump.LastAttached }), null);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetThreadDesktop(uint threadId);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool GetUserObjectInformation(IntPtr hObj, int index, byte[]? info, uint len, out uint needed);
+    private static string CurrentDesktopName()
+    {
+        try
+        {
+            var h = GetThreadDesktop(GetCurrentThreadId());
+            GetUserObjectInformation(h, 2 /*UOI_NAME*/, null, 0, out uint need);
+            if (need == 0) return "?";
+            var buf = new byte[need];
+            return GetUserObjectInformation(h, 2, buf, need, out _) ? System.Text.Encoding.Unicode.GetString(buf).TrimEnd('\0') : "?";
+        }
+        catch { return "?"; }
+    }
+
+    private static readonly object _logGate = new();
+    private static void Log(string line)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Deskhand");
+            Directory.CreateDirectory(dir);
+            lock (_logGate) File.AppendAllText(Path.Combine(dir, "secure-helper.log"), $"{DateTime.Now:HH:mm:ss.fff} {line}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     private static (byte[], byte[]?) Ok() => (Json(new { ok = true }), null);

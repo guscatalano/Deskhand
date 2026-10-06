@@ -21,6 +21,9 @@ public sealed class InputDesktopPump : IDisposable
     private string _attached = "";        // name of the desktop this thread is currently attached to
     private IntPtr _held = IntPtr.Zero;    // handle we SetThreadDesktop'd to (closed when it changes)
 
+    /// <summary>Name of the desktop the pump thread is currently attached to (for diagnostics).</summary>
+    public string LastAttached => _attached;
+
     public InputDesktopPump()
     {
         _thread = new Thread(Loop) { IsBackground = true, Name = "Deskhand-InputDesktop" };

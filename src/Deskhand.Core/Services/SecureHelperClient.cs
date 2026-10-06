@@ -133,6 +133,9 @@ public sealed class SecureHelperClient : IDisposable
             CreateNoWindow = true,
             WorkingDirectory = Path.GetDirectoryName(broker)!,
         };
+        // Run the helper's process genuinely on the secure desktop so SendInput there isn't denied — a thread
+        // merely re-pointed with SetThreadDesktop after the fact isn't always accepted by the input system.
+        psi.Environment["DESKHAND_HELPER_DESKTOP"] = @"Winsta0\Winlogon";
         psi.ArgumentList.Add(helper);
         psi.ArgumentList.Add("serve");
         psi.ArgumentList.Add("--pipe");

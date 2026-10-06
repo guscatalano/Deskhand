@@ -57,7 +57,12 @@ try
     try
     {
         CreateEnvironmentBlock(out IntPtr env, dupTok, false);
-        var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"Winsta0\Default" };
+        // Which desktop the helper's process runs ON. For secure-desktop INPUT the injecting process should
+        // genuinely live on Winsta0\Winlogon (re-pointing a thread after the fact isn't always enough for
+        // SendInput). Defaults to Default; the main server sets DESKHAND_HELPER_DESKTOP=Winsta0\Winlogon.
+        string desktop = Environment.GetEnvironmentVariable("DESKHAND_HELPER_DESKTOP") is { Length: > 0 } d ? d : @"Winsta0\Default";
+        Console.WriteLine($"helper desktop = {desktop}");
+        var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = desktop };
         string cmd = $"\"{helper}\" {helperArgs}";
         uint flags = CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW;
         string? dir = Path.GetDirectoryName(helper);

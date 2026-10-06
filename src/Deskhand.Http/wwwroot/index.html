@@ -1055,7 +1055,7 @@ function interactStart(){
   interactOn=true; const b=$("#interactBtn"); b.textContent="■ Stop control"; b.classList.add("a");
   liveRect=monitorRect();
   api("/input/desktop-follow","POST",{on:true},{quiet:true});    // route input to whichever desktop owns it
-  if(!liveOn) liveStart({fps:12, quality:50, maxWidth:1600, inputDesktop:true});   // snappier feed that follows desktop switches
+  if(!liveOn) liveStart({fps:30, quality:45, maxWidth:1366, inputDesktop:true});   // DXGI skip-when-idle makes a high cap cheap; follows desktop switches
   pollDesktop(); deskPollTimer=setInterval(pollDesktop,1500);    // banner when input leaves the default desktop
   const v=$("#viewer"); v.style.cursor="crosshair"; v.setAttribute("tabindex","0"); v.focus();
   toast("Live control: click, scroll & type on the screen (needs armed). Follows desktop switches. Ctrl+Alt+Pause kills input.");

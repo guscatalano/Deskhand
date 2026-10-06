@@ -1328,45 +1328,81 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
     var ct = ctx.RequestAborted;
     var crlf = System.Text.Encoding.ASCII.GetBytes("\r\n");
 
-    // One frame = one GDI grab + JPEG encode (the per-frame cost, ~tens of ms). Capture/encode runs on its own
-    // task and hands the LATEST frame to the network writer, so the next grab overlaps sending the last frame
-    // and a slow client just drops stale frames instead of stalling capture. The default desktop is captured
-    // pre-scaled (StretchBlt) so the encoder works on the final pixels; a non-default/secure desktop goes
-    // through CaptureInputDesktop (SYSTEM helper when secure), then downscaled.
+    // Fast path: DXGI Desktop Duplication (GPU) on the default desktop — it blocks until the screen actually
+    // changes, so idle frames cost nothing and motion gets the whole budget. Falls back to the GDI grab
+    // (pre-scaled StretchBlt) when DXGI is unavailable (headless/VM adapter, multi-monitor whole-desktop), and
+    // a non-default/secure desktop always goes through CaptureInputDesktop (SYSTEM helper when secure).
     long lastDeskCheck = 0; string deskKind = "default";
-    byte[] CaptureFrame()
+    void RefreshDesk()
     {
-        if (follow)
+        if (!follow) return;
+        long now = Environment.TickCount64;
+        if (now - lastDeskCheck > 400) { deskKind = Deskhand.Core.Services.DesktopInfo.GetDesktopState().Desktop; lastDeskCheck = now; }
+    }
+    byte[] CaptureGdi()
+    {
+        if (follow && deskKind != "default")
         {
-            long now = Environment.TickCount64;
-            if (now - lastDeskCheck > 400) { deskKind = Deskhand.Core.Services.DesktopInfo.GetDesktopState().Desktop; lastDeskCheck = now; }
-            if (deskKind != "default")
-            {
-                var r = localBackend.CaptureInputDesktop(ImageFormat.Jpeg, q);
-                var c = r.Success && r.Capture is not null ? r.Capture : localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q);
-                return Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, mw == 0 ? null : mw, null, q).Bytes;
-            }
+            var r = localBackend.CaptureInputDesktop(ImageFormat.Jpeg, q);
+            var c = r.Success && r.Capture is not null ? r.Capture : localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q);
+            return Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, mw == 0 ? null : mw, null, q).Bytes;
         }
         return Deskhand.Core.Services.ScreenCapture.CaptureScaledJpeg(StreamRect(monitor), mw, q, out _, out _);
+    }
+    Deskhand.Core.Services.DxgiScreenDuplicator? MakeDup()
+    {
+        try
+        {
+            var mons = Deskhand.Core.Services.DesktopInfo.Monitors();
+            if (monitor is null)
+            {
+                if (mons.Count != 1) return null;   // whole virtual desktop across >1 monitor → GDI
+                return new Deskhand.Core.Services.DxgiScreenDuplicator(null);
+            }
+            var m = mons.FirstOrDefault(mm => mm.Index == monitor.Value);
+            if (m is null) return null;
+            return new Deskhand.Core.Services.DxgiScreenDuplicator(new System.Drawing.Rectangle(m.Bounds.X, m.Bounds.Y, m.Bounds.Width, m.Bounds.Height));
+        }
+        catch { return null; }
     }
 
     byte[]? slot = null; var slotLock = new object(); var sig = new SemaphoreSlim(0, 1);
     var producer = Task.Run(async () =>
     {
+        var dup = MakeDup();
+        long dupRetryAt = 0;
         try
         {
             while (!ct.IsCancellationRequested)
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                byte[] f;
-                try { f = CaptureFrame(); } catch { break; }
-                lock (slotLock) slot = f;
-                if (sig.CurrentCount == 0) { try { sig.Release(); } catch { } }
-                int rest = delayMs - (int)sw.ElapsedMilliseconds;
+                RefreshDesk();
+                bool canDxgi = !follow || deskKind == "default";
+                byte[]? f = null;
+                if (canDxgi && dup is null && Environment.TickCount64 >= dupRetryAt) { dup = MakeDup(); if (dup is null) dupRetryAt = Environment.TickCount64 + 1000; }
+
+                if (canDxgi && dup is not null)
+                {
+                    try { f = dup.TryNextJpeg(delayMs, mw, q); }   // blocks up to delayMs; null = no change
+                    catch (Deskhand.Core.Services.DxgiScreenDuplicator.AccessLostException) { dup.Dispose(); dup = null; }
+                    catch { try { dup.Dispose(); } catch { } dup = null; }
+                }
+                else
+                {
+                    try { f = CaptureGdi(); } catch { break; }
+                }
+
+                if (f is not null)
+                {
+                    lock (slotLock) slot = f;
+                    if (sig.CurrentCount == 0) { try { sig.Release(); } catch { } }
+                }
+                int rest = delayMs - (int)sw.ElapsedMilliseconds;   // DXGI already waited via its timeout; this just caps fps
                 if (rest > 0) { try { await Task.Delay(rest, ct); } catch { break; } }
             }
         }
         catch { }
+        finally { dup?.Dispose(); }
     }, ct);
 
     try

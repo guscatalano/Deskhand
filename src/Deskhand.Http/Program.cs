@@ -1316,8 +1316,9 @@ api.MapPost("/uia/set-focus", (IAutomationBackend b, RefRequest r) => { b.SetFoc
 api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier tn, HttpContext ctx, int? monitor, int? fps, int? quality, int? maxWidth, bool? inputDesktop) =>
 {
     if (!st.CaptureEnabled) { ctx.Response.StatusCode = 403; await ctx.Response.WriteAsJsonAsync(new { error = "capture disabled", type = "capability_disabled" }); return; }
-    int frames = Math.Clamp(fps ?? 4, 1, 15);
+    int frames = Math.Clamp(fps ?? 4, 1, 30);
     int q = Math.Clamp(quality ?? 55, 10, 95);
+    int mw = maxWidth ?? 0;
     bool follow = inputDesktop ?? false;   // follow whatever desktop currently owns input (UAC/secure/screensaver)
     int delayMs = 1000 / frames;
     if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is live-streaming the screen · {frames} fps"); } catch { } }
@@ -1326,39 +1327,76 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
     ctx.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
     var ct = ctx.RequestAborted;
     var crlf = System.Text.Encoding.ASCII.GetBytes("\r\n");
+
+    // One frame = one GDI grab + JPEG encode (the per-frame cost, ~tens of ms). Capture/encode runs on its own
+    // task and hands the LATEST frame to the network writer, so the next grab overlaps sending the last frame
+    // and a slow client just drops stale frames instead of stalling capture. The default desktop is captured
+    // pre-scaled (StretchBlt) so the encoder works on the final pixels; a non-default/secure desktop goes
+    // through CaptureInputDesktop (SYSTEM helper when secure), then downscaled.
+    long lastDeskCheck = 0; string deskKind = "default";
+    byte[] CaptureFrame()
+    {
+        if (follow)
+        {
+            long now = Environment.TickCount64;
+            if (now - lastDeskCheck > 400) { deskKind = Deskhand.Core.Services.DesktopInfo.GetDesktopState().Desktop; lastDeskCheck = now; }
+            if (deskKind != "default")
+            {
+                var r = localBackend.CaptureInputDesktop(ImageFormat.Jpeg, q);
+                var c = r.Success && r.Capture is not null ? r.Capture : localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q);
+                return Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, mw == 0 ? null : mw, null, q).Bytes;
+            }
+        }
+        return Deskhand.Core.Services.ScreenCapture.CaptureScaledJpeg(StreamRect(monitor), mw, q, out _, out _);
+    }
+
+    byte[]? slot = null; var slotLock = new object(); var sig = new SemaphoreSlim(0, 1);
+    var producer = Task.Run(async () =>
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                byte[] f;
+                try { f = CaptureFrame(); } catch { break; }
+                lock (slotLock) slot = f;
+                if (sig.CurrentCount == 0) { try { sig.Release(); } catch { } }
+                int rest = delayMs - (int)sw.ElapsedMilliseconds;
+                if (rest > 0) { try { await Task.Delay(rest, ct); } catch { break; } }
+            }
+        }
+        catch { }
+    }, ct);
+
     try
     {
         while (!ct.IsCancellationRequested)
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            byte[] jpeg;
-            try
-            {
-                CaptureResultDto c;
-                // Follow the input desktop: cheap BitBlt while it's the default desktop; when it switches
-                // (UAC/secure/screensaver) attach a thread to the input desktop and grab that instead, so the
-                // view tracks the switch automatically. If the secure desktop isn't capturable (not SYSTEM),
-                // fall back to the default capture so the stream stays alive — the client banner explains why.
-                if (follow && Deskhand.Core.Services.DesktopInfo.GetDesktopState().Desktop != "default")
-                {
-                    var r = localBackend.CaptureInputDesktop(ImageFormat.Jpeg, q);
-                    c = r.Success && r.Capture is not null ? r.Capture : localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q);
-                }
-                else c = localBackend.CaptureScreen(monitor, ImageFormat.Jpeg, q);
-                jpeg = Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, maxWidth, null, q).Bytes;
-            }
-            catch { break; }
+            await sig.WaitAsync(ct);
+            byte[]? jpeg; lock (slotLock) { jpeg = slot; slot = null; }
+            if (jpeg is null) continue;
             var head = System.Text.Encoding.ASCII.GetBytes($"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n");
             await ctx.Response.Body.WriteAsync(head, ct);
             await ctx.Response.Body.WriteAsync(jpeg, ct);
             await ctx.Response.Body.WriteAsync(crlf, ct);
             await ctx.Response.Body.FlushAsync(ct);
-            int rest = delayMs - (int)sw.ElapsedMilliseconds;
-            if (rest > 0) await Task.Delay(rest, ct);
         }
     }
     catch (OperationCanceledException) { }
     catch { }
+    finally { try { await producer; } catch { } }
+
+    static System.Drawing.Rectangle StreamRect(int? monitor)
+    {
+        if (monitor is not null)
+        {
+            var m = Deskhand.Core.Services.DesktopInfo.Monitors().FirstOrDefault(mm => mm.Index == monitor.Value);
+            if (m is not null) return new System.Drawing.Rectangle(m.Bounds.X, m.Bounds.Y, m.Bounds.Width, m.Bounds.Height);
+        }
+        var v = Deskhand.Core.Services.DesktopInfo.VirtualScreen();
+        return new System.Drawing.Rectangle(v.X, v.Y, v.Width, v.Height);
+    }
 });
 
 // By default the image is returned to the caller (base64 JSON, or raw bytes with ?raw=true / Accept:image/*).

@@ -38,6 +38,50 @@ public static class ScreenCapture
         return Encode(bmp, format, jpegQuality);
     }
 
+    // GDI StretchBlt capture that downscales DURING the blit, so the JPEG encoder works on the final
+    // (smaller) pixels instead of encoding a full-res frame and then resizing — much cheaper per frame,
+    // which is what the live stream needs. Returns JPEG bytes plus the output dimensions.
+    public static byte[] CaptureScaledJpeg(Rectangle src, int maxWidth, int quality, out int outW, out int outH)
+    {
+        double scale = maxWidth > 0 && src.Width > maxWidth ? (double)maxWidth / src.Width : 1.0;
+        outW = Math.Max(1, (int)Math.Round(src.Width * scale));
+        outH = Math.Max(1, (int)Math.Round(src.Height * scale));
+
+        IntPtr screenDC = Gdi.GetDC(IntPtr.Zero);
+        IntPtr memDC = Gdi.CreateCompatibleDC(screenDC);
+        IntPtr hbmp = Gdi.CreateCompatibleBitmap(screenDC, outW, outH);
+        IntPtr old = Gdi.SelectObject(memDC, hbmp);
+        try
+        {
+            Gdi.SetStretchBltMode(memDC, Gdi.HALFTONE);
+            Gdi.StretchBlt(memDC, 0, 0, outW, outH, screenDC, src.X, src.Y, src.Width, src.Height, Gdi.SRCCOPY);
+            using var bmp = Image.FromHbitmap(hbmp);
+            return Encode(bmp, ImageFormat.Jpeg, quality);
+        }
+        finally
+        {
+            Gdi.SelectObject(memDC, old);
+            Gdi.DeleteObject(hbmp);
+            Gdi.DeleteDC(memDC);
+            Gdi.ReleaseDC(IntPtr.Zero, screenDC);
+        }
+    }
+
+    private static class Gdi
+    {
+        public const int HALFTONE = 4;
+        public const int SRCCOPY = 0x00CC0020;
+        [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hWnd);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern bool DeleteDC(IntPtr hdc);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int w, int h);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr hdc, IntPtr h);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr h);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern int SetStretchBltMode(IntPtr hdc, int mode);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern bool StretchBlt(IntPtr dst, int xd, int yd, int wd, int hd, IntPtr src, int xs, int ys, int ws, int hs, int rop);
+    }
+
     public static CaptureResultDto CaptureRegion(int x, int y, int w, int h, ImageFormat format, int jpegQuality)
     {
         if (w <= 0 || h <= 0) throw new ArgumentException("Region width and height must be positive.");

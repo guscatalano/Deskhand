@@ -15,10 +15,14 @@ namespace Deskhand.SecureHelper;
 /// </summary>
 public static class SecureHelperServer
 {
+    // Exit this (SYSTEM) process after a stretch with no client, so a lingering helper can't hold a lock on
+    // C:\Deskhand and block an in-place update. The main server simply relaunches it (via the broker) the
+    // next time it needs the secure desktop. Overridable with DESKHAND_SECURE_IDLE_SEC (0 = never exit).
     public static int Run(string pipeName, string whoAmI)
     {
         Console.WriteLine($"Deskhand secure helper serving on \\\\.\\pipe\\{pipeName} as {whoAmI}");
         var pump = new InputDesktopPump();
+        int idleSec = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_SECURE_IDLE_SEC"), out var s) ? s : 90;
 
         while (true)
         {
@@ -28,7 +32,19 @@ public static class SecureHelperServer
 
             try
             {
-                server.WaitForConnection();
+                if (idleSec > 0)
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(idleSec));
+                    try { server.WaitForConnectionAsync(cts.Token).GetAwaiter().GetResult(); }
+                    catch (OperationCanceledException)
+                    {
+                        Console.WriteLine($"no client for {idleSec}s — exiting so updates aren't blocked.");
+                        server.Dispose(); pump.Dispose();
+                        return 0;
+                    }
+                }
+                else server.WaitForConnection();
+
                 while (server.IsConnected)
                 {
                     byte[] reqBytes;

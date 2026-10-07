@@ -21,7 +21,7 @@ public static class SecureHelperServer
     public static int Run(string pipeName, string whoAmI)
     {
         Console.WriteLine($"Deskhand secure helper serving on \\\\.\\pipe\\{pipeName} as {whoAmI}");
-        Log($"serve start: as {whoAmI}, process desktop = {CurrentDesktopName()}");
+        Log($"serve start: as {whoAmI}, process desktop = {CurrentDesktopName()}, uiAccess set: {TrySetUiAccess()}");
         var pump = new InputDesktopPump();
         int idleSec = int.TryParse(Environment.GetEnvironmentVariable("DESKHAND_SECURE_IDLE_SEC"), out var s) ? s : 90;
 
@@ -137,6 +137,32 @@ public static class SecureHelperServer
             Log($"{op}: inputDesktop={inputDesk} threadDesktop={pump.LastAttached} -> FAIL {ex.Message}");
             return (Json(new { ok = false, error = ex.Message, inputDesktop = inputDesk, threadDesktop = pump.LastAttached }), null);
         }
+    }
+
+    // Make this SYSTEM process a uiAccess process so its SendInput is accepted on the secure / UAC-consent
+    // UI (which rejects injected input from non-uiAccess processes). Setting TokenUIAccess needs SeTcbPrivilege,
+    // which SYSTEM holds — so no code-signing/uiAccess-manifest path is required. The process is already
+    // launched on the Winlogon desktop, so it can both attach there and (now) inject there.
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)] private static extern bool OpenProcessToken(IntPtr p, uint access, out IntPtr tok);
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)] private static extern bool LookupPrivilegeValue(string? host, string name, out long luid);
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)] private static extern bool AdjustTokenPrivileges(IntPtr tok, bool disableAll, ref TOKEN_PRIVILEGES newState, uint len, IntPtr prev, IntPtr retLen);
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)] private static extern bool SetTokenInformation(IntPtr tok, int cls, ref int info, uint len);
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] private struct TOKEN_PRIVILEGES { public uint Count; public long Luid; public uint Attributes; }
+    private static string TrySetUiAccess()
+    {
+        try
+        {
+            if (!OpenProcessToken(System.Diagnostics.Process.GetCurrentProcess().Handle, 0x0020 | 0x0008 | 0x0080 /*ADJUST_PRIVILEGES|QUERY|ADJUST_DEFAULT*/, out IntPtr tok)) return "OpenProcessToken failed " + System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            if (LookupPrivilegeValue(null, "SeTcbPrivilege", out long luid))
+            {
+                var tp = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attributes = 0x00000002 /*ENABLED*/ };
+                AdjustTokenPrivileges(tok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+            int one = 1;
+            bool ok = SetTokenInformation(tok, 26 /*TokenUIAccess*/, ref one, 4);
+            return ok ? "OK" : "SetTokenInformation failed " + System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+        }
+        catch (Exception ex) { return "exc " + ex.Message; }
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetThreadDesktop(uint threadId);

@@ -18,6 +18,19 @@ static class P
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr p, uint a, out IntPtr t);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetTokenInformation(IntPtr t, int cls, out uint info, uint len, out uint ret);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetUserObjectInformation(IntPtr h, int i, byte[]? info, uint len, out uint need);
+    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool SetThreadDesktop(IntPtr h);
+    // DESKTOP_ATTACH_ACCESS: the minimal rights to attach + inject (what the SYSTEM helper used to attach).
+    const uint DESKTOP_ATTACH_ACCESS = 0x0001 | 0x0002 | 0x0080 | 0x0040 | 0x0100;
+
+    // Attach THIS thread to whatever desktop currently owns input (the secure desktop during a UAC prompt),
+    // so SendInput targets it. A uiAccess process is permitted to do this and to inject there.
+    static void AttachInputDesktop()
+    {
+        var h = OpenInputDesktop(0, false, DESKTOP_ATTACH_ACCESS);
+        if (h == IntPtr.Zero) throw new Exception($"OpenInputDesktop failed, Win32 {Marshal.GetLastWin32Error()}");
+        if (!SetThreadDesktop(h)) throw new Exception($"SetThreadDesktop failed, Win32 {Marshal.GetLastWin32Error()}");
+    }
 
     const int INPUT_MOUSE = 0, INPUT_KEYBOARD = 1;
     const uint MOVE = 0x0001, ABS = 0x8000, VIRT = 0x4000, LDOWN = 0x0002, LUP = 0x0004;
@@ -83,6 +96,7 @@ static class P
                 Console.WriteLine(w); Log(w);
                 return 0;
             }
+            if (a[0] is "key" or "click" or "type") AttachInputDesktop();   // land on the input (secure) desktop first
             switch (a[0])
             {
                 case "key":

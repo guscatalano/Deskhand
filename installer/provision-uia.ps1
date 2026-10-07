@@ -26,10 +26,11 @@ function Test-Admin {
 if (-not (Test-Admin)) { Write-Error 'provision-uia must run elevated (Administrator).'; exit 1 }
 
 function Remove-OurCerts {
-    foreach ($store in 'My','Root','TrustedPublisher') {
-        Get-ChildItem "Cert:\LocalMachine\$store" -ErrorAction SilentlyContinue |
-            Where-Object { $_.Subject -eq $subject } | Remove-Item -Force -ErrorAction SilentlyContinue
-    }
+    # My store is writable via the Cert: provider; Root/TrustedPublisher need certutil for write access.
+    Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+        Where-Object { $_.Subject -eq $subject } | Remove-Item -Force -ErrorAction SilentlyContinue
+    & certutil.exe -delstore Root 'Deskhand Secure-Input' 2>&1 | Out-Null
+    & certutil.exe -delstore TrustedPublisher 'Deskhand Secure-Input' 2>&1 | Out-Null
 }
 
 if ($Deprovision) {
@@ -53,15 +54,19 @@ $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $subject `
     -CertStoreLocation Cert:\LocalMachine\My -KeyUsage DigitalSignature `
     -KeyExportPolicy NonExportable -NotAfter (Get-Date).AddYears(5)
 
-$sig = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -HashAlgorithm SHA256
-if ($sig.Status -ne 'Valid') { Remove-OurCerts; Write-Error "signing failed: $($sig.Status) - $($sig.StatusMessage)"; exit 1 }
-
-# Trust it on THIS machine only: public cert into the machine Root + TrustedPublisher stores.
+# Trust it on THIS machine FIRST (public cert into machine Root + TrustedPublisher), so the signature then
+# chains to a trusted root and verifies Valid. certutil opens the machine stores for write (the PowerShell
+# Cert: provider can hit ACCESS_DENIED on LocalMachine\Root even when elevated).
 $pub = Join-Path $env:TEMP 'deskhand-uia-pub.cer'
 Export-Certificate -Cert $cert -FilePath $pub -Type CERT | Out-Null
-Import-Certificate -FilePath $pub -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
-Import-Certificate -FilePath $pub -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+$r1 = & certutil.exe -addstore -f Root $pub 2>&1
+if ($LASTEXITCODE -ne 0) { Remove-OurCerts; Remove-Item $pub -Force -EA SilentlyContinue; Write-Error "certutil Root failed: $r1"; exit 1 }
+$r2 = & certutil.exe -addstore -f TrustedPublisher $pub 2>&1
+if ($LASTEXITCODE -ne 0) { Remove-OurCerts; Remove-Item $pub -Force -EA SilentlyContinue; Write-Error "certutil TrustedPublisher failed: $r2"; exit 1 }
 Remove-Item $pub -Force -ErrorAction SilentlyContinue
+
+$sig = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -HashAlgorithm SHA256
+if ($sig.Status -ne 'Valid') { Remove-OurCerts; Write-Error "signing failed: $($sig.Status) - $($sig.StatusMessage)"; exit 1 }
 
 # Destroy the signing key: delete the cert (and its non-exportable key) from the My store. The embedded
 # signature stays valid (it chains to the trusted Root), but there is no longer a key to sign new binaries.

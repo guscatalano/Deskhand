@@ -1556,6 +1556,69 @@ api.MapPost("/secure/configure-sas", (ControlState st, AuditLog al, ConfigureSas
     return Results.Json(res, statusCode: res.Ok ? 200 : 400);
 });
 
+// ---- secure-desktop input (uiAccess) ----
+// Provisioning makes the bundled, uiAccess-manifested helper able to drive the SECURE desktop (UAC/lock/
+// logon) by self-signing it per-machine and trusting that cert here, then destroying the signing key.
+// This deliberately weakens UAC on this machine, so it is opt-in (DESKHAND_ENABLE_SECURE_DESKTOP_INPUT=1
+// or an explicit acknowledgeRisk in the request), armed-gated, audited, and reversible.
+static bool SecureInputOptedIn(bool? ack) =>
+    ack == true || Environment.GetEnvironmentVariable("DESKHAND_ENABLE_SECURE_DESKTOP_INPUT") == "1";
+static (int code, string outp) RunPwsh(string argLine, int timeoutMs = 120000)
+{
+    var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe")
+    {
+        Arguments = "-NoProfile -ExecutionPolicy Bypass " + argLine,
+        UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
+    };
+    using var p = System.Diagnostics.Process.Start(psi)!;
+    string o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+    p.WaitForExit(timeoutMs);
+    return (p.HasExited ? p.ExitCode : -1, o.Trim());
+}
+
+api.MapPost("/secure/provision-input", (ControlState st, AuditLog al, SecureProvisionRequest? r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    if (!SecureInputOptedIn(r?.AcknowledgeRisk))
+        return Results.Json(new { error = "Secure-desktop input weakens UAC on this machine. Opt in with DESKHAND_ENABLE_SECURE_DESKTOP_INPUT=1 or acknowledgeRisk=true.", type = "capability_disabled" }, statusCode: 403);
+    string script = Path.Combine(AppContext.BaseDirectory, "provision-uia.ps1");
+    string src = Path.Combine(AppContext.BaseDirectory, "secure", "uia");
+    if (!File.Exists(script)) return Results.Json(new { error = $"provision-uia.ps1 not bundled ({script})", type = "not_found" }, statusCode: 500);
+    var (code, outp) = RunPwsh($"-File \"{script}\" -SourceDir \"{src}\"");
+    al.Record("secure_provision_input", "uiAccess helper", code == 0 ? "ok" : $"FAIL {code}");
+    return Results.Json(new { ok = code == 0, exitCode = code, output = outp }, statusCode: code == 0 ? 200 : 400);
+});
+
+api.MapPost("/secure/deprovision-input", (ControlState st, AuditLog al) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    string script = Path.Combine(AppContext.BaseDirectory, "provision-uia.ps1");
+    var (code, outp) = RunPwsh($"-File \"{script}\" -Deprovision");
+    al.Record("secure_deprovision_input", "", code == 0 ? "ok" : $"FAIL {code}");
+    return Results.Json(new { ok = code == 0, exitCode = code, output = outp }, statusCode: code == 0 ? 200 : 400);
+});
+
+// Drive the secure desktop via the provisioned uiAccess helper. Launched with ShellExecute so Windows
+// grants it the uiAccess token. op: key (hex VKs) | click <x> <y> | type <text>.
+api.MapPost("/secure/uia-input", (ControlState st, AuditLog al, SecureUiaInputRequest r) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    if (!SecureInputOptedIn(r?.AcknowledgeRisk)) return Results.Json(new { error = "opt-in required", type = "capability_disabled" }, statusCode: 403);
+    string exe = @"C:\Program Files\Deskhand\uia\deskhand-uia.exe";
+    if (!File.Exists(exe)) return Results.Json(new { error = "not provisioned; POST /secure/provision-input first", type = "not_found" }, statusCode: 400);
+    try
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true, CreateNoWindow = true };
+        psi.ArgumentList.Add(r!.Op ?? "whoami");
+        foreach (var x in r.Args ?? Array.Empty<string>()) psi.ArgumentList.Add(x);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        p.WaitForExit(8000);
+        al.Record("secure_uia_input", $"{r.Op} {string.Join(' ', r.Args ?? Array.Empty<string>())}", "launched");
+        return Results.Ok(new { ok = true, launched = true, note = "result in %ProgramData%\\Deskhand\\uia.log" });
+    }
+    catch (Exception ex) { return Results.Json(new { error = ex.Message, type = "internal" }, statusCode: 500); }
+});
+
 // MCP over Streamable HTTP — same server, same state as the dashboard.
 app.MapMcp("/mcp");
 
@@ -1839,5 +1902,7 @@ record KeysRequest(string Chord);
 record PressKeysRequest(IReadOnlyList<string>? Chords, int? BetweenMs, int? Repeat, string? Reference);
 record HoldKeyRequest(string? Key, int? HoldMs);
 record SecureAttentionRequest(bool? AsUser);
+record SecureProvisionRequest(bool? AcknowledgeRisk);
+record SecureUiaInputRequest(string? Op, string[]? Args, bool? AcknowledgeRisk);
 record ConfigureSasRequest(int Level);
 record CaptureJson(string Desktop, RectDto Rect, int Monitor, double DpiScale, string Format, string ImageBase64, double Scale = 1.0);

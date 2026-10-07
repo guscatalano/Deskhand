@@ -86,8 +86,12 @@ jobs:
           if (-not (Test-Path publish/http/secure/deskhand-broker.exe)) { throw 'publish missing deskhand-broker.exe' }
           if (-not (Test-Path publish/http/secure/deskhand-secure.exe)) { throw 'publish missing deskhand-secure.exe' }
           if (-not (Test-Path publish/http/deskhand-http.exe)) { throw 'secure publish clobbered deskhand-http.exe' }
-          # Bundle the install helper + example config so the zip is self-contained for a logon-task install.
-          Copy-Item installer/install-logon-task.ps1, installer/deskhand.example.json publish/http/ -Force
+          # uiAccess helper for driving the SECURE desktop (opt-in; signed+trusted per machine at provision
+          # time). Its own self-contained folder under secure/uia so provisioning can copy it to Program Files.
+          dotnet publish src/Deskhand.UiaInput -c Release -r win-x64 --self-contained true -o publish/http/secure/uia --nologo
+          if (-not (Test-Path publish/http/secure/uia/deskhand-uia.exe)) { throw 'publish missing deskhand-uia.exe' }
+          # Bundle the install helper + example config + secure-input provisioning so the zip is self-contained.
+          Copy-Item installer/install-logon-task.ps1, installer/deskhand.example.json, installer/provision-uia.ps1 publish/http/ -Force
           New-Item -ItemType Directory -Force installer/out | Out-Null
           Compress-Archive -Path publish/http/* -DestinationPath installer/out/deskhand.zip -Force
           Write-Host "deskhand.zip -> $([int]((Get-Item installer/out/deskhand.zip).Length/1MB)) MB (self-contained)"

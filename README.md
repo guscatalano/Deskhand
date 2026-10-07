@@ -17,8 +17,15 @@ MCP tools**, **~81 fleet tools**, and **~161 HTTP routes**.
 All five design phases are in this build: the single-machine **Default desktop** path (in-session UIA +
 capture + input), **secure-desktop capture** (UAC / lock / logon, via a SYSTEM helper), **governance**,
 the **fleet**, and **RDP**. Two things are capture-only / not fully exercised and called out where they
-appear: *driving input* on the secure desktop (needs a signed `uiAccess` binary), and the protocol-level
-RDP backend's live input path (needs a reachable RDP host to validate).
+appear: *driving input* on the secure desktop, and the protocol-level RDP backend's live input path
+(needs a reachable RDP host to validate).
+
+> **Secure-desktop input:** Deskhand can *view* the secure desktop, and ships an opt-in, best-effort
+> path to *drive* it. Testing showed the **UAC consent prompt cannot be driven by synthetic input** by
+> any mechanism we can deploy on demand (SYSTEM, a self-granted `uiAccess` token, or a signed `uiAccess`
+> binary all hit `ACCESS_DENIED`) — it's a deliberate Windows boundary. To automate a UAC approval, move
+> the prompt off the secure desktop with `/uac/config {promptOnSecureDesktop:false}` (one-click in the
+> dashboard). Full write-up: [docs/secure-desktop-input.md](docs/secure-desktop-input.md).
 
 ## Deskhand vs. a CUA driver
 

@@ -1035,7 +1035,10 @@ function showDeskBanner(ds){
   el.hidden=false;
   el.style.background="color-mix(in srgb, var(--warn) 18%, transparent)"; el.style.color="var(--warn)";
   if(ds.desktop==="secure"){
-    el.textContent="Secure desktop ("+(ds.rawDesktopName||"UAC / lock / logon")+") — viewing via the SYSTEM helper. Note: Windows blocks synthetic input to the UAC consent prompt itself; lock/logon screens can be driven.";
+    el.innerHTML="Secure desktop ("+fwEsc(ds.rawDesktopName||"UAC / lock / logon")+") — viewing via the SYSTEM helper. Windows blocks synthetic input to the UAC consent prompt itself. "+
+      "<button class='btn' id='uacDrivable' style='margin-left:8px;font-size:11px'>Make UAC drivable</button>";
+    const b=$("#uacDrivable");
+    if(b) b.onclick=guard(async()=>{ await api("/uac/config","POST",{promptOnSecureDesktop:false}); toast("UAC moved off the secure desktop — prompts are now drivable"); });
   } else {
     el.textContent="Following the "+ds.desktop+" desktop ("+(ds.rawDesktopName||"?")+") — view & input switched to it automatically.";
   }

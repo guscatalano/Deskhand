@@ -45,7 +45,17 @@ public record ProcessInfoDto(
     int ProcessId,
     string Name,
     string? MainWindowTitle,
-    long WorkingSet,
+    long WorkingSet,                       // working-set bytes
+    long PrivateBytes,                     // private memory bytes
+    double CpuPercent,                     // % of total CPU since the previous enumeration (0 on the first sample)
+    double CpuTimeMs,                      // cumulative CPU time used (ms)
+    int SessionId,
+    int Threads,
+    int Handles,
+    string? StartTimeUtc,                  // ISO-8601, null if not readable
+    int? ParentProcessId,
+    string? ExecutablePath,
+    string? CommandLine,                   // full command line incl. arguments (needs rights to read; may be null)
     IReadOnlyList<ElementInfoDto> Windows);
 
 /// <summary>Query for <c>find_elements</c>. Conditions are AND-combined; null fields are ignored.</summary>

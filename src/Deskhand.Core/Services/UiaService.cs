@@ -105,6 +105,13 @@ public sealed class UiaService : IDisposable
             l.Add(info);
         }
 
+        // Command line, parent pid and exe path aren't on System.Diagnostics.Process — pull them for every
+        // process in ONE WMI query (cheap vs. per-process calls).
+        var wmi = QueryWmiProcessInfo();
+
+        long nowTicks = DateTime.UtcNow.Ticks;
+        var cpuNext = new Dictionary<int, (double cpuMs, long ticks)>();
+
         var list = new List<ProcessInfoDto>();
         foreach (var p in System.Diagnostics.Process.GetProcesses())
         {
@@ -113,18 +120,65 @@ public sealed class UiaService : IDisposable
                 byPid.TryGetValue(p.Id, out var wins);
                 string? title = null;
                 try { title = string.IsNullOrEmpty(p.MainWindowTitle) ? null : p.MainWindowTitle; } catch { }
-                long mem = 0; try { mem = p.WorkingSet64; } catch { }
-                list.Add(new ProcessInfoDto(p.Id, p.ProcessName, title, mem,
+                long ws = 0; try { ws = p.WorkingSet64; } catch { }
+                long priv = 0; try { priv = p.PrivateMemorySize64; } catch { }
+                double cpuMs = 0; try { cpuMs = p.TotalProcessorTime.TotalMilliseconds; } catch { }
+                int sess = 0; try { sess = p.SessionId; } catch { }
+                int threads = 0; try { threads = p.Threads.Count; } catch { }
+                int handles = 0; try { handles = p.HandleCount; } catch { }
+                string? start = null; try { start = p.StartTime.ToUniversalTime().ToString("o"); } catch { }
+
+                // CPU% since the previous enumeration (Task-Manager style incremental sampling — no blocking
+                // sleep; the caller's polling cadence is the interval). 0 the first time we see a pid.
+                double cpuPct = 0;
+                if (_cpuPrev.TryGetValue(p.Id, out var prev))
+                {
+                    double wallMs = (nowTicks - prev.ticks) / 10_000.0;
+                    if (wallMs > 0) cpuPct = Math.Max(0, Math.Round((cpuMs - prev.cpuMs) / wallMs / Environment.ProcessorCount * 100.0, 1));
+                }
+                cpuNext[p.Id] = (cpuMs, nowTicks);
+
+                wmi.TryGetValue(p.Id, out var w);
+                list.Add(new ProcessInfoDto(p.Id, p.ProcessName, title, ws, priv, cpuPct, Math.Round(cpuMs, 0),
+                    sess, threads, handles, start, w.parentPid, w.exePath, w.commandLine,
                     wins ?? (IReadOnlyList<ElementInfoDto>)Array.Empty<ElementInfoDto>()));
             }
             catch { /* process may exit mid-enumeration */ }
             finally { p.Dispose(); }
         }
 
+        _cpuPrev = cpuNext;   // keep only live pids' samples for next time
+
         return list
             .OrderByDescending(x => x.Windows.Count)
             .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    // Previous CPU-time sample per pid, for incremental CPU% (survives across calls on this STA worker).
+    private Dictionary<int, (double cpuMs, long ticks)> _cpuPrev = new();
+
+    private static Dictionary<int, (int? parentPid, string? exePath, string? commandLine)> QueryWmiProcessInfo()
+    {
+        var map = new Dictionary<int, (int?, string?, string?)>();
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT ProcessId, ParentProcessId, ExecutablePath, CommandLine FROM Win32_Process");
+            foreach (System.Management.ManagementObject mo in searcher.Get())
+            {
+                try
+                {
+                    int pid = Convert.ToInt32(mo["ProcessId"]);
+                    int? ppid = mo["ParentProcessId"] is object pp ? Convert.ToInt32(pp) : (int?)null;
+                    map[pid] = (ppid, mo["ExecutablePath"] as string, mo["CommandLine"] as string);
+                }
+                catch { }
+                finally { mo.Dispose(); }
+            }
+        }
+        catch { /* WMI unavailable → command line/parent just come back null */ }
+        return map;
     }
 
     // Total nodes any single get_tree may emit. Bushy trees (Chromium/Electron a11y) can be enormous;

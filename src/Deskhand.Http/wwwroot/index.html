@@ -1140,7 +1140,7 @@ function renderProcRow(p, container){
   const nm=elm("span","nname"); nm.innerHTML=`<b>${p.name}</b> <span style="color:var(--ink-3)">· ${p.processId}</span>`;
   self.append(caret,nm);
   if(p.mainWindowTitle){ const t=elm("span","ctype"); t.textContent="“"+p.mainWindowTitle+"”"; self.append(t); }
-  const meta=elm("span","naid"); meta.textContent=(p.windows.length?p.windows.length+" win · ":"")+fmtMem(p.workingSet); self.append(meta);
+  const meta=elm("span","naid"); meta.textContent=(p.windows.length?p.windows.length+" win · ":"")+fmtMem(p.workingSet)+(p.cpuPercent?" · "+p.cpuPercent+"% cpu":""); self.append(meta);
   const kids=elm("div","kids"); kids.style.display="none";
   node.append(self,kids);
   let loaded=false;
@@ -1166,9 +1166,18 @@ function showProcDetail(p){
   const d=$("#pdetail"); d.innerHTML="";
   const head=elm("div","dhead"); const ct=elm("span","ct"); ct.textContent="Process"; const h1=elm("h1"); h1.textContent=`${p.name} · ${p.processId}`; head.append(ct,h1); d.append(head);
   const s=elm("div","sect");
-  s.innerHTML=`<div class="prow"><div class="k">pid</div><div class="v">${p.processId}</div></div>`+
-    `<div class="prow"><div class="k">memory</div><div class="v">${fmtMem(p.workingSet)}</div></div>`+
-    `<div class="prow"><div class="k">main title</div><div class="v${p.mainWindowTitle?"":" null"}">${p.mainWindowTitle||"null"}</div></div>`;
+  const esc=(x)=>fwEsc(String(x==null?"":x));
+  const cs=(p.cpuTimeMs||0)/1000, cpuStr=cs>=120?Math.floor(cs/60)+"m "+Math.round(cs%60)+"s":cs.toFixed(1)+"s";
+  let started="—"; try{ if(p.startTimeUtc) started=new Date(p.startTimeUtc).toLocaleString(); }catch{}
+  s.innerHTML=`<div class="prow"><div class="k">pid</div><div class="v">${p.processId}${p.parentProcessId?' <span style="color:var(--ink-3)">· parent '+p.parentProcessId+'</span>':''}</div></div>`+
+    `<div class="prow"><div class="k">session</div><div class="v">${p.sessionId}</div></div>`+
+    `<div class="prow"><div class="k">memory</div><div class="v">${fmtMem(p.workingSet)} <span style="color:var(--ink-3)">working · ${fmtMem(p.privateBytes)} private</span></div></div>`+
+    `<div class="prow"><div class="k">cpu</div><div class="v">${p.cpuPercent||0}% <span style="color:var(--ink-3)">· ${cpuStr} total</span></div></div>`+
+    `<div class="prow"><div class="k">threads · handles</div><div class="v">${p.threads} · ${p.handles}</div></div>`+
+    `<div class="prow"><div class="k">started</div><div class="v">${esc(started)}</div></div>`+
+    `<div class="prow"><div class="k">path</div><div class="v mono" style="word-break:break-all">${p.executablePath?esc(p.executablePath):'<span class="null">unknown</span>'}</div></div>`+
+    `<div class="prow"><div class="k">command line</div><div class="v mono" style="word-break:break-all">${p.commandLine?esc(p.commandLine):'<span class="null">unknown (needs rights)</span>'}</div></div>`+
+    `<div class="prow"><div class="k">main title</div><div class="v${p.mainWindowTitle?"":" null"}">${esc(p.mainWindowTitle||"null")}</div></div>`;
   d.append(s);
   // full-memory dump
   const dumpRow=elm("div","acts");

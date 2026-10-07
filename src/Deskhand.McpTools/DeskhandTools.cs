@@ -107,7 +107,7 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_list_windows"), Description("List all top-level windows. The reliable way to target a specific app (foreground is unreliable when a tool has focus).")]
     public static string ListWindows(IAutomationBackend b) => Json(b.GetTopLevelWindows());
 
-    [McpServerTool(Name = "deskhand_list_processes"), Description("List every running process, each with the top-level windows it owns (windowed apps first; background processes have an empty windows list). Each window carries a live ref you can pass straight to deskhand_get_tree to expand its UIA tree — process → windows → elements.")]
+    [McpServerTool(Name = "deskhand_list_processes"), Description("List every running process with detail: workingSet + privateBytes (memory), cpuPercent (since the previous call) + cpuTimeMs, sessionId, threads, handles, startTimeUtc, parentProcessId, executablePath, and commandLine (full arguments; may be null without rights). Also the top-level windows each owns (windowed apps first) — each window carries a live ref for deskhand_get_tree. cpuPercent is 0 the first time a process is seen; call again after a moment for a real reading.")]
     public static string ListProcesses(IAutomationBackend b) => Json(b.GetProcesses());
 
     [McpServerTool(Name = "deskhand_list_apps"), Description("List Start Menu apps (the .lnk/.url shortcuts under the all-users and per-user Start Menu). Each has name, folder, and path — launch one by passing its path to deskhand_launch_process. (UWP/Store apps aren't shortcuts and aren't listed.)")]

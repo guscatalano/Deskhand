@@ -167,6 +167,19 @@ builder.Services.AddSwaggerGen(o => o.SwaggerDoc("v1", new Microsoft.OpenApi.Mod
 
 var app = builder.Build();
 
+// Reboot-surviving recordings: on startup, resume any recording that was interrupted (its logon task relaunched
+// us after a sign-in) under its original id into a new segment; on an orderly shutdown, finalize the open segment
+// so a Start→Restart doesn't lose the tail. SystemEvents.SessionEnding catches logoff/shutdown that bypasses
+// ApplicationStopping. All best-effort — never blocks or fails startup.
+try
+{
+    var resumedIds = screenRecorder.ResumeAll();
+    if (resumedIds.Count > 0) Console.WriteLine($"Recordings: resumed {resumedIds.Count} interrupted recording(s) after restart.");
+}
+catch { }
+app.Lifetime.ApplicationStopping.Register(() => { try { screenRecorder.FinalizeForShutdown(); } catch { } });
+try { Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => { try { screenRecorder.FinalizeForShutdown(); } catch { } }; } catch { }
+
 // Kick off a one-shot update check in the background so the dashboard can show an "update available" banner
 // (served fast from the cache at /update/status). Never blocks startup; failures are swallowed.
 _ = Deskhand.Core.Services.UpdateService.CheckAsync();
@@ -403,14 +416,17 @@ api.MapPost("/record/start", (Deskhand.Core.Services.ScreenRecorder rec, Control
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
     if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
-    var opt = new Deskhand.Core.Services.RecordingOptions(r.Monitor, r.Format ?? "mp4", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000, r.OutputName, r.Overlays ?? false);
+    var opt = new Deskhand.Core.Services.RecordingOptions(r.Monitor, r.Format ?? "mp4", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000, r.OutputName, r.Overlays ?? false, r.Resumable ?? false);
     var s = rec.Start(opt);
     al.Record("record_start", $"{s.Format} mon={r.Monitor?.ToString() ?? "all"} {s.Width}x{s.Height} fps={s.Fps} max={s.MaxDurationMs}ms", s.Id);
     if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is recording the screen · {s.Format} · {s.Width}×{s.Height}"); } catch { } }
     return Results.Ok(s);
 });
 api.MapPost("/record/stop", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RefRequest r) =>
-{ var (marks, speeds) = rec.Timeline(r.Reference); var s = rec.Stop(r.Reference); al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(new { status = s, marks, speeds }); });
+{ var (marks, speeds) = rec.Timeline(r.Reference); var s = rec.Stop(r.Reference); var segments = rec.Segments(r.Reference); al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(new { status = s, marks, speeds, segments }); });
+// Download one segment of a resumable recording by its filename (from /record/stop's segments). Name is sanitized.
+api.MapGet("/recordings/seg/{name}", (Deskhand.Core.Services.ScreenRecorder rec, HttpContext ctx, string name) =>
+{ var (bytes, _, n) = rec.ReadSegmentChunk(name, 0, int.MaxValue); return FileBytesWithSha(ctx, bytes, "video/mp4", n); });
 api.MapPost("/record/mark", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RecordMarkRequest r) =>
 { var s = rec.Mark(r.Id, r.Label ?? ""); al.Record("record_mark", r.Label, r.Id); return Results.Ok(s); });
 api.MapPost("/record/speed", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RecordSpeedRequest r) =>
@@ -1893,7 +1909,7 @@ sealed class WebhookForwarder(Deskhand.Core.Events.EventHub hub, Deskhand.Core.S
     }
 }
 record MoveWindowRequest(long Hwnd, string? DesktopId);
-record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs, string? OutputName = null, bool? Overlays = null);
+record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs, string? OutputName = null, bool? Overlays = null, bool? Resumable = null);
 record RecordMarkRequest(string Id, string? Label);
 record RecordSpeedRequest(string Id, double? Factor);
 record InputRecordRequest(bool? CaptureText);

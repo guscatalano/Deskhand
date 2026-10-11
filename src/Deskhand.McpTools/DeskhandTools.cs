@@ -1189,19 +1189,21 @@ public static class DeskhandTools
         [Description("AVI/JPEG quality 1..100 (default 75); ignored for gif and mp4.")] int quality = 75,
         [Description("Hard auto-stop ceiling in ms (default 30000; max 1800000 for mp4, 300000 for gif/avi).")] int maxDurationMs = 30000,
         [Description("Optional base filename for the saved file (sanitized; extension is set from format). Omit to use the recording id.")] string? outputName = null,
-        [Description("Draw the agent's own clicks (fading highlight) and typed keys/chords (a bottom strip) onto the recording — useful for demo clips. Default false.")] bool overlays = false)
+        [Description("Draw the agent's own clicks (fading highlight) and typed keys/chords (a bottom strip) onto the recording — useful for demo clips. Default false.")] bool overlays = false,
+        [Description("mp4 only: survive a reboot. The recording persists its state and, after a restart + sign-in, resumes under the SAME id into a new segment. record_stop then returns an ordered list of segment files (each a playable mp4) rather than one file. Default false.")] bool resumable = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\"}";
         if (!state.CaptureEnabled) return "{\"error\":\"capture_disabled\"}";
-        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName, overlays)));
+        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName, overlays, resumable)));
     }
 
-    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia, marks, speeds } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id} (needs network to this machine); readVia points to deskhand_record_read for chunked download over the MCP connection; marks/speeds are the record_mark and record_speed timelines ({atMs, label}/{atMs, factor}).")]
+    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia, marks, speeds, segments } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id}; readVia points to deskhand_record_read for chunked download over the MCP connection; marks/speeds are the record_mark/record_speed timelines. For a RESUMABLE recording that spanned a reboot, segments is the ordered list of segment files (each a playable mp4) — download each with deskhand_record_read(segment:\"<name>\") — and downloadUrl covers only the last segment.")]
     public static string RecordStop(Deskhand.Core.Services.ScreenRecorder rec, string id)
     {
         var (marks, speeds) = rec.Timeline(id);
         var st = rec.Stop(id);
-        return Json(new { status = st, downloadUrl = $"/recordings/{id}", readVia = $"deskhand_record_read(\"{id}\", offset) — call repeatedly with offset=nextOffset until done=true", marks, speeds });
+        var segments = rec.Segments(id);
+        return Json(new { status = st, downloadUrl = $"/recordings/{id}", readVia = $"deskhand_record_read(\"{id}\", offset) — call repeatedly with offset=nextOffset until done=true", marks, speeds, segments });
     }
 
     [McpServerTool(Name = "deskhand_record_mark"), Description("Add a labelled MARKER at the current point of an in-progress recording. The label is shown on-screen as a caption for ~2.5s and recorded in the marker timeline returned by deskhand_record_stop ({atMs, label}) — so a clip can caption its own steps. Returns the recording status.")]
@@ -1222,18 +1224,19 @@ public static class DeskhandTools
         return Try(() => Json(rec.Speed(id, factor)));
     }
 
-    [McpServerTool(Name = "deskhand_record_read"), Description("Download a finished recording's bytes IN CHUNKS over the MCP connection (works for large files — unlike deskhand_read_file which caps at ~25 MB — and needs no direct network to the machine). Returns { id, offset, length, totalSize, nextOffset, done, name, base64 }. Call repeatedly with offset = the previous nextOffset until done=true, concatenating base64. length defaults to ~6 MB per call.")]
+    [McpServerTool(Name = "deskhand_record_read"), Description("Download a finished recording's bytes IN CHUNKS over the MCP connection (works for large files — unlike deskhand_read_file which caps at ~25 MB — and needs no direct network to the machine). Returns { id, offset, length, totalSize, nextOffset, done, name, base64 }. Call repeatedly with offset = the previous nextOffset until done=true, concatenating base64. length defaults to ~6 MB per call. For a resumable recording's segment list, pass segment=\"<name>\" (a name from record_stop's segments) to download that specific segment file.")]
     public static string RecordRead(Deskhand.Core.Services.ScreenRecorder rec, ControlState state,
         [Description("The recording id.")] string id,
         [Description("Byte offset to start at (0 for the first chunk; then pass the previous nextOffset).")] long offset = 0,
-        [Description("Bytes to read this call (default ~6 MB).")] int length = 0)
+        [Description("Bytes to read this call (default ~6 MB).")] int length = 0,
+        [Description("A segment filename from record_stop's segments list, to download that segment instead of the primary file.")] string? segment = null)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
         try
         {
-            var (chunk, total, name) = rec.ReadChunk(id, offset, length);
+            var (chunk, total, name) = string.IsNullOrEmpty(segment) ? rec.ReadChunk(id, offset, length) : rec.ReadSegmentChunk(segment, offset, length);
             long next = offset + chunk.Length;
-            return Json(new { id, offset, length = chunk.Length, totalSize = total, nextOffset = next, done = next >= total, name,
+            return Json(new { id, segment, offset, length = chunk.Length, totalSize = total, nextOffset = next, done = next >= total, name,
                 base64 = Convert.ToBase64String(chunk) });
         }
         catch (Exception ex) { return Json(new { id, error = ex.Message, type = "record_read_error" }); }

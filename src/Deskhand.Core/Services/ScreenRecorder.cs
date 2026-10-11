@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Text;
+using System.Text.Json;
 using DImageFormat = System.Drawing.Imaging.ImageFormat;
 
 namespace Deskhand.Core.Services;
@@ -16,7 +17,8 @@ public record RecordingOptions(
     int Quality,             // jpeg/avi quality (1..100); ignored for gif
     int MaxDurationMs,       // hard auto-stop ceiling
     string? OutputName = null,    // optional caller-chosen base filename (sanitized; extension is forced to match Format)
-    bool Overlays = false);       // draw the agent's click highlights + a key-press strip onto the recording
+    bool Overlays = false,        // draw the agent's click highlights + a key-press strip onto the recording
+    bool Resumable = false);      // mp4 only: persist state + survive a reboot, resuming under the same id into a new segment
 
 public record RecordingStatus(
     string Id, string State, string Format, int? Monitor, int Fps, int Scale,
@@ -64,7 +66,17 @@ public sealed class ScreenRecorder : IDisposable
         public bool Finalized;
         public int FinalFrames = -1;       // frame count captured at encode time (JpegFrames is cleared afterward)
         public long FinalElapsedMs = -1;   // wall-clock duration captured at stop time
+        // --- resumable (reboot-surviving) recordings ---
+        public bool Resumable;
+        public string Base = "";           // base filename (id or sanitized OutputName); segments are <Base>.pN.mp4
+        public int Part;                   // current segment index
+        public readonly List<string> Segments = new();   // finalized segment filenames, in order
+        public DateTime StartedUtc;        // wall-clock start (survives reboot, unlike TickCount64)
     }
+
+    /// <summary>On-disk state for a resumable recording (<c>&lt;Base&gt;.rec.json</c>), so a reboot can resume it.</summary>
+    public sealed record ResumeState(string Id, string Base, int? Monitor, int Fps, int Scale, int Quality,
+        bool Overlays, int MaxDurationMs, string StartedUtc, int Part, List<string> Segments, string Status);
 
     public const int RetentionHours = 24;   // saved media is auto-deleted after this many hours
 
@@ -137,55 +149,70 @@ public sealed class ScreenRecorder : IDisposable
         int outW = Math.Max(2, rect.Width * scale / 100) & ~1;   // even dims (encoders/most decoders require)
         int outH = Math.Max(2, rect.Height * scale / 100) & ~1;
         string id = "rec_" + Guid.NewGuid().ToString("N")[..12];
+        string baseName = SafeBase(o.OutputName) ?? id;
+        bool resumable = o.Resumable && fmt == "mp4";
 
-        // MP4 needs its streaming encoder constructed up front (it owns the on-disk file). If Media Foundation
-        // isn't usable (N/Server SKU without the Media Feature Pack), fall back to the buffered AVI path.
+        return BeginSession(id, baseName, o with { Format = fmt, Fps = fps, Scale = scale, Quality = quality, MaxDurationMs = maxMs },
+            rect, outW, outH, DateTime.UtcNow, part: 0, new List<string>(), maxMs, resumable);
+    }
+
+    // Build the Session + encoder + timers for a fresh recording or a post-reboot resume (new segment). For a
+    // resumable mp4, segment files are <Base>.p{Part}.mp4 and a <Base>.rec.json state file is written so a
+    // reboot can pick it up; the hard auto-stop uses the supplied remaining budget.
+    private RecordingStatus BeginSession(string id, string baseName, RecordingOptions o, Rectangle rect,
+        int outW, int outH, DateTime startedUtc, int part, List<string> segments, int remainingMs, bool resumable)
+    {
+        string fmt = o.Format;
         Mp4SinkWriter? mp4 = null;
         string? mp4Path = null;
         if (fmt == "mp4")
         {
             try
             {
-                mp4Path = PathFor(id, o.OutputName, "mp4");
-                int bitrate = (int)Math.Clamp((long)outW * outH * fps / 20, 1_000_000, 24_000_000);
-                mp4 = new Mp4SinkWriter(mp4Path, outW, outH, fps, bitrate);
+                mp4Path = resumable ? Path.Combine(_dir, $"{baseName}.p{part}.mp4") : Path.Combine(_dir, $"{baseName}.mp4");
+                int bitrate = (int)Math.Clamp((long)outW * outH * o.Fps / 20, 1_000_000, 24_000_000);
+                mp4 = new Mp4SinkWriter(mp4Path, outW, outH, o.Fps, bitrate);
             }
             catch (Exception ex)
             {
                 _audit?.Record("recording_mp4_fallback", ex.Message, "Media Foundation unavailable → recording as AVI");
-                fmt = "avi"; mp4 = null; mp4Path = null;
-                maxMs = Math.Min(maxMs, MaxAllowedDurationMs);
+                fmt = "avi"; mp4 = null; mp4Path = null; resumable = false;
+                remainingMs = Math.Min(remainingMs, MaxAllowedDurationMs);
             }
         }
 
         var s = new Session
         {
             Id = id,
-            Opt = o with { Format = fmt, Fps = fps, Scale = scale, Quality = quality, MaxDurationMs = maxMs },
+            Opt = o with { Format = fmt },
             Rect = rect, OutW = outW, OutH = outH,
             Mp4 = mp4, Mp4Path = mp4Path,
             StartedTicks = Environment.TickCount64,
+            Resumable = resumable, Base = baseName, Part = part, StartedUtc = startedUtc,
         };
+        s.Segments.AddRange(segments);
         _sessions[s.Id] = s;
 
-        int periodMs = Math.Max(1000 / fps, 20);
+        if (resumable) WriteState(s, "recording");
+
+        int periodMs = Math.Max(1000 / o.Fps, 20);
         s.Timer = new System.Threading.Timer(_ => CaptureFrame(s), null, 0, periodMs);
-        s.AutoStop = new System.Threading.Timer(_ => { try { Stop(s.Id); } catch { } }, null, maxMs, System.Threading.Timeout.Infinite);
+        s.AutoStop = new System.Threading.Timer(_ => { try { Stop(s.Id); } catch { } }, null, Math.Max(0, remainingMs), System.Threading.Timeout.Infinite);
         return StatusOf(s);
     }
 
-    /// <summary>Resolve the output file path. A caller-supplied name is reduced to a safe basename inside the
-    /// recordings dir (no path traversal) and given the format's extension; otherwise the recording id is used.</summary>
+    /// <summary>Resolve the output file path (non-resumable, single-file). A caller-supplied name is reduced to a
+    /// safe basename inside the recordings dir; otherwise the recording id is used.</summary>
     private string PathFor(string id, string? outputName, string ext)
+        => Path.Combine(_dir, $"{SafeBase(outputName) ?? id}.{ext}");
+
+    /// <summary>A caller-supplied name reduced to a safe basename (no path, no traversal, ≤80 chars), or null.</summary>
+    private static string? SafeBase(string? name)
     {
-        string baseName = id;
-        if (!string.IsNullOrWhiteSpace(outputName))
-        {
-            string cand = Path.GetFileNameWithoutExtension(outputName.Trim());
-            foreach (char c in Path.GetInvalidFileNameChars()) cand = cand.Replace(c, '_');
-            if (cand.Length > 0) baseName = cand[..Math.Min(cand.Length, 80)];
-        }
-        return Path.Combine(_dir, $"{baseName}.{ext}");
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        string cand = Path.GetFileNameWithoutExtension(name.Trim());
+        foreach (char c in Path.GetInvalidFileNameChars()) cand = cand.Replace(c, '_');
+        return cand.Length == 0 ? null : cand[..Math.Min(cand.Length, 80)];
     }
 
     private void CaptureFrame(Session s)
@@ -261,10 +288,21 @@ public sealed class ScreenRecorder : IDisposable
                 s.FinalFrames = s.Mp4Frames;
                 if (s.Mp4Frames == 0) throw new InvalidOperationException("No frames were captured.");
                 s.Mp4.Finish();
-                s.File = s.Mp4Path;
-                s.SizeBytes = s.Mp4Path is not null && File.Exists(s.Mp4Path) ? new FileInfo(s.Mp4Path).Length : 0;
+                if (s.Resumable)
+                {
+                    if (s.Mp4Path is not null && File.Exists(s.Mp4Path) && new FileInfo(s.Mp4Path).Length > 0)
+                        s.Segments.Add(Path.GetFileName(s.Mp4Path));
+                    s.File = s.Segments.Count > 0 ? Path.Combine(_dir, s.Segments[^1]) : s.Mp4Path;   // last segment
+                    s.SizeBytes = s.Segments.Sum(n => { try { return new FileInfo(Path.Combine(_dir, n)).Length; } catch { return 0L; } });
+                    WriteState(s, "completed");
+                }
+                else
+                {
+                    s.File = s.Mp4Path;
+                    s.SizeBytes = s.Mp4Path is not null && File.Exists(s.Mp4Path) ? new FileInfo(s.Mp4Path).Length : 0;
+                }
                 s.State = "completed";
-                _audit?.Record("recording_saved", s.Mp4Path, $"mp4 {s.FinalFrames}f {s.SizeBytes}B (auto-delete {RetentionHours}h)");
+                _audit?.Record("recording_saved", s.File, $"mp4 {s.FinalFrames}f {s.SizeBytes}B{(s.Resumable ? $" {s.Segments.Count} segment(s)" : "")} (auto-delete {RetentionHours}h)");
             }
             else
             {
@@ -321,6 +359,138 @@ public sealed class ScreenRecorder : IDisposable
     {
         var s = Get(id);
         lock (s.Gate) return (s.Marks.ToArray(), s.Speeds.ToArray());
+    }
+
+    /// <summary>The ordered segment filenames of a (resumable) recording — empty for a single-file recording.
+    /// Each name is downloadable via deskhand_record_read(segment:) or GET /recordings/seg/{name}.</summary>
+    public IReadOnlyList<string> Segments(string id)
+    {
+        var s = Get(id);
+        lock (s.Gate) return s.Segments.ToArray();
+    }
+
+    // ---------- reboot-surviving (resumable) recordings ----------
+
+    private static readonly JsonSerializerOptions _stateJson = new() { WriteIndented = false };
+    private string StateFile(string baseName) => Path.Combine(_dir, $"{baseName}.rec.json");
+
+    private void WriteState(Session s, string status)
+    {
+        try
+        {
+            var st = new ResumeState(s.Id, s.Base, s.Opt.Monitor, s.Opt.Fps, s.Opt.Scale, s.Opt.Quality,
+                s.Opt.Overlays, s.Opt.MaxDurationMs, s.StartedUtc.ToString("o"), s.Part, s.Segments.ToList(), status);
+            File.WriteAllText(StateFile(s.Base), JsonSerializer.Serialize(st, _stateJson));
+        }
+        catch { /* state persistence is best-effort */ }
+    }
+
+    /// <summary>Finalize the current segment of every in-progress resumable recording and mark its state
+    /// "interrupted", so a reboot can resume it. Call on an orderly shutdown (service stop / session end).</summary>
+    public void FinalizeForShutdown()
+    {
+        foreach (var s in _sessions.Values)
+        {
+            if (!s.Resumable || s.State != "recording" || s.Mp4 is null) continue;
+            try
+            {
+                lock (s.Gate) { if (s.State != "recording") continue; s.State = "encoding"; }
+                try { s.Timer?.Dispose(); } catch { }
+                try { s.AutoStop?.Dispose(); } catch { }
+                for (int i = 0; i < 50 && s.Busy; i++) Thread.Sleep(10);
+                s.Mp4.Finish();
+                if (s.Mp4Path is not null && File.Exists(s.Mp4Path) && new FileInfo(s.Mp4Path).Length > 0)
+                    s.Segments.Add(Path.GetFileName(s.Mp4Path));
+                WriteState(s, "interrupted");
+                s.State = "interrupted";
+                _audit?.Record("recording_interrupted", s.Base, $"segment {s.Part} finalized for shutdown ({s.Segments.Count} total)");
+            }
+            catch { /* best-effort at shutdown */ }
+        }
+    }
+
+    /// <summary>On startup, resume every interrupted resumable recording under its original id, capturing into a
+    /// new segment. Orphaned (unfinalized) segment files from a hard crash are discarded. Returns the resumed ids.</summary>
+    public IReadOnlyList<string> ResumeAll()
+    {
+        var resumed = new List<string>();
+        List<string> files;
+        try { files = System.IO.Directory.EnumerateFiles(_dir, "*.rec.json").ToList(); } catch { return resumed; }
+        foreach (var f in files)
+        {
+            ResumeState? st = null;
+            try { st = JsonSerializer.Deserialize<ResumeState>(File.ReadAllText(f)); } catch { }
+            if (st is null || (st.Status != "recording" && st.Status != "interrupted")) continue;
+            if (_sessions.ContainsKey(st.Id)) continue;
+            try { if (ResumeOne(st)) resumed.Add(st.Id); } catch { }
+        }
+        return resumed;
+    }
+
+    private bool ResumeOne(ResumeState st)
+    {
+        // Keep only segments that still exist on disk; delete every other <Base>.pN.mp4 (unfinalized crash tails).
+        var segments = st.Segments.Where(n => File.Exists(Path.Combine(_dir, n))).ToList();
+        try
+        {
+            foreach (var pf in System.IO.Directory.EnumerateFiles(_dir, $"{st.Base}.p*.mp4"))
+                if (!segments.Contains(Path.GetFileName(pf))) try { File.Delete(pf); } catch { }
+        }
+        catch { }
+
+        var startedUtc = DateTime.TryParse(st.StartedUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt : DateTime.UtcNow;
+        int elapsed = (int)Math.Clamp((DateTime.UtcNow - startedUtc).TotalMilliseconds, 0, int.MaxValue);
+        int remaining = st.MaxDurationMs - elapsed;
+        if (remaining <= 1000)   // budget already spent → mark completed, don't resume
+        {
+            try { File.WriteAllText(StateFile(st.Base), JsonSerializer.Serialize(st with { Segments = segments, Status = "completed" }, _stateJson)); } catch { }
+            return false;
+        }
+
+        int maxPart = -1;
+        foreach (var seg in segments) { int p = ParsePart(seg); if (p > maxPart) maxPart = p; }
+        int nextPart = maxPart + 1;
+
+        var rect = RectFor(st.Monitor);
+        int scale = Math.Clamp(st.Scale, 10, 100);
+        int outW = Math.Max(2, rect.Width * scale / 100) & ~1;
+        int outH = Math.Max(2, rect.Height * scale / 100) & ~1;
+        var opt = new RecordingOptions(st.Monitor, "mp4", st.Fps, st.Scale, st.Quality, st.MaxDurationMs, st.Base, st.Overlays, Resumable: true);
+        BeginSession(st.Id, st.Base, opt, rect, outW, outH, startedUtc, nextPart, segments, remaining, resumable: true);
+        _audit?.Record("recording_resumed", st.Base, $"resumed into segment {nextPart}; {segments.Count} prior segment(s)");
+        return true;
+    }
+
+    // Extract N from "<base>.pN.mp4"; -1 if not matched.
+    private static int ParsePart(string fileName)
+    {
+        int dot = fileName.LastIndexOf(".p", StringComparison.Ordinal);
+        if (dot < 0) return -1;
+        int start = dot + 2, end = fileName.IndexOf(".mp4", start, StringComparison.OrdinalIgnoreCase);
+        return end > start && int.TryParse(fileName.AsSpan(start, end - start), out int n) ? n : -1;
+    }
+
+    /// <summary>Read a chunk of any finished recording file (or segment) in the recordings dir by name — the
+    /// segment-aware sibling of <see cref="ReadChunk"/>. The name is sanitized to a basename (no path traversal).</summary>
+    public (byte[] chunk, long total, string name) ReadSegmentChunk(string fileName, long offset, int length)
+    {
+        string safe = Path.GetFileName((fileName ?? "").Trim());
+        if (safe.Length == 0) throw new ArgumentException("No file name.");
+        string path = Path.Combine(_dir, safe);
+        if (!File.Exists(path)) throw new InvalidOperationException($"No such recording file '{safe}'.");
+        long total = new FileInfo(path).Length;
+        if (offset < 0) offset = 0;
+        if (offset >= total) return (Array.Empty<byte>(), total, safe);
+        int want = (int)Math.Min(length <= 0 ? 6 * 1024 * 1024 : length, total - offset);
+        var buf = new byte[want];
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            fs.Seek(offset, SeekOrigin.Begin);
+            int read = 0;
+            while (read < want) { int n = fs.Read(buf, read, want - read); if (n <= 0) break; read += n; }
+            if (read != want) Array.Resize(ref buf, read);
+        }
+        return (buf, total, safe);
     }
 
     public IReadOnlyList<RecordingStatus> List() => _sessions.Values.Select(StatusOf).ToList();

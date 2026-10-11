@@ -2,10 +2,11 @@
 
 Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 
-## Shipped (v0.2.58–v0.2.65)
+## Shipped (v0.2.58–v0.2.66)
 
 | Item | What shipped |
 |---|---|
+| Recordings that survive a reboot | `record_start resumable:true` (mp4) persists a `<base>.rec.json` state file + wall-clock start and records into numbered segments (`<base>.pN.mp4`). On an orderly shutdown the open segment is finalized (`FinalizeForShutdown`, wired to `ApplicationStopping` + `SessionEnding`); on the next startup `ResumeAll` (wired into both hosts) resumes the recording under its **original id** into a new segment, discarding any unfinalized crash tail. `record_stop` returns `segments` (ordered, each a playable mp4); download any with `deskhand_record_read(segment:)` or `GET /recordings/seg/{name}`. First cut delivers a segment list (no auto-stitch). Verified via a simulated reboot: finalize → fresh recorder → resume same id → 2 valid segments (v0.2.66). |
 | Recording markers | `deskhand_record_mark(id, label)` captions the moment on-screen (~2.5s) and records it in the marker timeline; `deskhand_record_speed(id, factor)` fast-forwards from here to the next change by shrinking each frame's MP4 presentation duration (0.25–8×, mp4 only — gif/avi are fixed-fps). Both timelines (`{atMs,label}` / `{atMs,factor}`) are returned by `record_stop`. Also `POST /record/mark` + `/record/speed`. (v0.2.65) |
 | Click / key overlays on recordings | `record_start overlays:true` (and `Overlays` on `POST /record/start`) draws the agent's own clicks as fading highlight ripples and its typed keys/chords as a bottom key-press strip, composited onto each frame before encode — works for mp4/avi/gif. Sourced from a new `InputInjector.Injected` event; cosmetic failures never break a frame. (v0.2.64) |
 | `find_elements` misses some Start tiles | New `deskhand_find_start_apps(query, max)` (and `GET /uia/start-apps`) searches the Start host's (`StartMenuExperienceHost`) **and** the search host's own UIA tree, matching tiles on **visible text** — their Name **or** a visible descendant label — as a case-insensitive substring, so pinned tiles with an empty/odd UIA Name (which exact-Name `find_elements` misses) are found. Returns invokable refs, ordered exact-label → prefix → alphabetical (v0.2.63). |
@@ -32,7 +33,12 @@ Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 
 ## Open — larger (need a design decision)
 
-- **Recordings that survive a reboot** — resume under the same id after sign-in (persist recorder state + logon re-attach), so a demo with a restart isn't two clips.
+- _(empty — all triaged items shipped through v0.2.66)_
+
+## Possible follow-ups (not yet requested)
+
+- **Reboot-survival hardening** — mid-recording segment rolling (bounded hard-crash loss) and optional auto-stitch of segments into one MP4 at stop (currently a segment list).
+- **Overlays for user-driven input** — overlays currently show the agent's injected input; a global-hook source could also highlight the human's clicks/keys.
 
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 

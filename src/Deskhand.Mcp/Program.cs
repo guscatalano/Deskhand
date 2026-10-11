@@ -55,4 +55,11 @@ builder.Services
 var app = builder.Build();
 using var killSwitch = new KillSwitch(controlState, auditLog);
 using var _notifier = captureNotifier;
+
+// Reboot-surviving recordings: resume interrupted ones on startup, finalize the open segment on shutdown.
+try { var resumed = screenRecorder.ResumeAll(); if (resumed.Count > 0) Console.Error.WriteLine($"Recordings: resumed {resumed.Count} after restart."); } catch { }
+((Microsoft.Extensions.Hosting.IHostApplicationLifetime)app.Services.GetService(typeof(Microsoft.Extensions.Hosting.IHostApplicationLifetime))!)
+    .ApplicationStopping.Register(() => { try { screenRecorder.FinalizeForShutdown(); } catch { } });
+try { Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => { try { screenRecorder.FinalizeForShutdown(); } catch { } }; } catch { }
+
 await app.RunAsync();

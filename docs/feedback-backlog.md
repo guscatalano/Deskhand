@@ -80,10 +80,19 @@ and re-cut the video. Much of this round **already shipped earlier this session*
   survives DPI/layout churn. Verified against a sandbox Notepad: record→save→load→replay passes; a broken
   assertion fails loudly.
 
+## Follow-ups — shipped (v0.2.69)
+
+- **Reboot-survival hardening** — resumable mp4 now **rolls** to a fresh segment every `RollSeconds` (default 60; `DESKHAND_ROLL_SECONDS`), so a hard crash loses ≤ one interval; `record_stop stitch:true` **auto-stitches** the segments into one continuous mp4 (`<base>.stitched.mp4`) via `Mp4Stitcher` (MF SourceReader decode → `Mp4SinkWriter` re-encode).
+- **Overlays for user-driven input** — `record_start overlaysUser:true` draws the **human's** clicks + shortcut keys via a global LL hook (`GlobalInputHook`), into the same overlay ring as the agent's injected input; plain typed text is not shown (privacy).
+- **`wait_for_text` region/monitor scoping** — `deskhand_wait_for target:"text"` takes optional `monitor` / `region:"x,y,w,h"` to OCR less and avoid matching the same text elsewhere.
+- **Forgiving `deskhand_click` name-matching** — exact UIA name → case-insensitive substring scan → OCR visible-text fallback (also uses `name` as OCR text), so a slightly-off/differently-cased name still lands.
+
+_Verified in-process (sandbox): rolling→3 valid segments, auto-stitch→1 valid mp4, global hook captures real injected keys; semantic click/type and region text exercised against a throwaway Notepad._
+
 ## Possible follow-ups (not yet requested)
 
-- **Reboot-survival hardening** — mid-recording segment rolling (bounded hard-crash loss) and optional auto-stitch of segments into one MP4 at stop (currently a segment list).
-- **Overlays for user-driven input** — overlays currently show the agent's injected input; a global-hook source could also highlight the human's clicks/keys.
+- **Stitch orientation** — the SourceReader→SinkWriter re-encode handles stride sign but hasn't been visually confirmed upright; eyeball a stitched clip, flip if needed.
+- **True remux stitch** — current auto-stitch re-encodes (lossy, slower); a compressed-sample passthrough remux would be lossless and fast.
 
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 

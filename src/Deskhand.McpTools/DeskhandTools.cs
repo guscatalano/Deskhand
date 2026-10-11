@@ -1233,25 +1233,35 @@ public static class DeskhandTools
             int count = doubleClick ? 2 : 1;
             if (!string.IsNullOrWhiteSpace(automationId) || !string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(controlType))
             {
+                // Exact UIA match first; then a forgiving case-insensitive substring scan on Name (so a slightly-off
+                // or differently-cased name still lands) before giving up to the OCR fallback.
                 var hits = b.Find(rootRef, new FindQuery(name, automationId, controlType, null, "descendants", 5));
                 var el = hits.FirstOrDefault(h => h.BoundingRect is not null) ?? hits.FirstOrDefault();
+                if (el is null && !string.IsNullOrWhiteSpace(name))
+                {
+                    el = b.Find(rootRef, new FindQuery(null, automationId, controlType, null, "descendants", 400))
+                        .Where(h => !string.IsNullOrEmpty(h.Name) && h.Name!.Contains(name!, StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(h => h.Name!.Length)   // closest (shortest) match to the requested name
+                        .FirstOrDefault();
+                }
                 if (el is not null)
                 {
                     if (el.Patterns.Contains("Invoke")) { b.Invoke(el.Ref); return Json(new { clicked = el.Name, via = "invoke", el.Ref }); }
                     if (el.BoundingRect is { } r) { int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2; b.MouseClick(button, cx, cy, count); return Json(new { clicked = el.Name, via = "click", x = cx, y = cy, el.Ref }); }
                     return Json(new { error = "Matched an element with neither Invoke nor bounds.", el.Ref, type = "unclickable" });
                 }
-                if (string.IsNullOrWhiteSpace(text)) return Json(new { error = "No UIA element matched.", type = "not_found" });
             }
-            if (!string.IsNullOrWhiteSpace(text))
+            // OCR fallback: use explicit text, or the name as visible text when no UIA element matched.
+            string? ocrText = !string.IsNullOrWhiteSpace(text) ? text : name;
+            if (!string.IsNullOrWhiteSpace(ocrText))
             {
                 var cap = b.CaptureScreen(null, ImageFormat.Png, 90);
                 var ocr = Deskhand.Core.Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y);
-                var w = FindOcrTarget(ocr, text!);
-                if (w is null) return Json(new { error = $"Text '{text}' not found on screen.", type = "not_found" });
+                var w = FindOcrTarget(ocr, ocrText!);
+                if (w is null) return Json(new { error = $"No UIA element matched and text '{ocrText}' not found on screen.", type = "not_found" });
                 int cx = w.X + w.Width / 2, cy = w.Y + w.Height / 2;
                 b.MouseClick(button, cx, cy, count);
-                return Json(new { clicked = text, via = "ocr", x = cx, y = cy });
+                return Json(new { clicked = ocrText, via = "ocr", x = cx, y = cy });
             }
             return Json(new { error = "Specify a target: name / automationId / controlType, or text.", type = "missing_argument" });
         });
@@ -1314,20 +1324,23 @@ public static class DeskhandTools
         [Description("Hard auto-stop ceiling in ms (default 30000; max 1800000 for mp4, 300000 for gif/avi).")] int maxDurationMs = 30000,
         [Description("Optional base filename for the saved file (sanitized; extension is set from format). Omit to use the recording id.")] string? outputName = null,
         [Description("Draw the agent's own clicks (fading highlight) and typed keys/chords (a bottom strip) onto the recording — useful for demo clips. Default false.")] bool overlays = false,
-        [Description("mp4 only: survive a reboot. The recording persists its state and, after a restart + sign-in, resumes under the SAME id into a new segment. record_stop then returns an ordered list of segment files (each a playable mp4) rather than one file. Default false.")] bool resumable = false)
+        [Description("mp4 only: survive a reboot. The recording persists its state and, after a restart + sign-in, resumes under the SAME id into a new segment. record_stop then returns an ordered list of segment files (each a playable mp4) rather than one file. Default false.")] bool resumable = false,
+        [Description("Also draw the HUMAN's clicks + shortcut keys (global hook) onto the recording — useful when capturing a person demonstrating a flow. Plain typed text is NOT shown (privacy). Default false.")] bool overlaysUser = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\"}";
         if (!state.CaptureEnabled) return "{\"error\":\"capture_disabled\"}";
-        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName, overlays, resumable)));
+        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName, overlays, resumable, overlaysUser)));
     }
 
-    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia, marks, speeds, segments } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id}; readVia points to deskhand_record_read for chunked download over the MCP connection; marks/speeds are the record_mark/record_speed timelines. For a RESUMABLE recording that spanned a reboot, segments is the ordered list of segment files (each a playable mp4) — download each with deskhand_record_read(segment:\"<name>\") — and downloadUrl covers only the last segment.")]
-    public static string RecordStop(Deskhand.Core.Services.ScreenRecorder rec, string id)
+    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia, marks, speeds, segments, stitched? } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id}; readVia points to deskhand_record_read for chunked download over the MCP connection; marks/speeds are the record_mark/record_speed timelines. For a RESUMABLE recording, segments is the ordered list of segment files (each a playable mp4) — download each with deskhand_record_read(segment:\"<name>\"). With stitch=true, the segments are concatenated into ONE continuous mp4 and its name returned as 'stitched' (download via deskhand_record_read(segment:) or /recordings/seg/{name}).")]
+    public static string RecordStop(Deskhand.Core.Services.ScreenRecorder rec, string id,
+        [Description("Resumable mp4 only: concatenate the segments into one continuous mp4 and return it as 'stitched'. Default false (segment list only).")] bool stitch = false)
     {
         var (marks, speeds) = rec.Timeline(id);
         var st = rec.Stop(id);
         var segments = rec.Segments(id);
-        return Json(new { status = st, downloadUrl = $"/recordings/{id}", readVia = $"deskhand_record_read(\"{id}\", offset) — call repeatedly with offset=nextOffset until done=true", marks, speeds, segments });
+        string? stitched = stitch ? rec.StitchSegments(id) : null;
+        return Json(new { status = st, downloadUrl = $"/recordings/{id}", readVia = $"deskhand_record_read(\"{id}\", offset) — call repeatedly with offset=nextOffset until done=true", marks, speeds, segments, stitched });
     }
 
     [McpServerTool(Name = "deskhand_record_mark"), Description("Add a labelled MARKER at the current point of an in-progress recording. The label is shown on-screen as a caption for ~2.5s and recorded in the marker timeline returned by deskhand_record_stop ({atMs, label}) — so a clip can caption its own steps. Returns the recording status.")]
@@ -1377,8 +1390,10 @@ public static class DeskhandTools
         [Description("\"present\" (default) waits until it appears; \"gone\" waits until it disappears.")] string expect = "present",
         [Description("Give up after this many ms (default 30000, capped at 300000).")] int timeoutMs = 30000,
         [Description("Poll interval in ms (default 500, clamped 100–10000).")] int pollMs = 500,
+        [Description("text target only: restrict OCR to this monitor index (omit = whole desktop).")] int? monitor = null,
+        [Description("text target only: restrict OCR to a screen region \"x,y,w,h\" (virtual-desktop pixels) — faster and avoids matching the same text elsewhere.")] string? region = null,
         CancellationToken ct = default)
-        => Json(await Deskhand.Core.Services.WaitService.WaitAsync(target, match, expect, timeoutMs, pollMs, ct).ConfigureAwait(false));
+        => Json(await Deskhand.Core.Services.WaitService.WaitAsync(target, match, expect, timeoutMs, pollMs, ct, monitor, region).ConfigureAwait(false));
 
     // ---------- record the USER's input (what the human did) ----------
 

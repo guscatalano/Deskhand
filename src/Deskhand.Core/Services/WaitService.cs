@@ -27,7 +27,8 @@ public static class WaitService
     public const int MaxPollMs = 10_000;
 
     public static async Task<WaitResultDto> WaitAsync(
-        string? target, string? match, string? expect, int timeoutMs, int pollMs, CancellationToken ct = default)
+        string? target, string? match, string? expect, int timeoutMs, int pollMs, CancellationToken ct = default,
+        int? monitor = null, string? region = null)
     {
         target = (target ?? "").Trim().ToLowerInvariant();
         match = (match ?? "").Trim();
@@ -40,7 +41,7 @@ public static class WaitService
             "process" => () => ProbeProcess(match),
             "file" => () => ProbeFile(match),
             "registry" or "reg" => () => ProbeRegistry(match),
-            "text" or "ocr" => () => ProbeText(match),
+            "text" or "ocr" => () => ProbeText(match, monitor, region),
             _ => null,
         };
         if (probe is null)
@@ -107,17 +108,32 @@ public static class WaitService
         return (false, null);
     }
 
-    private static (bool, string?) ProbeText(string match)
+    private static (bool, string?) ProbeText(string match, int? monitor = null, string? region = null)
     {
-        // OCR the whole virtual desktop and look for the text. Uses ScreenCapture + OcrService directly (not the
-        // host capture tools), so it does NOT fire the capture toast into a recording.
-        var cap = ScreenCapture.CaptureScreen(null, ImageFormat.Jpeg, 70);
+        // OCR the screen and look for the text. Uses ScreenCapture + OcrService directly (not the host capture
+        // tools), so it does NOT fire the capture toast into a recording. Scope it to a region ("x,y,w,h") or a
+        // monitor index to OCR less and avoid false matches elsewhere on screen.
+        CaptureResultDto cap;
+        if (TryParseRegion(region, out int rx, out int ry, out int rw, out int rh))
+            cap = ScreenCapture.CaptureRegion(rx, ry, rw, rh, ImageFormat.Jpeg, 70);
+        else
+            cap = ScreenCapture.CaptureScreen(monitor, ImageFormat.Jpeg, 70);
         var ocr = OcrService.Recognize(cap.Bytes);
         if (!ocr.Ok) return (false, null);
         int idx = ocr.Text.IndexOf(match, StringComparison.OrdinalIgnoreCase);
         if (idx < 0) return (false, null);
         int from = Math.Max(0, idx - 12), len = Math.Min(ocr.Text.Length - from, match.Length + 24);
         return (true, "…" + ocr.Text.Substring(from, len).Replace('\n', ' ').Replace('\r', ' ') + "…");
+    }
+
+    private static bool TryParseRegion(string? region, out int x, out int y, out int w, out int h)
+    {
+        x = y = w = h = 0;
+        if (string.IsNullOrWhiteSpace(region)) return false;
+        var p = region.Split(',', StringSplitOptions.TrimEntries);
+        if (p.Length != 4) return false;
+        if (!int.TryParse(p[0], out x) || !int.TryParse(p[1], out y) || !int.TryParse(p[2], out w) || !int.TryParse(p[3], out h)) return false;
+        return w > 0 && h > 0;
     }
 
     private static (bool, string?) ProbeRegistry(string match)

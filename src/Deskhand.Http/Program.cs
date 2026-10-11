@@ -445,14 +445,14 @@ api.MapPost("/record/start", (Deskhand.Core.Services.ScreenRecorder rec, Control
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
     if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
-    var opt = new Deskhand.Core.Services.RecordingOptions(r.Monitor, r.Format ?? "mp4", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000, r.OutputName, r.Overlays ?? false, r.Resumable ?? false);
+    var opt = new Deskhand.Core.Services.RecordingOptions(r.Monitor, r.Format ?? "mp4", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000, r.OutputName, r.Overlays ?? false, r.Resumable ?? false, r.OverlaysUser ?? false);
     var s = rec.Start(opt);
     al.Record("record_start", $"{s.Format} mon={r.Monitor?.ToString() ?? "all"} {s.Width}x{s.Height} fps={s.Fps} max={s.MaxDurationMs}ms", s.Id);
     if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is recording the screen · {s.Format} · {s.Width}×{s.Height}"); } catch { } }
     return Results.Ok(s);
 });
-api.MapPost("/record/stop", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RefRequest r) =>
-{ var (marks, speeds) = rec.Timeline(r.Reference); var s = rec.Stop(r.Reference); var segments = rec.Segments(r.Reference); al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(new { status = s, marks, speeds, segments }); });
+api.MapPost("/record/stop", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RecordStopRequest r) =>
+{ var (marks, speeds) = rec.Timeline(r.Reference); var s = rec.Stop(r.Reference); var segments = rec.Segments(r.Reference); var stitched = (r.Stitch ?? false) ? rec.StitchSegments(r.Reference) : null; al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(new { status = s, marks, speeds, segments, stitched }); });
 // Download one segment of a resumable recording by its filename (from /record/stop's segments). Name is sanitized.
 api.MapGet("/recordings/seg/{name}", (Deskhand.Core.Services.ScreenRecorder rec, HttpContext ctx, string name) =>
 { var (bytes, _, n) = rec.ReadSegmentChunk(name, 0, int.MaxValue); return FileBytesWithSha(ctx, bytes, "video/mp4", n); });
@@ -476,8 +476,8 @@ api.MapGet("/input/record/events", (Deskhand.Core.Services.InputRecorder ir, lon
 
 // Block until a NON-VISUAL condition holds (window|process|file|registry) — never captures, so no toast into
 // recordings. expect=gone inverts. e.g. GET /wait?target=file&match=C:\out.log&timeoutMs=60000
-api.MapGet("/wait", async (string target, string match, string? expect, int? timeoutMs, int? pollMs, CancellationToken ct) =>
-    Results.Ok(await Deskhand.Core.Services.WaitService.WaitAsync(target, match, expect, timeoutMs ?? 30000, pollMs ?? 500, ct)));
+api.MapGet("/wait", async (string target, string match, string? expect, int? timeoutMs, int? pollMs, int? monitor, string? region, CancellationToken ct) =>
+    Results.Ok(await Deskhand.Core.Services.WaitService.WaitAsync(target, match, expect, timeoutMs ?? 30000, pollMs ?? 500, ct, monitor, region)));
 
 // Block until a process starts/exits (event=start|exit), matched by name substring and/or pid.
 api.MapPost("/process/wait", (Deskhand.Core.Events.ProcessWatcher w, ProcessWaitRequest r) =>
@@ -1945,7 +1945,8 @@ sealed class WebhookForwarder(Deskhand.Core.Events.EventHub hub, Deskhand.Core.S
     }
 }
 record MoveWindowRequest(long Hwnd, string? DesktopId);
-record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs, string? OutputName = null, bool? Overlays = null, bool? Resumable = null);
+record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs, string? OutputName = null, bool? Overlays = null, bool? Resumable = null, bool? OverlaysUser = null);
+record RecordStopRequest(string Reference, bool? Stitch);
 record RecordMarkRequest(string Id, string? Label);
 record RecordSpeedRequest(string Id, double? Factor);
 record UiaClickRequest(string? Name, string? AutomationId, string? ControlType, string? Text, string? RootRef, string? Button, bool? DoubleClick);

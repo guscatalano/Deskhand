@@ -410,7 +410,11 @@ api.MapPost("/record/start", (Deskhand.Core.Services.ScreenRecorder rec, Control
     return Results.Ok(s);
 });
 api.MapPost("/record/stop", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RefRequest r) =>
-{ var s = rec.Stop(r.Reference); al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(s); });
+{ var (marks, speeds) = rec.Timeline(r.Reference); var s = rec.Stop(r.Reference); al.Record("record_stop", $"{s.State} frames={s.Frames} {s.SizeBytes}B", r.Reference); return Results.Ok(new { status = s, marks, speeds }); });
+api.MapPost("/record/mark", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RecordMarkRequest r) =>
+{ var s = rec.Mark(r.Id, r.Label ?? ""); al.Record("record_mark", r.Label, r.Id); return Results.Ok(s); });
+api.MapPost("/record/speed", (Deskhand.Core.Services.ScreenRecorder rec, AuditLog al, RecordSpeedRequest r) =>
+{ var s = rec.Speed(r.Id, r.Factor ?? 1.0); al.Record("record_speed", (r.Factor ?? 1.0).ToString(), r.Id); return Results.Ok(s); });
 api.MapGet("/record/status/{id}", (Deskhand.Core.Services.ScreenRecorder rec, string id) => Results.Ok(rec.GetStatus(id)));
 api.MapGet("/record/list", (Deskhand.Core.Services.ScreenRecorder rec) => Results.Ok(rec.List()));
 api.MapGet("/recordings/{id}", (Deskhand.Core.Services.ScreenRecorder rec, HttpContext ctx, string id) =>
@@ -1890,6 +1894,8 @@ sealed class WebhookForwarder(Deskhand.Core.Events.EventHub hub, Deskhand.Core.S
 }
 record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs, string? OutputName = null, bool? Overlays = null);
+record RecordMarkRequest(string Id, string? Label);
+record RecordSpeedRequest(string Id, double? Factor);
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);

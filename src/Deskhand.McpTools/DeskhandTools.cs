@@ -1196,11 +1196,30 @@ public static class DeskhandTools
         return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName, overlays)));
     }
 
-    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id} (needs network to this machine); readVia points to deskhand_record_read for chunked download over the MCP connection (no direct network needed).")]
+    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia, marks, speeds } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id} (needs network to this machine); readVia points to deskhand_record_read for chunked download over the MCP connection; marks/speeds are the record_mark and record_speed timelines ({atMs, label}/{atMs, factor}).")]
     public static string RecordStop(Deskhand.Core.Services.ScreenRecorder rec, string id)
     {
+        var (marks, speeds) = rec.Timeline(id);
         var st = rec.Stop(id);
-        return Json(new { status = st, downloadUrl = $"/recordings/{id}", readVia = $"deskhand_record_read(\"{id}\", offset) — call repeatedly with offset=nextOffset until done=true" });
+        return Json(new { status = st, downloadUrl = $"/recordings/{id}", readVia = $"deskhand_record_read(\"{id}\", offset) — call repeatedly with offset=nextOffset until done=true", marks, speeds });
+    }
+
+    [McpServerTool(Name = "deskhand_record_mark"), Description("Add a labelled MARKER at the current point of an in-progress recording. The label is shown on-screen as a caption for ~2.5s and recorded in the marker timeline returned by deskhand_record_stop ({atMs, label}) — so a clip can caption its own steps. Returns the recording status.")]
+    public static string RecordMark(Deskhand.Core.Services.ScreenRecorder rec, ControlState state,
+        [Description("The recording id.")] string id,
+        [Description("The caption/label for this moment, e.g. \"Opening settings\".")] string label)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        return Try(() => Json(rec.Mark(id, label)));
+    }
+
+    [McpServerTool(Name = "deskhand_record_speed"), Description("Set the PLAYBACK SPEED factor from now until the next change, for an in-progress MP4 recording (>1 plays faster, e.g. 3 = 3x; clamped 0.25–8). Frames keep being captured at the same rate, but their presentation durations shrink so the segment plays sped-up — so Deskhand can fast-forward boring stretches itself. Recorded in the speed timeline returned by stop. No effect on gif/avi (fixed fps). Returns the recording status.")]
+    public static string RecordSpeed(Deskhand.Core.Services.ScreenRecorder rec, ControlState state,
+        [Description("The recording id.")] string id,
+        [Description("Playback speed multiplier from here on (0.25–8; 1 = real time).")] double factor)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        return Try(() => Json(rec.Speed(id, factor)));
     }
 
     [McpServerTool(Name = "deskhand_record_read"), Description("Download a finished recording's bytes IN CHUNKS over the MCP connection (works for large files — unlike deskhand_read_file which caps at ~25 MB — and needs no direct network to the machine). Returns { id, offset, length, totalSize, nextOffset, done, name, base64 }. Call repeatedly with offset = the previous nextOffset until done=true, concatenating base64. length defaults to ~6 MB per call.")]

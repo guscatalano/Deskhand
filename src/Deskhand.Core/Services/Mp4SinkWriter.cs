@@ -32,11 +32,12 @@ public sealed class Mp4SinkWriter : IDisposable
     }
 
     private readonly int _w, _h;
-    private readonly long _frameDuration;   // one frame in 100-ns units
+    private readonly long _frameDuration;   // one frame in 100-ns units at 1x
     private readonly IMFSinkWriter _writer;
     private readonly int _stream;
     private readonly object _gate = new();
     private long _frameIndex;
+    private long _pts;                       // running presentation time (100-ns); advances by each frame's duration
     private bool _finished;
 
     public Mp4SinkWriter(string path, int width, int height, int fps, int bitrate)
@@ -74,11 +75,17 @@ public sealed class Mp4SinkWriter : IDisposable
         _writer.BeginWriting();
     }
 
-    /// <summary>Encode one frame (a 32bpp-ARGB bitmap at the recording's exact dimensions). Timestamps run at a
-    /// constant fps regardless of capture jitter, so playback speed is correct even when frames are dropped.
+    /// <summary>Encode one frame (a 32bpp-ARGB bitmap at the recording's exact dimensions) at the default 1x
+    /// duration.</summary>
+    public bool WriteFrame(Bitmap frame) => WriteFrame(frame, _frameDuration);
+
+    /// <summary>Encode one frame with an explicit presentation duration (100-ns units) — a duration shorter than
+    /// the 1x frame time makes that stretch play back faster (speed segments). The running presentation clock
+    /// advances by this duration, so playback speed is correct regardless of capture jitter or dropped frames.
     /// Thread-safe; returns false once finished.</summary>
-    public bool WriteFrame(Bitmap frame)
+    public bool WriteFrame(Bitmap frame, long duration)
     {
+        if (duration < 1) duration = 1;
         lock (_gate)
         {
             if (_finished) return false;
@@ -101,8 +108,9 @@ public sealed class Mp4SinkWriter : IDisposable
 
             var sample = MFCreateSample();
             sample.AddBuffer(buffer);
-            sample.SampleTime = _frameIndex * _frameDuration;
-            sample.SampleDuration = _frameDuration;
+            sample.SampleTime = _pts;
+            sample.SampleDuration = duration;
+            _pts += duration;
             _frameIndex++;
             _writer.WriteSample(_stream, sample);
             sample.Dispose();

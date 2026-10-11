@@ -35,6 +35,7 @@ public sealed class ScreenRecorder : IDisposable
 {
     public const int MaxAllowedDurationMs = 300_000;     // 5 min — GIF/AVI are held in RAM until encode
     public const int MaxMp4DurationMs = 1_800_000;       // 30 min — MP4 streams to disk, so it can run far longer
+    private const long CaptionMs = 2500;                 // how long a record_mark caption stays on screen
 
     private sealed class Session
     {
@@ -47,6 +48,11 @@ public sealed class ScreenRecorder : IDisposable
         public string? Mp4Path;                             // MP4 file path, assigned at Start (exists but unfinalized while recording)
         public volatile int Mp4Frames;                      // MP4 frames written so far
         public volatile bool Busy;                          // MP4: drop a tick rather than queue if an encode is in flight
+        public double Speed = 1.0;                           // current playback-speed factor (mp4 only); >1 = faster
+        public readonly List<object> Marks = new();         // timeline of { atMs, label } markers (for the result)
+        public readonly List<object> Speeds = new();        // timeline of { atMs, factor } speed changes
+        public volatile string? Caption;                    // transient on-screen caption (the latest marker label)
+        public long CaptionUntil;                           // TickCount64 after which the caption stops rendering
         public System.Threading.Timer? Timer;
         public System.Threading.Timer? AutoStop;
         public readonly object Gate = new();
@@ -211,10 +217,15 @@ public sealed class ScreenRecorder : IDisposable
             }
 
             if (s.Opt.Overlays) DrawOverlays(frame, s);
+            if (s.Caption is not null && Environment.TickCount64 < s.CaptionUntil) DrawCaption(frame, s);
 
             if (mp4)
             {
-                if (s.State == "recording" && s.Mp4!.WriteFrame(frame)) s.Mp4Frames++;
+                // Speed segments: a frame's presentation duration is the 1x frame time divided by the factor,
+                // so a 2x stretch plays back in half the time.
+                long baseDur = 10_000_000L / s.Opt.Fps;
+                long dur = Math.Max(1, (long)Math.Round(baseDur / Math.Clamp(s.Speed, 0.25, 8.0)));
+                if (s.State == "recording" && s.Mp4!.WriteFrame(frame, dur)) s.Mp4Frames++;
             }
             else
             {
@@ -279,6 +290,38 @@ public sealed class ScreenRecorder : IDisposable
     }
 
     public RecordingStatus GetStatus(string id) => StatusOf(Get(id));
+
+    /// <summary>Add a labelled marker at the current point of a recording. The label is captioned on-screen for
+    /// a couple of seconds and recorded in the recording's marker timeline (returned by stop).</summary>
+    public RecordingStatus Mark(string id, string label)
+    {
+        var s = Get(id);
+        label = (label ?? "").Trim();
+        long atMs = Environment.TickCount64 - s.StartedTicks;
+        lock (s.Gate) s.Marks.Add(new { atMs, label });
+        if (label.Length > 0) { s.Caption = label; s.CaptionUntil = Environment.TickCount64 + CaptionMs; }
+        return StatusOf(s);
+    }
+
+    /// <summary>Set the playback-speed factor from now until the next change (mp4 only; &gt;1 plays faster). Frames
+    /// keep being captured at the same rate, but their presentation durations shrink so the segment plays sped-up.
+    /// Clamped to 0.25x–8x. Recorded in the speed timeline (returned by stop).</summary>
+    public RecordingStatus Speed(string id, double factor)
+    {
+        var s = Get(id);
+        factor = Math.Clamp(double.IsFinite(factor) && factor > 0 ? factor : 1.0, 0.25, 8.0);
+        s.Speed = factor;
+        long atMs = Environment.TickCount64 - s.StartedTicks;
+        lock (s.Gate) s.Speeds.Add(new { atMs, factor });
+        return StatusOf(s);
+    }
+
+    /// <summary>The marker and speed-change timelines for a recording (for the stop/mark result).</summary>
+    public (IReadOnlyList<object> marks, IReadOnlyList<object> speeds) Timeline(string id)
+    {
+        var s = Get(id);
+        lock (s.Gate) return (s.Marks.ToArray(), s.Speeds.ToArray());
+    }
 
     public IReadOnlyList<RecordingStatus> List() => _sessions.Values.Select(StatusOf).ToList();
 
@@ -421,5 +464,31 @@ public sealed class ScreenRecorder : IDisposable
             }
         }
         catch { /* overlays are cosmetic; never let them kill a frame */ }
+    }
+
+    /// <summary>Draw the current marker caption centred near the top of the frame. Best-effort.</summary>
+    private static void DrawCaption(Bitmap frame, Session s)
+    {
+        string? text = s.Caption;
+        if (string.IsNullOrEmpty(text)) return;
+        if (text.Length > 80) text = text[..79] + "…";
+        try
+        {
+            using var g = Graphics.FromImage(frame);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            int fontPx = Math.Clamp(s.OutH / 22, 13, 28);
+            using var font = new Font("Segoe UI", fontPx, FontStyle.Bold, GraphicsUnit.Pixel);
+            var size = g.MeasureString(text, font);
+            float pad = fontPx * 0.7f;
+            float boxW = size.Width + pad * 2, boxH = size.Height + pad;
+            float x = (s.OutW - boxW) / 2, y = Math.Max(pad, s.OutH * 0.04f);
+            using var bg = new SolidBrush(Color.FromArgb(185, 20, 20, 20));
+            g.FillRectangle(bg, x, y, boxW, boxH);
+            using var accent = new Pen(Color.FromArgb(220, 255, 210, 40), 2f);
+            g.DrawRectangle(accent, x, y, boxW, boxH);
+            using var fg = new SolidBrush(Color.White);
+            g.DrawString(text, font, fg, x + pad, y + pad / 2);
+        }
+        catch { /* cosmetic */ }
     }
 }

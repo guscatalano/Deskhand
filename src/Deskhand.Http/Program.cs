@@ -399,6 +399,35 @@ api.MapPost("/macro/expect", (Deskhand.Core.Macros.MacroRecorder rec, MacroExpec
     rec.RecordWait(new Deskhand.Core.Macros.ElementSelectorDto(r.Name, r.AutomationId, r.ControlType, r.ClassName), r.TimeoutMs ?? 5000);
     return Results.Ok(new { added = true, count = rec.CurrentCount });
 });
+// Named, assertion-bearing recordings → regression tests.
+api.MapPost("/macro/assert", (Deskhand.Core.Macros.MacroRecorder rec, MacroAssertRequest r) =>
+{
+    if (!rec.IsRecording) throw new ArgumentException("Not recording — start a recording before adding an assertion.");
+    rec.RecordAssert(r.Target ?? "", r.Match ?? "", r.Expect ?? "present", r.TimeoutMs ?? 5000);
+    return Results.Ok(new { added = true, count = rec.CurrentCount });
+});
+api.MapPost("/macro/save", (Deskhand.Core.Macros.MacroRecorder rec, AuditLog a, MacroSaveRequest r) =>
+{
+    var macro = rec.LastMacro ?? throw new ArgumentException("No macro recorded yet — stop a recording first.");
+    var saved = Deskhand.Core.Macros.MacroStore.Save(r.Name ?? "", macro);
+    if (saved is null) return Results.BadRequest(new { error = "Invalid name." });
+    a.Record("macro_save", saved, $"steps={macro.Steps.Count}");
+    return Results.Ok(new { saved, steps = macro.Steps.Count });
+});
+api.MapGet("/macro/list", () => Results.Ok(Deskhand.Core.Macros.MacroStore.List()));
+api.MapPost("/macro/delete", (AuditLog a, MacroSaveRequest r) =>
+{
+    bool deleted = Deskhand.Core.Macros.MacroStore.Delete(r.Name ?? ""); a.Record("macro_delete", r.Name, deleted ? "deleted" : "missing");
+    return Results.Ok(new { deleted, name = r.Name });
+});
+api.MapPost("/macro/replay", (IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder rec, AuditLog a, MacroReplayRequest? r) =>
+{
+    var macro = string.IsNullOrWhiteSpace(r?.Name) ? rec.LastMacro : Deskhand.Core.Macros.MacroStore.Load(r!.Name!);
+    if (macro is null) return Results.NotFound(new { error = string.IsNullOrWhiteSpace(r?.Name) ? "No macro recorded yet." : $"No saved macro '{r!.Name}'." });
+    var report = Deskhand.Core.Macros.MacroPlayer.PlayReport(macro, b, r?.Speed ?? 1.0, stopOnFailure: r?.StopOnFailure ?? true);
+    a.Record("macro_replay", r?.Name, $"passed={report.Passed} {report.Failures} failures / {report.Steps} steps");
+    return Results.Ok(report);
+});
 api.MapPost("/macro/play", (IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder rec, AuditLog a, MacroPlayRequest? r) =>
 {
     var macro = r?.Macro ?? rec.LastMacro ?? throw new ArgumentException("No macro to play — record one first or supply a macro.");
@@ -1933,6 +1962,9 @@ record DesktopFollowRequest(bool On);
 record ControlRequest(bool? Armed, bool? InputEnabled, bool? CaptureEnabled, bool? NotifyOnCapture);
 record MacroPlayRequest(Deskhand.Core.Macros.Macro? Macro, double? Speed, int? MaxStepDelayMs);
 record MacroExpectRequest(string? Name, string? AutomationId, string? ControlType, string? ClassName, int? TimeoutMs);
+record MacroAssertRequest(string? Target, string? Match, string? Expect, int? TimeoutMs);
+record MacroSaveRequest(string? Name);
+record MacroReplayRequest(string? Name, double? Speed, bool? StopOnFailure);
 record MouseMoveRequest(int X, int Y);
 record MouseClickRequest(string? Button, int? X, int? Y, int? Count);
 record MouseButtonRequest(string? Button, int? X, int? Y);

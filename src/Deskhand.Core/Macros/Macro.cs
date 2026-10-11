@@ -57,6 +57,13 @@ public sealed class MacroRecorder
     public void RecordWait(ElementSelectorDto selector, int timeoutMs)
         => Add(FleetMethods.WaitForElement, "wait", new { timeoutMs }, selector);
 
+    /// <summary>Insert a non-element ASSERTION, checked at playback via WaitService (window / process / file /
+    /// registry / text). A replay FAILS LOUDLY (reports a failure) if it doesn't hold — turning a recording into
+    /// a regression test. <paramref name="target"/> is the WaitService target; <paramref name="expect"/> is
+    /// "present" or "gone".</summary>
+    public void RecordAssert(string target, string match, string expect, int timeoutMs)
+        => Add(target, "assert", new { match, expect, timeoutMs }, null);
+
     private void Add(string method, string kind, object args, ElementSelectorDto? selector)
     {
         lock (_lock)

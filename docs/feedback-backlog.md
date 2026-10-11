@@ -68,14 +68,17 @@ and re-cut the video. Much of this round **already shipped earlier this session*
 - **`write_file` creates missing parent directories** — already handled (`WriteFileBase64` creates the parent tree);
   the field report predated it.
 
-**Open — new:**
+**Shipped (v0.2.68):**
 
-- **Session record/replay as a first-class thing** — the headline ask: capture the sequence of deskhand calls (+ results)
-  as a *named* recording and replay it against the current machine, where a step can be an **assertion**
-  (process exists / window title matches / screenshot or OCR match) so a replay **fails loudly** when a code change
-  broke the flow. _Note: a `MacroRecorder` already exists (`/macro/start|stop|play|expect`) and `/macro/expect` is a
-  rudimentary assertion — scope this as "promote macros to named, assertion-rich, regression-test recordings", not a
-  greenfield build._
+- **Session record/replay as a first-class thing** — built on the existing macro recorder. `deskhand_macro_assert`
+  adds a non-element assertion (window / process / file / registry / text-via-OCR, `present`|`gone`) alongside the
+  element `macro_expect`; `deskhand_macro_save` / `_list` / `_delete` persist **named** macros to disk
+  (`%LOCALAPPDATA%\Deskhand\macros`); `deskhand_macro_replay(name)` replays as a **regression test**, returning a
+  pass/fail report `{passed, steps, failures, results:[{index,kind,method,ok,detail}]}` — assertions are checked
+  (via `WaitService`) and an element that can't re-resolve is a **loud failure**, not a silent abort. Also
+  `POST /macro/assert|save|replay|delete` + `GET /macro/list`. UIA steps still re-resolve by selector so a replay
+  survives DPI/layout churn. Verified against a sandbox Notepad: record→save→load→replay passes; a broken
+  assertion fails loudly.
 
 ## Possible follow-ups (not yet requested)
 

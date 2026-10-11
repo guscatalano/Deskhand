@@ -1092,6 +1092,45 @@ public static class DeskhandTools
         return $"played {played} steps";
     }
 
+    [McpServerTool(Name = "deskhand_macro_assert"), Description("While recording a macro, insert a non-element ASSERTION that a replay CHECKS and FAILS LOUDLY on — turning the recording into a regression test. target: window (title substring) | process (name/pid) | file (path exists) | registry (key[!value[=expected]]) | text (OCR on screen). expect=\"present\" (default) or \"gone\". For a UIA element expectation use deskhand_macro_expect instead.")]
+    public static string MacroAssert(Deskhand.Core.Macros.MacroRecorder r,
+        [Description("window | process | file | registry | text.")] string target,
+        [Description("The match for the target (title substring / process name·pid / path / registry key / on-screen text).")] string match,
+        [Description("\"present\" (default) or \"gone\".")] string expect = "present",
+        [Description("How long a replay waits for the assertion before failing (ms, default 5000).")] int timeoutMs = 5000)
+    {
+        if (!r.IsRecording) return "not recording";
+        r.RecordAssert(target, match, expect, timeoutMs);
+        return $"assertion added ({r.CurrentCount} steps)";
+    }
+
+    [McpServerTool(Name = "deskhand_macro_save"), Description("Save the last recorded macro to disk under a NAME, so it survives a restart and can be replayed later as a named regression test. Overwrites an existing macro with the same name. Returns the sanitized name used.")]
+    public static string MacroSave(Deskhand.Core.Macros.MacroRecorder r, string name)
+    {
+        var macro = r.LastMacro ?? throw new ArgumentException("No macro recorded yet — stop a recording first.");
+        var saved = Deskhand.Core.Macros.MacroStore.Save(name, macro);
+        return saved is null ? Json(new { error = "Invalid name.", type = "bad_name" }) : Json(new { saved, steps = macro.Steps.Count });
+    }
+
+    [McpServerTool(Name = "deskhand_macro_list"), Description("List the saved (named) macros: name, step count, assertion count, and when each was saved.")]
+    public static string MacroList() => Json(Deskhand.Core.Macros.MacroStore.List());
+
+    [McpServerTool(Name = "deskhand_macro_delete"), Description("Delete a saved macro by name.")]
+    public static string MacroDelete(string name) => Json(new { deleted = Deskhand.Core.Macros.MacroStore.Delete(name), name });
+
+    [McpServerTool(Name = "deskhand_macro_replay"), Description("Replay a macro as a REGRESSION TEST and return a pass/fail REPORT (per-step results), instead of just playing it. Pass a saved macro's name, or omit to replay the last recorded macro. Each assertion (deskhand_macro_assert / deskhand_macro_expect) is checked; an element that can't be re-resolved is reported as a failure. stopOnFailure (default true) halts at the first failure — the usual 'did my code change break the flow?' check. Returns { passed, steps, failures, results:[{index,kind,method,ok,detail}] }.")]
+    public static string MacroReplay(IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder r, ControlState state,
+        [Description("Saved macro name; omit to replay the last recorded macro.")] string? name = null,
+        [Description("Playback speed (>1 faster, default 1).")] double speed = 1.0,
+        [Description("Halt at the first failing step/assertion (default true).")] bool stopOnFailure = true)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var macro = string.IsNullOrWhiteSpace(name) ? r.LastMacro : Deskhand.Core.Macros.MacroStore.Load(name);
+        if (macro is null) return Json(new { error = string.IsNullOrWhiteSpace(name) ? "No macro recorded yet." : $"No saved macro '{name}'.", type = "not_found" });
+        var report = Deskhand.Core.Macros.MacroPlayer.PlayReport(macro, b, speed, stopOnFailure: stopOnFailure);
+        return Json(report);
+    }
+
     [McpServerTool(Name = "deskhand_foreground_window"), Description("The current foreground window element.")]
     public static string ForegroundWindow(IAutomationBackend b) => Json(b.GetForegroundWindow());
 

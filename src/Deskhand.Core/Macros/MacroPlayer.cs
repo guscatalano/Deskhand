@@ -8,9 +8,55 @@ namespace Deskhand.Core.Macros;
 /// appears. Only raw coordinate/keyboard input honors the recorded timing (scaled by <c>speed</c>,
 /// each gap capped). So a macro is "do X, wait for Y, do Z" rather than fire-and-hope.
 /// </summary>
+public sealed record MacroReplayStep(int Index, long TMs, string Kind, string Method, bool Ok, string? Detail);
+public sealed record MacroReplayReport(bool Passed, int Steps, int Failures, IReadOnlyList<MacroReplayStep> Results);
+
 public static class MacroPlayer
 {
     private const int TargetWaitMs = 8000;
+
+    /// <summary>Replay a macro as a REGRESSION TEST: run every step, check each assertion, and return a per-step
+    /// pass/fail report instead of throwing. Assertion ("assert") steps are checked via WaitService
+    /// (window/process/file/registry/text); an element "wait"/"uia" step that can't re-resolve is recorded as a
+    /// failure (loud), not a silent abort. With <paramref name="stopOnFailure"/> the replay halts at the first
+    /// failure (default) — the usual "did my change break the flow?" behaviour.</summary>
+    public static MacroReplayReport PlayReport(Macro macro, IAutomationBackend backend, double speed = 1.0,
+        int maxStepDelayMs = 3000, bool stopOnFailure = true, Action<string>? log = null)
+    {
+        if (speed <= 0) speed = 1.0;
+        long prev = 0;
+        var results = new List<MacroReplayStep>();
+        int failures = 0, i = 0;
+        foreach (var s in macro.Steps)
+        {
+            long gap = (long)((s.TMs - prev) / speed);
+            prev = s.TMs;
+            if (s.Kind == "input" && gap > 0) Thread.Sleep((int)Math.Min(gap, maxStepDelayMs));
+            bool ok; string? detail;
+            try
+            {
+                if (s.Kind == "assert") (ok, detail) = RunAssert(s, backend);
+                else { Execute(s, backend, log); ok = true; detail = null; }
+            }
+            catch (Exception ex) { ok = false; detail = ex.Message; }
+            results.Add(new MacroReplayStep(i, s.TMs, s.Kind, s.Method, ok, detail));
+            if (!ok) { failures++; log?.Invoke($"FAIL step {i} ({s.Kind} {s.Method}): {detail}"); if (stopOnFailure) break; }
+            i++;
+        }
+        return new MacroReplayReport(failures == 0, results.Count, failures, results);
+    }
+
+    private static (bool ok, string? detail) RunAssert(MacroStep s, IAutomationBackend b)
+    {
+        var a = s.Args;
+        string match = a.Str("match") ?? "";
+        string expect = a.Str("expect") ?? "present";
+        int timeout = a.Int("timeoutMs", 5000);
+        var r = Deskhand.Core.Services.WaitService.WaitAsync(s.Method, match, expect, timeout, 500).GetAwaiter().GetResult();
+        return r.Met
+            ? (true, r.Detail)
+            : (false, $"assert {s.Method} '{match}' ({expect}) not met within {timeout}ms{(r.Detail is null ? "" : " — " + r.Detail)}");
+    }
 
     public static int Play(Macro macro, IAutomationBackend backend, double speed = 1.0, int maxStepDelayMs = 3000, Action<string>? log = null)
     {

@@ -68,6 +68,7 @@ public sealed class RdpBackend(RdpHost host, string hostName) : IAutomationBacke
     public ProcessLaunchResultDto LaunchProcess(string p, string? a, string? w, int t) => No<ProcessLaunchResultDto>();
     public TreeNodeDto GetTree(string? r, int d, int m) => No<TreeNodeDto>();
     public IReadOnlyList<ElementInfoDto> Find(string? r, FindQuery q) => No<IReadOnlyList<ElementInfoDto>>();
+    public IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max) => No<IReadOnlyList<ElementInfoDto>>();
     public ElementInfoDto? WaitForElement(string? r, FindQuery q, int t) => No<ElementInfoDto?>();
     public ElementInfoDto GetElement(string r) => No<ElementInfoDto>();
     public IReadOnlyDictionary<string, string?> GetAllProperties(string r) => No<IReadOnlyDictionary<string, string?>>();

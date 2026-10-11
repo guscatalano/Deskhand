@@ -2,10 +2,11 @@
 
 Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 
-## Shipped (v0.2.58–v0.2.62)
+## Shipped (v0.2.58–v0.2.63)
 
 | Item | What shipped |
 |---|---|
+| `find_elements` misses some Start tiles | New `deskhand_find_start_apps(query, max)` (and `GET /uia/start-apps`) searches the Start host's (`StartMenuExperienceHost`) **and** the search host's own UIA tree, matching tiles on **visible text** — their Name **or** a visible descendant label — as a case-insensitive substring, so pinned tiles with an empty/odd UIA Name (which exact-Name `find_elements` misses) are found. Returns invokable refs, ordered exact-label → prefix → alphabetical (v0.2.63). |
 | H.264 MP4 recordings + longer clips | New `Mp4SinkWriter` streams frames straight to an **H.264 MP4 on disk** via in-box Media Foundation (hardware MFT when present, SW otherwise) — no bundled codec. Because it's not RAM-bound, mp4 clips may run up to **30 min** (gif/avi stay capped at 5 min). `record_start` defaults to `format:"mp4"` and takes an optional sanitized `outputName`; falls back to AVI if Media Foundation is unavailable (N/Server SKU). Verified: finalized, playable MP4 (ftyp/mdat/moov, avc1) (v0.2.62). |
 | `launch_process elevated:false` | De-elevated launch using the logged-on user's shell token (v0.2.59). |
 | `run_script` (verbatim) | Takes a script body + args, writes a temp file, runs with `-File` — nothing interpolates `$_`/`$PID`/`$env:` (v0.2.58). |
@@ -30,7 +31,6 @@ Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 ## Open — larger (need a design decision)
 
 - **Recordings that survive a reboot** — resume under the same id after sign-in (persist recorder state + logon re-attach), so a demo with a restart isn't two clips.
-- **`find_elements` misses some Start tiles** — search `StartMenuExperienceHost`'s own UIA tree and match on visible text, not just the UIA Name.
 - **Click / key overlays on recordings** — optional click highlights + a key-press strip.
 - **Recording markers** — `record_mark {label}` and `record_speed {factor}` from here to the next marker, so Deskhand can render captions/speed-ups itself.
 

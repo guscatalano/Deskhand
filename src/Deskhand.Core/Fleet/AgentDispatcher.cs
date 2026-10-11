@@ -295,6 +295,7 @@ public static class AgentDispatcher
             FleetMethods.Launch => b.LaunchProcess(a.Str("path")!, a.Str("args"), a.Str("workingDir"), a.Int("waitForWindowMs", 0)),
             FleetMethods.GetTree => b.GetTree(a.Str("rootRef"), a.Int("depth", 2), a.Int("maxChildren", 40)),
             FleetMethods.Find => b.Find(a.Str("rootRef"), a.Obj<FindQuery>("query")!),
+            FleetMethods.FindStartApps => b.FindStartApps(a.Str("query"), a.Int("max", 50)),
             FleetMethods.WaitForElement => b.WaitForElement(a.Str("rootRef"), a.Obj<FindQuery>("query")!, a.Int("timeoutMs", 5000)),
             FleetMethods.GetElement => b.GetElement(a.Str("reference")!),
             FleetMethods.GetAllProperties => b.GetAllProperties(a.Str("reference")!),

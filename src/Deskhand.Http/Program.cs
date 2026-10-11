@@ -1286,6 +1286,11 @@ api.MapPost("/uia/tree", (IAutomationBackend b, TreeRequest r) =>
 api.MapPost("/uia/find", (IAutomationBackend b, FindRequest r) =>
     Results.Ok(b.Find(r.RootRef, new FindQuery(r.Name, r.AutomationId, r.ControlType, r.ClassName, r.Scope ?? "descendants", r.Max ?? 100))));
 
+// Find Start-menu entries by visible text (substring) in the Start/search host's own UIA tree — catches tiles
+// that exact-Name find misses. e.g. GET /uia/start-apps?query=edge
+api.MapGet("/uia/start-apps", (IAutomationBackend b, string? query, int? max) =>
+    Results.Ok(b.FindStartApps(query, max ?? 50)));
+
 api.MapPost("/uia/wait", (IAutomationBackend b, WaitRequest r) =>
 {
     var q = new FindQuery(r.Name, r.AutomationId, r.ControlType, r.ClassName, r.Scope ?? "descendants", 1);

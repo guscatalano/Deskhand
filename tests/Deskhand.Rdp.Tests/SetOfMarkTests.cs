@@ -22,6 +22,7 @@ public class SetOfMarkTests
         public ElementInfoDto GetForegroundWindow() => Fg;
         public IReadOnlyList<ElementInfoDto> GetTopLevelWindows() => Windows ?? new List<ElementInfoDto> { Fg };
         public IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query) => rootRef == Fg.Ref ? Elements : Array.Empty<ElementInfoDto>();
+        public IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max) => Array.Empty<ElementInfoDto>();
         public ElementInfoDto GetElement(string reference) => reference == Fg.Ref ? Fg : Elements.First(e => e.Ref == reference);
 
         public DesktopStateDto GetDesktopState() => throw new NotSupportedException();

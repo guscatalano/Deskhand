@@ -170,6 +170,9 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     public IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query)
         => _sta.Invoke(() => _uia.Find(rootRef, query));
 
+    public IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max)
+        => _sta.Invoke(() => _uia.FindStartApps(query, max));
+
     // Poll off the STA thread — each probe hops onto it, but the thread is released between
     // probes so other calls aren't blocked for the whole timeout.
     public ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs)

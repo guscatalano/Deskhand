@@ -31,6 +31,11 @@ public interface IAutomationBackend : IDisposable
     /// Returns the first match, or null on timeout.</summary>
     ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs);
 
+    /// <summary>Find launchable Start-menu entries by their visible text (Name or a visible descendant label,
+    /// case-insensitive substring) — catches tiles that plain <see cref="Find"/> (exact Name) misses. Start must
+    /// be open. With no query, returns every launchable entry.</summary>
+    IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max);
+
     ElementInfoDto GetElement(string reference);
     IReadOnlyDictionary<string, string?> GetAllProperties(string reference);
 

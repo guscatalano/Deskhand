@@ -44,6 +44,7 @@ public static class FleetMethods
     public const string LaunchAs = "launch_as";
     public const string GetTree = "get_tree";
     public const string Find = "find";
+    public const string FindStartApps = "find_start_apps";
     public const string WaitForElement = "wait_for_element";
     public const string GetElement = "get_element";
     public const string GetAllProperties = "get_all_properties";

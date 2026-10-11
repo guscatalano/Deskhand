@@ -1130,6 +1130,12 @@ public static class DeskhandTools
         int max = 100)
         => Json(b.Find(rootRef, new FindQuery(name, automationId, controlType, className, scope, max)));
 
+    [McpServerTool(Name = "deskhand_find_start_apps"), Description("Find launchable Start-menu entries by their VISIBLE TEXT (case-insensitive substring) — succeeds where deskhand_find_elements (exact UIA Name) misses pinned tiles whose Name is empty or differs from the on-screen label. Searches the Start host (StartMenuExperienceHost) and the search host's own UIA tree, matching an entry's Name OR a visible descendant label, and returns invokable element refs (use deskhand_invoke or deskhand_select). Start must be OPEN first (send_keys \"win\", then optionally type to filter). With no query, returns every launchable entry. Note: for launching a known app you can also skip the UI entirely via deskhand_list_start_menu + deskhand_launch_process.")]
+    public static string FindStartApps(IAutomationBackend b,
+        [Description("Visible text to match (substring, case-insensitive). Omit to list every launchable entry.")] string? query = null,
+        [Description("Max results (default 50).")] int max = 50)
+        => Json(b.FindStartApps(query, max));
+
     [McpServerTool(Name = "deskhand_wait_for_element"), Description("Poll until an element matching the conditions appears (or the timeout elapses). Returns the element, or a not-found message on timeout.")]
     public static string WaitForElement(IAutomationBackend b,
         string? rootRef = null, string? name = null, string? automationId = null, string? controlType = null, string? className = null,

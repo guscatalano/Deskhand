@@ -208,6 +208,100 @@ public sealed class UiaService : IDisposable
         return found.Take(Math.Clamp(q.Max, 1, 1000)).Select(Register).ToList();
     }
 
+    /// <summary>
+    /// Find launchable Start-menu entries by their VISIBLE TEXT. Walks the UIA subtree of the Start host
+    /// (StartMenuExperienceHost) and the search host, matching tiles / list items on their Name OR any visible
+    /// descendant text (case-insensitive substring) — so a pinned tile whose UIA Name is empty or differs from
+    /// the label a human reads still matches, which plain <see cref="Find"/> (exact Name) misses. Start must be
+    /// OPEN (press the Win key first); returns empty if no Start/search host window is present. With no query,
+    /// returns every launchable entry. Matches are ordered exact-label, then prefix, then alphabetical.
+    /// </summary>
+    public IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max)
+    {
+        max = Math.Clamp(max <= 0 ? 50 : max, 1, 500);
+        string? q = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
+
+        var results = new List<ElementInfoDto>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var host in StartHosts())
+        {
+            AutomationElement[] nodes;
+            try { nodes = host.FindAllDescendants(); } catch { continue; }
+            foreach (var el in nodes.Take(8000))   // bound the scan; Start/search trees are normally far smaller
+            {
+                if (results.Count >= max) break;
+                if (!IsLaunchable(el)) continue;
+                string text = VisibleText(el);
+                if (text.Length == 0) continue;
+                if (q is not null && text.IndexOf(q, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                string rid = RuntimeIdOf(el);
+                if (rid.Length > 0 && !seen.Add(rid)) continue;
+                results.Add(Register(el));
+            }
+            if (results.Count >= max) break;
+        }
+
+        if (q is not null)
+            results = results
+                .OrderByDescending(r => string.Equals(r.Name, q, StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(r => (r.Name ?? "").StartsWith(q, StringComparison.OrdinalIgnoreCase))
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        return results;
+    }
+
+    private IEnumerable<AutomationElement> StartHosts()
+    {
+        AutomationElement[] children;
+        try { children = Desktop.FindAllChildren(); } catch { yield break; }
+        foreach (var w in children)
+        {
+            if (SafeNullable(() => w.Properties.ProcessId.ValueOrDefault) is not int pid) continue;
+            string proc = ProcName(pid);
+            if (proc.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase)
+                || proc.Equals("SearchHost", StringComparison.OrdinalIgnoreCase)
+                || proc.Equals("SearchApp", StringComparison.OrdinalIgnoreCase))
+                yield return w;
+        }
+    }
+
+    private static string ProcName(int pid)
+    {
+        try { using var p = System.Diagnostics.Process.GetProcessById(pid); return p.ProcessName; }
+        catch { return ""; }
+    }
+
+    private static bool IsLaunchable(AutomationElement el)
+    {
+        var ct = SafeControlType(el);
+        if (ct is ControlType.Button or ControlType.ListItem or ControlType.MenuItem) return true;
+        try { if (el.Patterns.Invoke.IsSupported) return true; } catch { }
+        try { if (el.Patterns.SelectionItem.IsSupported) return true; } catch { }
+        return false;
+    }
+
+    /// <summary>The element's own Name, or — when that's empty — the joined Names of its (shallow) descendants,
+    /// which is where a tile's visible label often lives.</summary>
+    private static string VisibleText(AutomationElement el)
+    {
+        string name = Safe(() => el.Properties.Name.ValueOrDefault) ?? "";
+        if (name.Length > 0) return name;
+        try
+        {
+            var parts = el.FindAllDescendants().Take(16)
+                .Select(d => Safe(() => d.Properties.Name.ValueOrDefault))
+                .Where(s => !string.IsNullOrEmpty(s));
+            return string.Join(" ", parts).Trim();
+        }
+        catch { return ""; }
+    }
+
+    private static string RuntimeIdOf(AutomationElement el)
+    {
+        try { var rid = el.Properties.RuntimeId.ValueOrDefault; return rid is { Length: > 0 } ? string.Join("-", rid) : ""; }
+        catch { return ""; }
+    }
+
     public ElementInfoDto GetElement(string reference) => BuildInfoOnly(reference, Resolve(reference));
 
     /// <summary>Deepest element at a screen point. Resolves fresh via UIA FromPoint — the escape

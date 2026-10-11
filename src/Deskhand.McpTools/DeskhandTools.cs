@@ -273,16 +273,21 @@ public static class DeskhandTools
         return Json(r);
     }
 
-    [McpServerTool(Name = "deskhand_write_file"), Description("Upload/write a file from base64 content (\"upload\"). Creates parent folders as needed. overwrite=false (default) fails if the file exists. Returns { path, size, overwritten, error? }. SENSITIVE: writes real files (can plant executables). Requires the kill switch to be armed; audited.")]
+    [McpServerTool(Name = "deskhand_write_file"), Description("Write a file from base64 content. Creates parent folders as needed. overwrite=false (default) fails if the file exists; append=true adds to the end. Returns { path, size, overwritten, error? }. NOTE: the whole file travels as base64 inside ONE tool message, so a very large file can exceed the message limit and fail to invoke — for big files either stream it in chunks with append=true (write the first chunk with overwrite=true, the rest with append=true), or use the HTTP POST /fs/upload (multipart, up to DESKHAND_MAX_UPLOAD_MB), or deskhand_fetch_url to pull it from a URL straight onto the machine. SENSITIVE: writes real files (can plant executables). Requires the kill switch armed; audited.")]
     public static string WriteFile(ControlState state, AuditLog audit,
         [Description("Full path to write, e.g. \"C:\\\\Users\\\\me\\\\out.bin\".")] string path,
-        [Description("File contents as base64.")] string contentBase64,
-        [Description("Replace the file if it already exists (default false).")] bool overwrite = false)
+        [Description("File contents (this chunk) as base64.")] string contentBase64,
+        [Description("Replace the file if it already exists (default false).")] bool overwrite = false,
+        [Description("Append this chunk to the end of the file instead of replacing it — for streaming a large file across several calls.")] bool append = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
-        var r = Deskhand.Core.Services.FileSystemService.WriteFileBase64(path, contentBase64, overwrite);
-        if (r.Error is null) audit.Record("file_write", r.Path, $"{r.Size}B{(r.Overwritten ? " (overwrote)" : "")}");
-        return Json(r);
+        try
+        {
+            var r = Deskhand.Core.Services.FileSystemService.WriteFileBase64(path, contentBase64, overwrite, append);
+            if (r.Error is null) audit.Record("file_write", r.Path, $"{r.Size}B{(append ? " (append)" : r.Overwritten ? " (overwrote)" : "")}");
+            return Json(r);
+        }
+        catch (Exception ex) { return Json(new { path, size = 0, overwritten = false, error = ex.Message, type = "write_error" }); }
     }
 
     [McpServerTool(Name = "deskhand_create_folder"), Description("Create a folder (and any missing parent folders). Idempotent — succeeds if it already exists. Returns { op, path, ok, detail, error? }. Requires armed; audited.")]
@@ -364,27 +369,45 @@ public static class DeskhandTools
         return Json(r);
     }
 
-    [McpServerTool(Name = "deskhand_run_command"), Description("Run a single command in a shell (default PowerShell; shell=\"cmd\" or \"pwsh\") and return its output: { shell, command, cwd, exitCode, stdout, stderr, durationMs, timedOut, truncated, error? }. STATELESS — each call is a fresh process, so cd/variables do NOT persist between calls (pass cwd for a starting directory). MOST POWERFUL tool (arbitrary code as the current user): it is OFF unless the host sets DESKHAND_ENABLE_SHELL, and also requires the kill switch to be armed; every command is audited. Output is capped; long-running commands are killed at timeoutMs (default 30000; 0 = no limit, for long installers / downloads; otherwise no cap).")]
+    [McpServerTool(Name = "deskhand_run_command"), Description("Run a single command in a shell (default PowerShell; shell=\"cmd\" or \"pwsh\") and return its output: { shell, command, cwd, exitCode, stdout, stderr, durationMs, timedOut, truncated, jobId }. STATELESS — each call is a fresh process, so cd/variables do NOT persist between calls (pass cwd for a starting directory). AUTO-DETACH: a command that is still running after autoDetachMs (default 60000) is handed off to a background job and this returns { running:true, detached:true, jobId, pid, stdout } instead of blocking until the transport gives up — poll deskhand_shell_result(jobId) for the rest, or deskhand_shell_cancel(jobId) to stop it. So set a big timeoutMs (e.g. a 15-min install) freely; you'll get a jobId back quickly and the command keeps running. MOST POWERFUL tool (arbitrary code as the current user): OFF unless the host sets DESKHAND_ENABLE_SHELL, requires the kill switch armed, every command audited. Output is capped; the command is killed at timeoutMs (default 30000; 0 = no limit, for long installers/downloads).")]
     public static string RunCommand(ControlState state, AuditLog audit, Deskhand.Core.Services.ShellJobStore jobs,
         [Description("The command line to run, e.g. \"Get-Process | Sort CPU -Desc | Select -First 5\".")] string command,
         [Description("\"powershell\" (default), \"pwsh\" (PowerShell 7), or \"cmd\".")] string? shell = null,
         [Description("Working directory to start in (optional).")] string? cwd = null,
-        [Description("Kill the command after this many ms (default 30000; 0 = no limit, for long installers; otherwise no cap). Ignored when async=true.")] int? timeoutMs = null,
-        [Description("Run in the BACKGROUND: returns { jobId, pid, running } immediately instead of blocking. Poll deskhand_shell_result(jobId) for output + status; stop it (incl. a hung installer) with deskhand_shell_cancel(jobId). Use this for long installers.")] bool async = false)
+        [Description("Kill the command after this many ms (default 30000; 0 = no limit, for long installers). Enforced in the background too if the command auto-detaches.")] int? timeoutMs = null,
+        [Description("Block inline at most this long (default 60000) before handing the running command to a background job and returning its jobId. Keep it under the caller's own request timeout.")] int? autoDetachMs = null,
+        [Description("Run in the BACKGROUND immediately: returns { jobId, pid, running } without blocking. Poll deskhand_shell_result(jobId); stop with deskhand_shell_cancel(jobId).")] bool async = false)
     {
         if (!Deskhand.Core.Services.ShellService.Enabled) return "{\"error\":\"Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.\",\"type\":\"shell_disabled\"}";
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+
+        int killMs = timeoutMs ?? 30000;                       // 0 = no limit
+        var (proc, sh, err) = Deskhand.Core.Services.ShellService.StartProcess(shell, command, cwd);
+        if (proc is null) return Json(new { error = err, type = "shell_error" });
+        var job = jobs.Start(sh, command, (cwd ?? "").Trim().Trim('"'), proc, killMs > 0 ? killMs : (int?)null);
+
         if (async)
         {
-            var (proc, sh, err) = Deskhand.Core.Services.ShellService.StartProcess(shell, command, cwd);
-            if (proc is null) return Json(new { error = err, type = "shell_error" });
-            var job = jobs.Start(sh, command, (cwd ?? "").Trim().Trim('"'), proc);
             audit.Record("shell_run", $"{sh} [async {job.JobId} pid {job.Pid}]: {(command.Length <= 160 ? command : command[..160] + "…")}", "started");
             return Json(job);
         }
-        var r = Deskhand.Core.Services.ShellService.Run(shell, command, cwd, timeoutMs);
-        audit.Record("shell_run", $"{r.Shell}: {(command.Length <= 160 ? command : command[..160] + "…")}", r.TimedOut ? "TIMEOUT" : $"exit {r.ExitCode} in {r.DurationMs}ms");
-        return Json(r);
+
+        // Wait inline for a short command; a long one detaches so the caller's request never times out.
+        int detachMs = Math.Clamp(autoDetachMs ?? 60000, 1000, 110000);
+        int waitMs = killMs > 0 ? Math.Min(detachMs, killMs + 500) : detachMs;
+        var res = jobs.WaitFor(job.JobId, waitMs);
+
+        if (res is not null && !res.Job.Running)
+        {
+            audit.Record("shell_run", $"{sh}: {(command.Length <= 160 ? command : command[..160] + "…")}", res.Job.TimedOut ? "TIMEOUT" : $"exit {res.Job.ExitCode} in {res.Job.DurationMs}ms");
+            return Json(new { shell = sh, command, cwd, exitCode = res.Job.ExitCode, stdout = res.Stdout, stderr = res.Stderr,
+                durationMs = res.Job.DurationMs, timedOut = res.Job.TimedOut, truncated = res.Truncated, jobId = res.Job.JobId });
+        }
+
+        audit.Record("shell_run", $"{sh} [auto-detached {job.JobId} pid {job.Pid}]: {(command.Length <= 160 ? command : command[..160] + "…")}", "running");
+        return Json(new { shell = sh, command, cwd, running = true, detached = true, jobId = job.JobId, pid = job.Pid,
+            stdout = res?.Stdout ?? "",
+            note = $"still running after {detachMs}ms — poll deskhand_shell_result(\"{job.JobId}\") for output + completion, or deskhand_shell_cancel(\"{job.JobId}\") to stop it." });
     }
 
     [McpServerTool(Name = "deskhand_shell_jobs"), Description("List background shell jobs started with deskhand_run_command(async=true): [{ jobId, pid, shell, command, cwd, running, exitCode, canceled, durationMs, startedAt, finishedAt, error? }]. Finished jobs are kept ~1 hour.")]
@@ -1332,11 +1355,11 @@ public static class DeskhandTools
         string button = "left", int steps = 20, int holdMs = 60)
     { b.Drag(fromX, fromY, toX, toY, button, steps, holdMs); return "ok"; }
 
-    [McpServerTool(Name = "deskhand_type_text"), Description("Type a literal Unicode string via synthetic keyboard input. Keystrokes go to whatever window has focus — if input isn't landing, pass reference (an element ref from find/element_from_point) to focus that element's window FIRST, or click the field before typing. For a plain text box, deskhand_set_value is more reliable (it sets the value via UIA, no focus needed).")]
+    [McpServerTool(Name = "deskhand_type_text"), Description("Type a literal Unicode string via synthetic keyboard input. Keystrokes go to whatever window has focus — if input isn't landing, pass reference (an element ref from find/element_from_point) to focus that element's window FIRST, or click the field before typing. CONSOLE WINDOWS (PowerShell / cmd / Windows Terminal) often ignore synthetic Unicode keystrokes — use deskhand_paste_text there instead. For a plain text box, deskhand_set_value is more reliable (it sets the value via UIA, no focus needed).")]
     public static string TypeText(IAutomationBackend b, string text, string? reference = null)
         => FocusThen(b, reference, () => b.TypeText(text));
 
-    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord to the focused window. Pass reference (an element ref) to focus that element's window FIRST if the chord isn't reaching the right app.")]
+    [McpServerTool(Name = "deskhand_send_keys"), Description("Send a key chord to the focused window, e.g. \"ctrl+s\", \"alt+F4\", \"enter\". Modifiers: ctrl, alt, shift, win. The Windows key also works ON ITS OWN as \"win\" (opens Start); \"apps\"/\"menu\" is the context-menu key. Pass reference (an element ref) to focus that element's window FIRST if the chord isn't reaching the right app.")]
     public static string SendKeys(IAutomationBackend b,
         [Description("Key chord, '+'-separated, modifiers first. Modifiers: ctrl, alt, shift, win. Key (last token): a letter/digit/symbol (e.g. s, 1, /), F1–F24, or a named key: enter, return, tab, esc, space, backspace, delete, insert, home, end, pageup, pagedown, up, down, left, right, printscreen. Examples: \"ctrl+s\", \"ctrl+shift+esc\", \"alt+F4\", \"win+d\", \"enter\".")] string chord,
         [Description("Optional element ref whose window to focus before sending.")] string? reference = null)

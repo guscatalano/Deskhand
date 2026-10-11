@@ -307,7 +307,7 @@ public static class FileSystemService
 
     /// <summary>Write bytes (given as base64) to a file. <paramref name="overwrite"/> false fails if it exists.
     /// Creates the parent directory if needed.</summary>
-    public static WriteResultDto WriteFileBase64(string? path, string? base64, bool overwrite)
+    public static WriteResultDto WriteFileBase64(string? path, string? base64, bool overwrite, bool append = false)
     {
         path = (path ?? "").Trim().Trim('"');
         if (path.Length == 0) return new WriteResultDto("", 0, false, "No path given.");
@@ -319,11 +319,14 @@ public static class FileSystemService
             var full = System.IO.Path.GetFullPath(path);
             if (Directory.Exists(full)) return new WriteResultDto(full, 0, false, "A folder already exists at that path.");
             bool existed = File.Exists(full);
-            if (existed && !overwrite) return new WriteResultDto(full, 0, false, "File exists — pass overwrite=true to replace it.");
+            // append lets a large file be streamed over several calls (each MCP message carries only one chunk).
+            if (existed && !overwrite && !append) return new WriteResultDto(full, 0, false, "File exists — pass overwrite=true to replace it, or append=true to add to it.");
             var dir = System.IO.Path.GetDirectoryName(full);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllBytes(full, bytes);
-            return new WriteResultDto(full, bytes.LongLength, existed);
+            if (append) { using var fs = new FileStream(full, FileMode.Append, FileAccess.Write); fs.Write(bytes); }
+            else File.WriteAllBytes(full, bytes);
+            long total = existed || append ? new FileInfo(full).Length : bytes.LongLength;
+            return new WriteResultDto(full, total, existed && !append);
         }
         catch (UnauthorizedAccessException) { return new WriteResultDto(path, 0, false, "Access denied — this location needs elevation."); }
         catch (Exception ex) { return new WriteResultDto(path, 0, false, ex.Message); }

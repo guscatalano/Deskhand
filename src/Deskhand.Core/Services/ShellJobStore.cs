@@ -8,7 +8,7 @@ namespace Deskhand.Core.Services;
 public record ShellJobDto(
     string JobId, int Pid, string Shell, string Command, string Cwd,
     bool Running, int? ExitCode, bool Canceled, long DurationMs,
-    string StartedAt, string? FinishedAt, string? Error = null);
+    string StartedAt, string? FinishedAt, string? Error = null, bool TimedOut = false);
 
 /// <summary>A job snapshot plus its captured output so far (available live as the process runs).</summary>
 public record ShellJobResultDto(ShellJobDto Job, string Stdout, string Stderr, bool Truncated);
@@ -27,13 +27,27 @@ public sealed class ShellJobStore
 
     private readonly ConcurrentDictionary<string, Job> _jobs = new();
 
-    public ShellJobDto Start(string shell, string command, string cwd, Process proc)
+    public ShellJobDto Start(string shell, string command, string cwd, Process proc, int? killAfterMs = null)
     {
         Prune();
-        var job = new Job(shell, command, cwd, proc);
+        var job = new Job(shell, command, cwd, proc, killAfterMs);
         _jobs[job.Id] = job;
         job.BeginCollect();
         return job.ToDto();
+    }
+
+    /// <summary>Block up to <paramref name="waitMs"/> for a job to finish (polling); returns its current result.</summary>
+    public ShellJobResultDto? WaitFor(string id, int waitMs)
+    {
+        int waited = 0;
+        while (waited < waitMs)
+        {
+            var r = Result(id);
+            if (r is null || !r.Job.Running) return r;
+            System.Threading.Thread.Sleep(150);
+            waited += 150;
+        }
+        return Result(id);
     }
 
     public IReadOnlyList<ShellJobDto> List() =>
@@ -70,8 +84,10 @@ public sealed class ShellJobStore
         public volatile bool Running = true;
         public int? ExitCode { get; private set; }
         public bool Canceled { get; private set; }
+        public bool TimedOut { get; private set; }
         public string? Error { get; private set; }
 
+        private readonly int? _killAfterMs;
         private readonly Process _proc;
         private readonly Stopwatch _sw = Stopwatch.StartNew();
         private readonly StringBuilder _out = new();
@@ -79,9 +95,9 @@ public sealed class ShellJobStore
         private readonly object _lock = new();
         private long _durationMs;
 
-        public Job(string shell, string command, string cwd, Process proc)
+        public Job(string shell, string command, string cwd, Process proc, int? killAfterMs = null)
         {
-            Shell = shell; Command = command; Cwd = cwd; _proc = proc;
+            Shell = shell; Command = command; Cwd = cwd; _proc = proc; _killAfterMs = killAfterMs;
             try { Pid = proc.Id; } catch { Pid = -1; }
         }
 
@@ -90,6 +106,12 @@ public sealed class ShellJobStore
             _proc.OutputDataReceived += (_, e) => Append(_out, e.Data);
             _proc.ErrorDataReceived += (_, e) => Append(_err, e.Data);
             try { _proc.BeginOutputReadLine(); _proc.BeginErrorReadLine(); } catch { }
+            if (_killAfterMs is int k && k > 0)   // background kill deadline (the job's own timeoutMs)
+                _ = Task.Run(async () =>
+                {
+                    try { await Task.Delay(k); } catch { return; }
+                    if (Running) { TimedOut = true; try { _proc.Kill(entireProcessTree: true); } catch { } }
+                });
             _ = Task.Run(async () =>
             {
                 try { await _proc.WaitForExitAsync(); } catch { }
@@ -118,7 +140,7 @@ public sealed class ShellJobStore
         public ShellJobDto ToDto() => new(
             Id, Pid, Shell, Command, Cwd, Running, ExitCode, Canceled,
             Running ? _sw.ElapsedMilliseconds : _durationMs,
-            StartedAtUtc.ToString("o"), FinishedAtUtc?.ToString("o"), Error);
+            StartedAtUtc.ToString("o"), FinishedAtUtc?.ToString("o"), Error, TimedOut);
 
         public ShellJobResultDto ToResult()
         {

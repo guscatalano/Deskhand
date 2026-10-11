@@ -46,6 +46,8 @@ public sealed class ScreenRecorder : IDisposable
         public long SizeBytes;
         public string? Error;
         public bool Finalized;
+        public int FinalFrames = -1;       // frame count captured at encode time (JpegFrames is cleared afterward)
+        public long FinalElapsedMs = -1;   // wall-clock duration captured at stop time
     }
 
     public const int RetentionHours = 24;   // saved media is auto-deleted after this many hours
@@ -161,6 +163,8 @@ public sealed class ScreenRecorder : IDisposable
         {
             byte[][] frames;
             lock (s.Gate) frames = s.JpegFrames.ToArray();
+            s.FinalFrames = frames.Length;                              // remember before JpegFrames is cleared
+            s.FinalElapsedMs = Environment.TickCount64 - s.StartedTicks;
             if (frames.Length == 0) throw new InvalidOperationException("No frames were captured.");
 
             string ext = s.Opt.Format;
@@ -196,8 +200,10 @@ public sealed class ScreenRecorder : IDisposable
 
     private RecordingStatus StatusOf(Session s) => new(
         s.Id, s.State, s.Opt.Format, s.Opt.Monitor, s.Opt.Fps, s.Opt.Scale, s.OutW, s.OutH,
-        s.JpegFrames.Count == 0 && s.State != "recording" ? -1 : s.JpegFrames.Count,
-        Environment.TickCount64 - s.StartedTicks, s.Opt.MaxDurationMs, s.SizeBytes, s.File, s.Error);
+        // While recording, the live count; once finalized, the remembered count (JpegFrames is cleared post-encode).
+        s.State == "recording" ? s.JpegFrames.Count : (s.FinalFrames >= 0 ? s.FinalFrames : s.JpegFrames.Count),
+        s.FinalElapsedMs >= 0 ? s.FinalElapsedMs : Environment.TickCount64 - s.StartedTicks,
+        s.Opt.MaxDurationMs, s.SizeBytes, s.File, s.Error);
 
     private static Rectangle RectFor(int? monitor)
     {

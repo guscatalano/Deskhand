@@ -215,6 +215,9 @@ public static class InputInjector
             "enter" or "return" => (ushort)0x0D,
             "tab" => (ushort)0x09,
             "esc" or "escape" => (ushort)0x1B,
+            "win" or "lwin" or "leftwin" or "start" or "meta" or "super" => (ushort)0x5B,   // the Windows key on its own (opens Start)
+            "rwin" or "rightwin" => (ushort)0x5C,
+            "apps" or "menu" or "contextmenu" => (ushort)0x5D,   // the application/context-menu key
             "space" or "spacebar" => (ushort)0x20,
             "backspace" or "back" => (ushort)0x08,
             "delete" or "del" => (ushort)0x2E,

@@ -46,6 +46,7 @@ public sealed class RemoteAgentBackend(IAgentLink link) : IAutomationBackend
     public TreeNodeDto GetTree(string? rootRef, int depth, int maxChildren) => Call<TreeNodeDto>(FleetMethods.GetTree, new { rootRef, depth, maxChildren });
     public IReadOnlyList<ElementInfoDto> Find(string? rootRef, FindQuery query) => Call<List<ElementInfoDto>>(FleetMethods.Find, new { rootRef, query });
     public IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max) => Call<List<ElementInfoDto>>(FleetMethods.FindStartApps, new { query, max });
+    public string? GetText(string reference) => Call<string?>(FleetMethods.GetText, new { reference });
     public ElementInfoDto? WaitForElement(string? rootRef, FindQuery query, int timeoutMs) => Call<ElementInfoDto?>(FleetMethods.WaitForElement, new { rootRef, query, timeoutMs });
     public ElementInfoDto GetElement(string reference) => Call<ElementInfoDto>(FleetMethods.GetElement, new { reference });
     public ElementInfoDto GetElementFromPoint(int x, int y) => Call<ElementInfoDto>(FleetMethods.ElementFromPoint, new { x, y });

@@ -1118,17 +1118,40 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_macro_delete"), Description("Delete a saved macro by name.")]
     public static string MacroDelete(string name) => Json(new { deleted = Deskhand.Core.Macros.MacroStore.Delete(name), name });
 
-    [McpServerTool(Name = "deskhand_macro_replay"), Description("Replay a macro as a REGRESSION TEST and return a pass/fail REPORT (per-step results), instead of just playing it. Pass a saved macro's name, or omit to replay the last recorded macro. Each assertion (deskhand_macro_assert / deskhand_macro_expect) is checked; an element that can't be re-resolved is reported as a failure. stopOnFailure (default true) halts at the first failure — the usual 'did my code change break the flow?' check. Returns { passed, steps, failures, results:[{index,kind,method,ok,detail}] }.")]
+    [McpServerTool(Name = "deskhand_macro_replay"), Description("Replay a macro as a REGRESSION TEST and return a pass/fail REPORT (per-step results), instead of just playing it. Source priority: macroJson (an inline macro JSON blob — e.g. one you keep in your repo, as returned by deskhand_macro_stop) > name (a saved macro) > the last recorded macro. Each assertion (deskhand_macro_assert / deskhand_macro_expect) is checked; an element that can't be re-resolved is reported as a failure. stopOnFailure (default true) halts at the first failure — the 'did my code change break the flow?' check. Returns { passed, steps, failures, results:[{index,kind,method,ok,detail}] }.")]
     public static string MacroReplay(IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder r, ControlState state,
-        [Description("Saved macro name; omit to replay the last recorded macro.")] string? name = null,
+        [Description("Saved macro name; omit to use macroJson or the last recorded macro.")] string? name = null,
         [Description("Playback speed (>1 faster, default 1).")] double speed = 1.0,
-        [Description("Halt at the first failing step/assertion (default true).")] bool stopOnFailure = true)
+        [Description("Halt at the first failing step/assertion (default true).")] bool stopOnFailure = true,
+        [Description("Inline macro JSON (the object from deskhand_macro_stop) to replay directly — enables cross-session, repo-stored replays.")] string? macroJson = null)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
-        var macro = string.IsNullOrWhiteSpace(name) ? r.LastMacro : Deskhand.Core.Macros.MacroStore.Load(name);
+        Deskhand.Core.Macros.Macro? macro;
+        if (!string.IsNullOrWhiteSpace(macroJson))
+        {
+            macro = ParseMacroJson(macroJson);
+            if (macro is null) return Json(new { error = "macroJson is not a valid macro.", type = "bad_macro" });
+        }
+        else macro = string.IsNullOrWhiteSpace(name) ? r.LastMacro : Deskhand.Core.Macros.MacroStore.Load(name);
         if (macro is null) return Json(new { error = string.IsNullOrWhiteSpace(name) ? "No macro recorded yet." : $"No saved macro '{name}'.", type = "not_found" });
         var report = Deskhand.Core.Macros.MacroPlayer.PlayReport(macro, b, speed, stopOnFailure: stopOnFailure);
         return Json(report);
+    }
+
+    [McpServerTool(Name = "deskhand_macro_import"), Description("Import a macro JSON (the object from deskhand_macro_stop, e.g. kept in your repo) into the on-disk store under a NAME, so it can be replayed by name across sessions with deskhand_macro_replay. Returns the sanitized name used.")]
+    public static string MacroImport(string name, string macroJson)
+    {
+        var macro = ParseMacroJson(macroJson);
+        if (macro is null) return Json(new { error = "macroJson is not a valid macro.", type = "bad_macro" });
+        var saved = Deskhand.Core.Macros.MacroStore.Save(name, macro);
+        return saved is null ? Json(new { error = "Invalid name.", type = "bad_name" }) : Json(new { saved, steps = macro.Steps.Count });
+    }
+
+    // Parse a macro JSON blob (tolerant of the camelCase emitted by macro_stop).
+    private static Deskhand.Core.Macros.Macro? ParseMacroJson(string json)
+    {
+        try { return JsonSerializer.Deserialize<Deskhand.Core.Macros.Macro>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+        catch { return null; }
     }
 
     [McpServerTool(Name = "deskhand_foreground_window"), Description("The current foreground window element.")]
@@ -1187,6 +1210,9 @@ public static class DeskhandTools
 
     [McpServerTool(Name = "deskhand_get_element"), Description("Re-read a single element by ref (summary properties + supported patterns).")]
     public static string GetElement(IAutomationBackend b, string? reference) => ElementOp(reference, () => Json(b.GetElement(reference!)));
+
+    [McpServerTool(Name = "deskhand_get_text"), Description("Read an element's textual content — the Value pattern (text boxes, combo boxes), else the Text pattern's full document (read-only/rich documents like Notepad), else its Name. The read-back counterpart to deskhand_set_value / deskhand_type: use it to verify what was typed or to assert a field/document holds the expected text (e.g. in a macro regression replay). Returns { reference, text }.")]
+    public static string GetText(IAutomationBackend b, string? reference) => ElementOp(reference, () => Json(new { reference, text = b.GetText(reference!) }));
 
     [McpServerTool(Name = "deskhand_get_all_properties"), Description("Every UIA property the element supports, as a name→value map.")]
     public static string GetAllProperties(IAutomationBackend b, string? reference) => ElementOp(reference, () => Json(b.GetAllProperties(reference!)));

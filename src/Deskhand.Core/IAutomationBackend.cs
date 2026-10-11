@@ -37,6 +37,11 @@ public interface IAutomationBackend : IDisposable
     IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max);
 
     ElementInfoDto GetElement(string reference);
+
+    /// <summary>Read an element's textual content (Value pattern, else Text pattern, else Name) — the read-back
+    /// counterpart to <see cref="SetValue"/>.</summary>
+    string? GetText(string reference);
+
     IReadOnlyDictionary<string, string?> GetAllProperties(string reference);
 
     /// <summary>Return the deepest UIA element at a screen coordinate (virtual-desktop pixels).

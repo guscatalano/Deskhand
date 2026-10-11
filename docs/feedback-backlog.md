@@ -80,6 +80,21 @@ and re-cut the video. Much of this round **already shipped earlier this session*
   survives DPI/layout churn. Verified against a sandbox Notepad: record→save→load→replay passes; a broken
   assertion fails loudly.
 
+**Field-test fixes (v0.2.72) — from the user running the replay feature end to end (two clean runs):**
+
+- **Cross-session / repo-stored replay** — `deskhand_macro_replay` now accepts an inline `macroJson` (the exact object
+  `macro_stop` emits), and `deskhand_macro_import(name, json)` loads a repo-stored macro JSON into the named store — so
+  "record now, replay after I rebuild next week" works (also `POST /macro/import` and an inline macro on `/macro/replay`).
+  (Named save/replay already shipped v0.2.68; this adds feeding the JSON blob straight back.) Verified: the JSON from
+  `macro_stop` replays and passes, both inline and via import→replay-by-name.
+- **`type_text` long-input fidelity** — `InputInjector.TypeText` sends in ~10-char chunks with a brief pause instead of
+  one giant `SendInput` batch (which can overflow the target's input queue and drop the tail of a long prompt). Verified:
+  a 171-char string types in full, direct and via macro replay.
+- **`deskhand_get_text`** (new; `GET /uia/text`) — reads an element's Value/Text pattern: the read-back counterpart to
+  `set_value`/`type`, so a replay can **assert a field/document holds the expected text**. _Note: the reported garbled
+  `type_text` tail did NOT reproduce on current `main` once read back correctly via get_text — typing is faithful;
+  the earlier observation was the older deployed build and/or a read-too-early race. Chunking is kept as hardening._
+
 ## Follow-ups — shipped (v0.2.69)
 
 - **Reboot-survival hardening** — resumable mp4 now **rolls** to a fresh segment every `RollSeconds` (default 60; `DESKHAND_ROLL_SECONDS`), so a hard crash loses ≤ one interval; `record_stop stitch:true` **auto-stitches** the segments into one continuous mp4 (`<base>.stitched.mp4`) via `Mp4Stitcher` (MF SourceReader decode → `Mp4SinkWriter` re-encode).

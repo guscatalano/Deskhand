@@ -201,6 +201,8 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     public ElementInfoDto GetElement(string reference)
         => _sta.Invoke(() => _uia.GetElement(reference));
 
+    public string? GetText(string reference) => _sta.Invoke(() => _uia.GetText(reference));
+
     public IReadOnlyDictionary<string, string?> GetAllProperties(string reference)
         => _sta.Invoke(() => _uia.GetAllProperties(reference));
 

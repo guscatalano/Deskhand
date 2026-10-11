@@ -422,11 +422,19 @@ api.MapPost("/macro/delete", (AuditLog a, MacroSaveRequest r) =>
 });
 api.MapPost("/macro/replay", (IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder rec, AuditLog a, MacroReplayRequest? r) =>
 {
-    var macro = string.IsNullOrWhiteSpace(r?.Name) ? rec.LastMacro : Deskhand.Core.Macros.MacroStore.Load(r!.Name!);
-    if (macro is null) return Results.NotFound(new { error = string.IsNullOrWhiteSpace(r?.Name) ? "No macro recorded yet." : $"No saved macro '{r!.Name}'." });
+    var macro = r?.Macro ?? (string.IsNullOrWhiteSpace(r?.Name) ? rec.LastMacro : Deskhand.Core.Macros.MacroStore.Load(r!.Name!));
+    if (macro is null) return Results.NotFound(new { error = string.IsNullOrWhiteSpace(r?.Name) ? "No macro to replay — record one, save+name one, or supply a macro." : $"No saved macro '{r!.Name}'." });
     var report = Deskhand.Core.Macros.MacroPlayer.PlayReport(macro, b, r?.Speed ?? 1.0, stopOnFailure: r?.StopOnFailure ?? true);
     a.Record("macro_replay", r?.Name, $"passed={report.Passed} {report.Failures} failures / {report.Steps} steps");
     return Results.Ok(report);
+});
+api.MapPost("/macro/import", (AuditLog a, MacroImportRequest r) =>
+{
+    if (r.Macro is null) return Results.BadRequest(new { error = "No macro supplied." });
+    var saved = Deskhand.Core.Macros.MacroStore.Save(r.Name ?? "", r.Macro);
+    if (saved is null) return Results.BadRequest(new { error = "Invalid name." });
+    a.Record("macro_import", saved, $"steps={r.Macro.Steps.Count}");
+    return Results.Ok(new { saved, steps = r.Macro.Steps.Count });
 });
 api.MapPost("/macro/play", (IAutomationBackend b, Deskhand.Core.Macros.MacroRecorder rec, AuditLog a, MacroPlayRequest? r) =>
 {
@@ -1342,6 +1350,7 @@ api.MapGet("/uia/start-apps", (IAutomationBackend b, string? query, int? max) =>
 
 // Semantic, coordinate-free click/type — find the target and act in one call (reuses the MCP tool logic so both
 // surfaces stay identical).
+api.MapGet("/uia/text", (IAutomationBackend b, string reference) => Results.Ok(new { reference, text = b.GetText(reference) }));
 api.MapPost("/uia/click", (IAutomationBackend b, ControlState st, UiaClickRequest r) =>
     Results.Content(Deskhand.McpTools.DeskhandTools.Click(b, st, r.Name, r.AutomationId, r.ControlType, r.Text, r.RootRef, r.Button ?? "left", r.DoubleClick ?? false), "application/json"));
 api.MapPost("/uia/type", (IAutomationBackend b, ControlState st, UiaTypeRequest r) =>
@@ -1965,7 +1974,8 @@ record MacroPlayRequest(Deskhand.Core.Macros.Macro? Macro, double? Speed, int? M
 record MacroExpectRequest(string? Name, string? AutomationId, string? ControlType, string? ClassName, int? TimeoutMs);
 record MacroAssertRequest(string? Target, string? Match, string? Expect, int? TimeoutMs);
 record MacroSaveRequest(string? Name);
-record MacroReplayRequest(string? Name, double? Speed, bool? StopOnFailure);
+record MacroReplayRequest(string? Name, double? Speed, bool? StopOnFailure, Deskhand.Core.Macros.Macro? Macro = null);
+record MacroImportRequest(string? Name, Deskhand.Core.Macros.Macro? Macro);
 record MouseMoveRequest(int X, int Y);
 record MouseClickRequest(string? Button, int? X, int? Y, int? Count);
 record MouseButtonRequest(string? Button, int? X, int? Y);

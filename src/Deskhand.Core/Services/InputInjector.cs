@@ -169,13 +169,18 @@ public static class InputInjector
     public static void TypeText(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
-        var inputs = new List<INPUT>(text.Length * 2);
+        // Send in small chunks with a brief pause between. One giant SendInput batch reports success but the
+        // target's input queue overflows and silently drops the tail on long strings — so chunk and let it drain.
+        const int chunkChars = 10;
+        var batch = new List<INPUT>(chunkChars * 2);
+        int n = 0;
         foreach (char c in text)
         {
-            inputs.Add(KeyUnicode(c, up: false));
-            inputs.Add(KeyUnicode(c, up: true));
+            batch.Add(KeyUnicode(c, up: false));
+            batch.Add(KeyUnicode(c, up: true));
+            if (++n % chunkChars == 0) { Send(batch.ToArray()); batch.Clear(); Thread.Sleep(5); }
         }
-        Send(inputs.ToArray());
+        if (batch.Count > 0) Send(batch.ToArray());
         MarkKey(text);
     }
 

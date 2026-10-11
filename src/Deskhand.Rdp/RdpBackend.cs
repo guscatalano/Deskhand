@@ -71,6 +71,7 @@ public sealed class RdpBackend(RdpHost host, string hostName) : IAutomationBacke
     public IReadOnlyList<ElementInfoDto> FindStartApps(string? query, int max) => No<IReadOnlyList<ElementInfoDto>>();
     public ElementInfoDto? WaitForElement(string? r, FindQuery q, int t) => No<ElementInfoDto?>();
     public ElementInfoDto GetElement(string r) => No<ElementInfoDto>();
+    public string? GetText(string r) => No<string?>();
     public IReadOnlyDictionary<string, string?> GetAllProperties(string r) => No<IReadOnlyDictionary<string, string?>>();
     public ElementInfoDto GetElementFromPoint(int x, int y) => No<ElementInfoDto>();
     public void Invoke(string r) => No<object>();

@@ -304,6 +304,17 @@ public sealed class UiaService : IDisposable
 
     public ElementInfoDto GetElement(string reference) => BuildInfoOnly(reference, Resolve(reference));
 
+    /// <summary>Read an element's textual content: the UIA Value pattern (text boxes, combos), else the Text
+    /// pattern's full document (rich/read-only documents), else the Name. The read-back counterpart to
+    /// <c>set_value</c> — e.g. to assert a field/document holds what you expect.</summary>
+    public string? GetText(string reference)
+    {
+        var el = Resolve(reference);
+        try { if (el.Patterns.Value.PatternOrDefault is { } v) { var s = v.Value.ValueOrDefault; if (!string.IsNullOrEmpty(s)) return s; } } catch { }
+        try { if (el.Patterns.Text.PatternOrDefault is { } t) return t.DocumentRange.GetText(-1); } catch { }
+        return Safe(() => el.Properties.Name.ValueOrDefault);
+    }
+
     /// <summary>Deepest element at a screen point. Resolves fresh via UIA FromPoint — the escape
     /// hatch when a window's tree is thin or its refs go stale (Chromium/Electron).</summary>
     public ElementInfoDto GetElementFromPoint(int x, int y)

@@ -1188,11 +1188,12 @@ public static class DeskhandTools
         [Description("Output scale percent (10..100, default 100). Lower = smaller file.")] int scale = 100,
         [Description("AVI/JPEG quality 1..100 (default 75); ignored for gif and mp4.")] int quality = 75,
         [Description("Hard auto-stop ceiling in ms (default 30000; max 1800000 for mp4, 300000 for gif/avi).")] int maxDurationMs = 30000,
-        [Description("Optional base filename for the saved file (sanitized; extension is set from format). Omit to use the recording id.")] string? outputName = null)
+        [Description("Optional base filename for the saved file (sanitized; extension is set from format). Omit to use the recording id.")] string? outputName = null,
+        [Description("Draw the agent's own clicks (fading highlight) and typed keys/chords (a bottom strip) onto the recording — useful for demo clips. Default false.")] bool overlays = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\"}";
         if (!state.CaptureEnabled) return "{\"error\":\"capture_disabled\"}";
-        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName)));
+        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName, overlays)));
     }
 
     [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id} (needs network to this machine); readVia points to deskhand_record_read for chunked download over the MCP connection (no direct network needed).")]

@@ -11,6 +11,31 @@ namespace Deskhand.Core.Services;
 /// </summary>
 public static class InputInjector
 {
+    /// <summary>A synthetic input event, published for observers (e.g. the screen recorder's on-screen overlays).
+    /// For a click, <see cref="X"/>/<see cref="Y"/> are virtual-desktop pixels and <see cref="Label"/> is the button;
+    /// for a key, <see cref="Label"/> is the chord or typed text.</summary>
+    public readonly record struct InputMark(bool IsKey, int X, int Y, string Label, long Tick);
+
+    /// <summary>Raised after each injected click / key, so a recording can draw click highlights and a key strip.
+    /// Fire-and-forget; handlers must not throw. No subscribers → effectively free.</summary>
+    public static event Action<InputMark>? Injected;
+
+    private static void MarkClick(string button, int? x, int? y)
+    {
+        var h = Injected; if (h is null) return;
+        int px, py;
+        if (x.HasValue && y.HasValue) { px = x.Value; py = y.Value; }
+        else if (GetCursorPos(out var p)) { px = p.X; py = p.Y; }
+        else return;
+        try { h(new InputMark(false, px, py, button ?? "left", Environment.TickCount64)); } catch { }
+    }
+
+    private static void MarkKey(string label)
+    {
+        var h = Injected; if (h is null || string.IsNullOrEmpty(label)) return;
+        try { h(new InputMark(true, 0, 0, label, Environment.TickCount64)); } catch { }
+    }
+
     private static void Send(params INPUT[] inputs)
     {
         uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
@@ -64,6 +89,7 @@ public static class InputInjector
 
         for (int i = 0; i < Math.Max(1, count); i++)
             Send(Mouse(down), Mouse(up));
+        MarkClick(button, x, y);
     }
 
     public static void MouseDown(string button, int? x, int? y)
@@ -150,6 +176,7 @@ public static class InputInjector
             inputs.Add(KeyUnicode(c, up: true));
         }
         Send(inputs.ToArray());
+        MarkKey(text);
     }
 
     /// <summary>
@@ -205,6 +232,7 @@ public static class InputInjector
         {
             Send(down.Concat(up).ToArray());
         }
+        MarkKey(chord.Trim());
     }
 
     private static (ushort vk, bool needShift) ResolveKey(string token)

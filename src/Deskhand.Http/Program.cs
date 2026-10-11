@@ -403,7 +403,7 @@ api.MapPost("/record/start", (Deskhand.Core.Services.ScreenRecorder rec, Control
 {
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
     if (!st.CaptureEnabled) return Results.Json(new { error = "capture disabled", type = "capability_disabled" }, statusCode: 403);
-    var opt = new Deskhand.Core.Services.RecordingOptions(r.Monitor, r.Format ?? "gif", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000);
+    var opt = new Deskhand.Core.Services.RecordingOptions(r.Monitor, r.Format ?? "mp4", r.Fps ?? 10, r.Scale ?? 100, r.Quality ?? 75, r.MaxDurationMs ?? 30000, r.OutputName);
     var s = rec.Start(opt);
     al.Record("record_start", $"{s.Format} mon={r.Monitor?.ToString() ?? "all"} {s.Width}x{s.Height} fps={s.Fps} max={s.MaxDurationMs}ms", s.Id);
     if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is recording the screen · {s.Format} · {s.Width}×{s.Height}"); } catch { } }
@@ -1884,7 +1884,7 @@ sealed class WebhookForwarder(Deskhand.Core.Events.EventHub hub, Deskhand.Core.S
     }
 }
 record MoveWindowRequest(long Hwnd, string? DesktopId);
-record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs);
+record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs, string? OutputName = null);
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);

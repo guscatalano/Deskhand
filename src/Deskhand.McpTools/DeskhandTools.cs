@@ -1174,18 +1174,19 @@ public static class DeskhandTools
 
     // ---------- screen recording (GIF / MJPEG-AVI) ----------
 
-    [McpServerTool(Name = "deskhand_record_start"), Description("Start recording the screen to an animated GIF or an MJPEG AVI video. monitor: an index for one monitor, or omit for the whole virtual desktop (all monitors). format: \"gif\" or \"avi\". A hard maxDurationMs auto-stops and finalizes the file even if stop is never called (safety against a runaway recording). Returns a recording id + status; poll deskhand_record_status and call deskhand_record_stop to finish. The finished file is saved on the host and downloadable at /recordings/{id}.")]
+    [McpServerTool(Name = "deskhand_record_start"), Description("Start recording the screen. format: \"mp4\" (H.264 — streamed straight to disk, so it isn't RAM-bound and allows long clips up to 30 min; best for anything more than a few seconds), \"avi\" (MJPEG, full colour, buffered in RAM, max 5 min), or \"gif\" (animated, 256 colours, buffered, max 5 min). monitor: an index for one monitor, or omit for the whole virtual desktop. A hard maxDurationMs auto-stops and finalizes the file even if stop is never called (runaway-recording safety). Returns a recording id + status; poll deskhand_record_status and call deskhand_record_stop to finish. The finished file is saved on the host, downloadable at /recordings/{id}, or via deskhand_record_read over MCP. (If the host lacks Media Foundation, mp4 transparently falls back to avi.)")]
     public static string RecordStart(Deskhand.Core.Services.ScreenRecorder rec, ControlState state,
         [Description("Monitor index to record; omit for the whole virtual desktop (all monitors).")] int? monitor = null,
-        [Description("\"gif\" (animated, smaller, 256 colours) or \"avi\" (MJPEG video, full colour).")] string format = "gif",
+        [Description("\"mp4\" (H.264 video, long clips, recommended), \"avi\" (MJPEG, full colour), or \"gif\" (256 colours).")] string format = "mp4",
         [Description("Frames per second (1..30, default 10).")] int fps = 10,
         [Description("Output scale percent (10..100, default 100). Lower = smaller file.")] int scale = 100,
-        [Description("AVI/JPEG quality 1..100 (default 75); ignored for gif.")] int quality = 75,
-        [Description("Hard auto-stop ceiling in ms (default 30000, max 300000).")] int maxDurationMs = 30000)
+        [Description("AVI/JPEG quality 1..100 (default 75); ignored for gif and mp4.")] int quality = 75,
+        [Description("Hard auto-stop ceiling in ms (default 30000; max 1800000 for mp4, 300000 for gif/avi).")] int maxDurationMs = 30000,
+        [Description("Optional base filename for the saved file (sanitized; extension is set from format). Omit to use the recording id.")] string? outputName = null)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\"}";
         if (!state.CaptureEnabled) return "{\"error\":\"capture_disabled\"}";
-        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs)));
+        return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs, outputName)));
     }
 
     [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id} (needs network to this machine); readVia points to deskhand_record_read for chunked download over the MCP connection (no direct network needed).")]

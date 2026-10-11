@@ -64,6 +64,13 @@ public sealed class MacroRecorder
     public void RecordAssert(string target, string match, string expect, int timeoutMs)
         => Add(target, "assert", new { match, expect, timeoutMs }, null);
 
+    /// <summary>Insert an ELEMENT-TEXT assertion: at playback, re-resolve the element by <paramref name="selector"/>
+    /// and check its text (via the Value/Text pattern) equals — or, with <paramref name="contains"/>, contains —
+    /// <paramref name="expected"/>. The reliable way to assert a field/document holds what it should (unlike an OCR
+    /// text match). A replay reports a failure if the element is missing or the text doesn't match.</summary>
+    public void RecordAssertText(ElementSelectorDto selector, string expected, bool contains, int timeoutMs)
+        => Add("assert_text", "assert-text", new { expected, contains, timeoutMs }, selector);
+
     private void Add(string method, string kind, object args, ElementSelectorDto? selector)
     {
         lock (_lock)

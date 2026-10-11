@@ -406,6 +406,12 @@ api.MapPost("/macro/assert", (Deskhand.Core.Macros.MacroRecorder rec, MacroAsser
     rec.RecordAssert(r.Target ?? "", r.Match ?? "", r.Expect ?? "present", r.TimeoutMs ?? 5000);
     return Results.Ok(new { added = true, count = rec.CurrentCount });
 });
+api.MapPost("/macro/assert-text", (Deskhand.Core.Macros.MacroRecorder rec, MacroAssertTextRequest r) =>
+{
+    if (!rec.IsRecording) throw new ArgumentException("Not recording — start a recording before adding an assertion.");
+    rec.RecordAssertText(new Deskhand.Core.Macros.ElementSelectorDto(r.Name, r.AutomationId, r.ControlType, r.ClassName), r.Expected ?? "", r.Contains ?? false, r.TimeoutMs ?? 5000);
+    return Results.Ok(new { added = true, count = rec.CurrentCount });
+});
 api.MapPost("/macro/save", (Deskhand.Core.Macros.MacroRecorder rec, AuditLog a, MacroSaveRequest r) =>
 {
     var macro = rec.LastMacro ?? throw new ArgumentException("No macro recorded yet — stop a recording first.");
@@ -1973,6 +1979,7 @@ record ControlRequest(bool? Armed, bool? InputEnabled, bool? CaptureEnabled, boo
 record MacroPlayRequest(Deskhand.Core.Macros.Macro? Macro, double? Speed, int? MaxStepDelayMs);
 record MacroExpectRequest(string? Name, string? AutomationId, string? ControlType, string? ClassName, int? TimeoutMs);
 record MacroAssertRequest(string? Target, string? Match, string? Expect, int? TimeoutMs);
+record MacroAssertTextRequest(string? Expected, bool? Contains, string? Name, string? AutomationId, string? ControlType, string? ClassName, int? TimeoutMs);
 record MacroSaveRequest(string? Name);
 record MacroReplayRequest(string? Name, double? Speed, bool? StopOnFailure, Deskhand.Core.Macros.Macro? Macro = null);
 record MacroImportRequest(string? Name, Deskhand.Core.Macros.Macro? Macro);

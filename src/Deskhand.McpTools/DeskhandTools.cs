@@ -1104,6 +1104,18 @@ public static class DeskhandTools
         return $"assertion added ({r.CurrentCount} steps)";
     }
 
+    [McpServerTool(Name = "deskhand_macro_assert_text"), Description("While recording, insert an ELEMENT-TEXT assertion: a replay re-resolves the element (by name/automationId/controlType/className) and checks its text — via the Value/Text pattern, same as deskhand_get_text — equals (or, with contains=true, contains) the expected string. This is the RELIABLE way to assert a field or document holds the right content (unlike an OCR text match, which can misread small text). A replay FAILS LOUDLY if the element is missing or the text doesn't match.")]
+    public static string MacroAssertText(Deskhand.Core.Macros.MacroRecorder r,
+        [Description("Expected text.")] string expected,
+        [Description("Match substring instead of exact equality (default false).")] bool contains = false,
+        string? name = null, string? automationId = null, string? controlType = null, string? className = null,
+        [Description("How long a replay waits for the element (ms, default 5000).")] int timeoutMs = 5000)
+    {
+        if (!r.IsRecording) return "not recording";
+        r.RecordAssertText(new Deskhand.Core.Macros.ElementSelectorDto(name, automationId, controlType, className), expected, contains, timeoutMs);
+        return $"text assertion added ({r.CurrentCount} steps)";
+    }
+
     [McpServerTool(Name = "deskhand_macro_save"), Description("Save the last recorded macro to disk under a NAME, so it survives a restart and can be replayed later as a named regression test. Overwrites an existing macro with the same name. Returns the sanitized name used.")]
     public static string MacroSave(Deskhand.Core.Macros.MacroRecorder r, string name)
     {

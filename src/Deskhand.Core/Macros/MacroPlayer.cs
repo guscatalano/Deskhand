@@ -36,6 +36,7 @@ public static class MacroPlayer
             try
             {
                 if (s.Kind == "assert") (ok, detail) = RunAssert(s, backend);
+                else if (s.Kind == "assert-text") (ok, detail) = RunAssertText(s, backend);
                 else { Execute(s, backend, log); ok = true; detail = null; }
             }
             catch (Exception ex) { ok = false; detail = ex.Message; }
@@ -56,6 +57,25 @@ public static class MacroPlayer
         return r.Met
             ? (true, r.Detail)
             : (false, $"assert {s.Method} '{match}' ({expect}) not met within {timeout}ms{(r.Detail is null ? "" : " — " + r.Detail)}");
+    }
+
+    private static (bool ok, string? detail) RunAssertText(MacroStep s, IAutomationBackend b)
+    {
+        var sel = s.Selector;
+        if (sel is null) return (false, "(assert-text step missing selector)");
+        var a = s.Args;
+        string expected = a.Str("expected") ?? "";
+        bool contains = a.Bool("contains");
+        int timeout = a.Int("timeoutMs", 5000);
+        var el = b.WaitForElement(null, Query(sel), timeout);
+        if (el is null) return (false, $"element {sel.ControlType} '{sel.Name}' not found within {timeout}ms");
+        string text = (b.GetText(el.Ref) ?? "").Trim();
+        bool match = contains
+            ? text.Contains(expected, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(text, expected.Trim(), StringComparison.Ordinal);
+        string shown = text.Length > 60 ? text[..60] + "…" : text;
+        return match ? (true, $"text {(contains ? "contains" : "==")} expected ('{shown}')")
+                     : (false, $"element text {(contains ? "does not contain" : "!=")} expected — got '{shown}'");
     }
 
     public static int Play(Macro macro, IAutomationBackend backend, double speed = 1.0, int maxStepDelayMs = 3000, Action<string>? log = null)

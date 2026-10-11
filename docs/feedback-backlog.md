@@ -94,6 +94,12 @@ and re-cut the video. Much of this round **already shipped earlier this session*
   `set_value`/`type`, so a replay can **assert a field/document holds the expected text**. _Note: the reported garbled
   `type_text` tail did NOT reproduce on current `main` once read back correctly via get_text — typing is faithful;
   the earlier observation was the older deployed build and/or a read-too-early race. Chunking is kept as hardening._
+- **Reliable element-text assertion (v0.2.73)** — `deskhand_macro_assert_text(expected, contains, selector…)` re-resolves
+  an element at replay and checks its text via the Value/Text pattern (`get_text`), not OCR — the dependable way to
+  assert a field/document holds the prompt. An end-to-end **two-process** sandbox test (record+save in one process,
+  replay in a fresh one) now passes fully: load-by-name and inline-JSON replays both `passed=true` (UIA focus
+  re-resolve + type_text + window assert + element-text assert), and a broken assertion fails loudly. _(The OCR `text`
+  assert remains for on-screen/canvas text where no UIA element exists, but element-text is preferred for fields.)_
 
 ## Follow-ups — shipped (v0.2.69)
 

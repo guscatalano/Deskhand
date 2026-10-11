@@ -396,10 +396,19 @@ public sealed class ScreenRecorder : IDisposable
         if (paths.Count == 0) return null;
         string outName = $"{s.Base}.stitched.mp4";
         string outPath = Path.Combine(_dir, outName);
-        int bitrate = (int)Math.Clamp((long)s.OutW * s.OutH * s.Opt.Fps / 20, 1_000_000, 24_000_000);
-        int frames = Mp4Stitcher.Stitch(paths, outPath, s.Opt.Fps, bitrate);
-        _audit?.Record("recording_stitched", outName, $"{paths.Count} segment(s) -> {frames} frames");
-        return frames > 0 && File.Exists(outPath) ? outName : null;
+        // Prefer the lossless compressed-sample remux; fall back to a decode/re-encode if passthrough fails.
+        string how = "remux";
+        int n = 0;
+        try { n = Mp4Stitcher.StitchRemux(paths, outPath); } catch { n = 0; }
+        if (n == 0 || !File.Exists(outPath) || new FileInfo(outPath).Length < 1000)
+        {
+            how = "reencode";
+            try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
+            int bitrate = (int)Math.Clamp((long)s.OutW * s.OutH * s.Opt.Fps / 20, 1_000_000, 24_000_000);
+            n = Mp4Stitcher.Stitch(paths, outPath, s.Opt.Fps, bitrate);
+        }
+        _audit?.Record("recording_stitched", outName, $"{paths.Count} segment(s) via {how} -> {n} samples");
+        return n > 0 && File.Exists(outPath) ? outName : null;
     }
 
     // ---------- reboot-surviving (resumable) recordings ----------

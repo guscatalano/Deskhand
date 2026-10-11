@@ -77,6 +77,66 @@ public static class Mp4Stitcher
         return total;
     }
 
+    /// <summary>LOSSLESS stitch: concatenate the segments by copying their COMPRESSED H.264 samples straight into
+    /// one MP4 (SourceReader native samples → SinkWriter passthrough, no decode/re-encode), rebasing timestamps so
+    /// each segment follows the previous. Fast and bit-exact — works because every segment shares the recorder's
+    /// identical encode parameters. Returns samples written, or 0 if passthrough couldn't be set up.</summary>
+    public static int StitchRemux(IReadOnlyList<string> segmentPaths, string outputPath)
+    {
+        IMFSinkWriter? sink = null;
+        int streamIndex = 0;
+        long tsOffset = 0;   // cumulative 100-ns offset so segment N starts where segment N-1 ended
+        int samples = 0;
+        try
+        {
+            foreach (var seg in segmentPaths)
+            {
+                if (!File.Exists(seg)) continue;
+                var reader = MFCreateSourceReaderFromURL(seg, null);   // no video processing → native compressed samples
+                try
+                {
+                    reader.SetStreamSelection(SourceReaderIndex.AllStreams, false);
+                    reader.SetStreamSelection(SourceReaderIndex.FirstVideoStream, true);
+                    var native = reader.GetNativeMediaType(SourceReaderIndex.FirstVideoStream, 0);
+                    try
+                    {
+                        if (sink is null)
+                        {
+                            sink = MFCreateSinkWriterFromURL(outputPath, null, null);
+                            streamIndex = sink.AddStream(native);              // output = the native H.264 type
+                            sink.SetInputMediaType(streamIndex, native, null);  // input == output ⇒ passthrough, no encoder MFT
+                            sink.BeginWriting();
+                        }
+
+                        long segEnd = 0;
+                        while (true)
+                        {
+                            var sample = reader.ReadSample(SourceReaderIndex.FirstVideoStream, SourceReaderControlFlag.None,
+                                out _, out SourceReaderFlag flags, out long ts);
+                            if ((flags & SourceReaderFlag.EndOfStream) != 0) { sample?.Dispose(); break; }
+                            if (sample is null) continue;
+                            try
+                            {
+                                long dur = 0; try { dur = sample.SampleDuration; } catch { }
+                                sample.SampleTime = tsOffset + ts;
+                                sink.WriteSample(streamIndex, sample);
+                                if (ts + dur > segEnd) segEnd = ts + dur;
+                                samples++;
+                            }
+                            finally { sample.Dispose(); }
+                        }
+                        tsOffset += segEnd;
+                    }
+                    finally { native.Dispose(); }
+                }
+                finally { reader.Dispose(); }
+            }
+            sink?.Finalize();
+        }
+        finally { sink?.Dispose(); }
+        return samples;
+    }
+
     /// <summary>Decode the first frame of an MP4 to PNG bytes (a poster frame) — also the orientation self-check.</summary>
     public static byte[]? FirstFramePng(string path)
     {

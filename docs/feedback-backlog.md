@@ -89,10 +89,10 @@ and re-cut the video. Much of this round **already shipped earlier this session*
 
 _Verified in-process (sandbox): rolling→3 valid segments, auto-stitch→1 valid mp4, global hook captures real injected keys; semantic click/type and region text exercised against a throwaway Notepad._
 
-## Possible follow-ups (not yet requested)
+_All listed follow-ups shipped. Stitch orientation verified upright (v0.2.70); lossless remux is the default stitch (v0.2.71)._
 
 - **Stitch orientation** — ✅ verified upright (v0.2.70) via a deterministic top-white/bottom-black encode→decode round-trip; `Mp4Stitcher.FirstFramePng` added as the reusable poster-frame decoder used for the check.
-- **True remux stitch** — current auto-stitch re-encodes (lossy, slower); a compressed-sample passthrough remux would be lossless and fast.
+- **True remux stitch** — ✅ shipped (v0.2.71): `Mp4Stitcher.StitchRemux` copies the compressed H.264 samples straight into one MP4 (SourceReader native → SinkWriter passthrough) with rebased timestamps — lossless and fast; `record_stop stitch:true` uses it, falling back to the decode/re-encode path only if passthrough can't be set up. Verified: 3 segments → one valid mp4 of the exact summed duration, byte size ≈ the segments' total (a copy, not a re-encode).
 
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 

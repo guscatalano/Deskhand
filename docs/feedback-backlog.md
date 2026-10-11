@@ -1,6 +1,6 @@
 # Deskhand — AI feedback backlog
 
-Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
+Field feedback from AI agents driving Deskhand, triaged. Three rounds so far.
 
 ## Shipped (v0.2.58–v0.2.66)
 
@@ -34,6 +34,43 @@ Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 ## Open — larger (need a design decision)
 
 - _(empty — all triaged items shipped through v0.2.66)_
+
+## Round 3 — "record a driven session, replay it after a code change" (triaged)
+
+Goal framing from the field: capture a driven session, replay it against the current machine after a code change,
+and re-cut the video. Much of this round **already shipped earlier this session** — flagged below so we don't rebuild it.
+
+**Already shipped (this session) — mostly a discoverability gap now:**
+
+- *wait_for_\* primitives (window/process/text, with timeouts)* → `deskhand_wait_for` (window title / process name·pid /
+  file / registry, `expect=gone`, timeout+poll) shipped v0.2.61; `deskhand_wait_for_element` already existed. **Gap:**
+  `wait_for_text` (OCR-based) is the one condition not yet covered.
+- *Long-running / async command mode (watchdog kills ~18s of sleeps)* → `run_command` **auto-detach** + `timeoutMs=0`
+  + `deskhand_shell_result(jobId)` shipped v0.2.57.
+- *`$` / `$_` / `$PID` stripping in inline `run_command`* → `deskhand_run_script` (verbatim body, run with `-File`)
+  shipped v0.2.58; the inline mangling itself is a caller/transport (sandboxctl/MCP) artifact, not Deskhand internals.
+- *Direct artifact retrieval for recordings; native .mp4* → H.264 **mp4** is the default format (v0.2.62) and
+  `deskhand_record_read` streams a finished recording back **in chunks over the MCP connection** (v0.2.60) — no more
+  ~85-chunk base64 of a 1 GB AVI; also `/recordings/{id}` and `/recordings/seg/{name}`.
+
+**Open — new:**
+
+- **Session record/replay as a first-class thing** — the headline ask: capture the sequence of deskhand calls (+ results)
+  as a *named* recording and replay it against the current machine, where a step can be an **assertion**
+  (process exists / window title matches / screenshot or OCR match) so a replay **fails loudly** when a code change
+  broke the flow. _Note: a `MacroRecorder` already exists (`/macro/start|stop|play|expect`) and `/macro/expect` is a
+  rudimentary assertion — scope this as "promote macros to named, assertion-rich, regression-test recordings", not a
+  greenfield build._
+- **Semantic click/type convenience** — a one-call `click`/`type` **by** UIA name / automation-id / window title /
+  on-screen text, resolving + acting in one step. The primitives all exist (`find_elements`, `find_start_apps`,
+  `invoke`/`set_value`, `element_from_point`, OCR) — this is the ergonomic wrapper that keeps replays resolution/DPI-proof.
+- **`wait_for_text`** — the OCR-condition sibling of `deskhand_wait_for`.
+- **`launch_process` follows stubs to the real process** — return the real pid + main window handle when the launched
+  exe is a launcher/stub that spawns the actual app and exits (e.g. Store Notepad), instead of the stub's pid.
+- **Window ops that work on a maximized window** — `deskhand_window move/resize/focus` should restore-then-apply (and
+  verify) rather than silently no-op on a maximized window.
+- **`write_file` creates missing parent directories** — including a new top-level dir — instead of failing when the
+  parent doesn't exist.
 
 ## Possible follow-ups (not yet requested)
 

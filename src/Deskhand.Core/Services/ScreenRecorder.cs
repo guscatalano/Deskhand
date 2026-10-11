@@ -195,6 +195,27 @@ public sealed class ScreenRecorder : IDisposable
         return (File.ReadAllBytes(s.File), mime, Path.GetFileName(s.File));
     }
 
+    /// <summary>Read one chunk of a finished recording's bytes, so large files come back over MCP in pieces
+    /// (the generic file-read tool caps at ~25 MB). Returns the chunk plus the total size and file name.</summary>
+    public (byte[] chunk, long total, string name) ReadChunk(string id, long offset, int length)
+    {
+        var s = Get(id);
+        if (s.File is null || !File.Exists(s.File)) throw new InvalidOperationException("Recording is not finished.");
+        long total = new FileInfo(s.File).Length;
+        if (offset < 0) offset = 0;
+        if (offset >= total) return (Array.Empty<byte>(), total, Path.GetFileName(s.File));
+        int want = (int)Math.Min(length <= 0 ? 6 * 1024 * 1024 : length, total - offset);
+        var buf = new byte[want];
+        using (var fs = new FileStream(s.File, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            fs.Seek(offset, SeekOrigin.Begin);
+            int read = 0;
+            while (read < want) { int n = fs.Read(buf, read, want - read); if (n <= 0) break; read += n; }
+            if (read != want) Array.Resize(ref buf, read);
+        }
+        return (buf, total, Path.GetFileName(s.File));
+    }
+
     private Session Get(string id) =>
         _sessions.TryGetValue(id, out var s) ? s : throw new ArgumentException($"No recording '{id}'.");
 

@@ -2,6 +2,15 @@
 
 Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 
+## Shipped (v0.2.58–v0.2.60)
+
+| Item | What shipped |
+|---|---|
+| `launch_process elevated:false` | De-elevated launch using the logged-on user's shell token (v0.2.59). |
+| `run_script` (verbatim) | Takes a script body + args, writes a temp file, runs with `-File` — nothing interpolates `$_`/`$PID`/`$env:` (v0.2.58). |
+| Target windows / captures by title or pid | By-title/pid convenience wrappers over the hwnd-based window/capture tools (v0.2.58). |
+| `record_read` chunked / download handle | `record_stop` now returns `{status, downloadUrl: /recordings/{id}, readVia}`; new `deskhand_record_read(id, offset, length)` downloads a finished recording in ~6 MB chunks over the MCP connection (no direct network needed), returning `{totalSize, nextOffset, done, base64}` — call until `done=true` (v0.2.60). |
+
 ## Shipped (v0.2.57)
 
 | Item | What shipped |
@@ -14,11 +23,7 @@ Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 
 ## Open — bounded / high value (next batch)
 
-- **`launch_process elevated:false`** — processes inherit Deskhand's elevation ("Administrator: …"); some per-user installers behave differently elevated. Launch de-elevated using the logged-on user's shell token.
 - **Non-visual waits** — `wait_for` on window / process / file / registry conditions, so polling doesn't fire the capture toast into recordings (keep the toast; add waits that don't capture). Watcher services already exist.
-- **`run_script` (verbatim)** — a tool that takes a script *body* (+ args), writes it to a temp file and runs it with `-File`, so nothing interpolates `$_`, `$PID`, `$env:`. *(Deskhand's own `run_command` passes the command as one `ArgumentList` arg to `-Command`, so `$` should already survive — the mangling an agent saw is most likely the sandboxctl/caller layer. `run_script` makes it robust regardless.)*
-- **Target windows / captures by title or pid** — see "Already supported" below; the gap is only a title/pid convenience wrapper over the existing hwnd-based tools.
-- **`record_read` chunked / download handle** — `record_stop` should return a download URL/handle so recordings come back *through the MCP connection* instead of needing direct network access to the guest; a chunked read tool for the same.
 
 ## Open — larger (need a design decision)
 

@@ -1188,8 +1188,29 @@ public static class DeskhandTools
         return Json(rec.Start(new Deskhand.Core.Services.RecordingOptions(monitor, format, fps, scale, quality, maxDurationMs)));
     }
 
-    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns the final status incl. the saved file path, size, and frame count.")]
-    public static string RecordStop(Deskhand.Core.Services.ScreenRecorder rec, string id) => Json(rec.Stop(id));
+    [McpServerTool(Name = "deskhand_record_stop"), Description("Stop a recording and finalize (encode) its file. Returns { status, downloadUrl, readVia } — status has the saved file path, size, frames and duration; downloadUrl is /recordings/{id} (needs network to this machine); readVia points to deskhand_record_read for chunked download over the MCP connection (no direct network needed).")]
+    public static string RecordStop(Deskhand.Core.Services.ScreenRecorder rec, string id)
+    {
+        var st = rec.Stop(id);
+        return Json(new { status = st, downloadUrl = $"/recordings/{id}", readVia = $"deskhand_record_read(\"{id}\", offset) — call repeatedly with offset=nextOffset until done=true" });
+    }
+
+    [McpServerTool(Name = "deskhand_record_read"), Description("Download a finished recording's bytes IN CHUNKS over the MCP connection (works for large files — unlike deskhand_read_file which caps at ~25 MB — and needs no direct network to the machine). Returns { id, offset, length, totalSize, nextOffset, done, name, base64 }. Call repeatedly with offset = the previous nextOffset until done=true, concatenating base64. length defaults to ~6 MB per call.")]
+    public static string RecordRead(Deskhand.Core.Services.ScreenRecorder rec, ControlState state,
+        [Description("The recording id.")] string id,
+        [Description("Byte offset to start at (0 for the first chunk; then pass the previous nextOffset).")] long offset = 0,
+        [Description("Bytes to read this call (default ~6 MB).")] int length = 0)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        try
+        {
+            var (chunk, total, name) = rec.ReadChunk(id, offset, length);
+            long next = offset + chunk.Length;
+            return Json(new { id, offset, length = chunk.Length, totalSize = total, nextOffset = next, done = next >= total, name,
+                base64 = Convert.ToBase64String(chunk) });
+        }
+        catch (Exception ex) { return Json(new { id, error = ex.Message, type = "record_read_error" }); }
+    }
 
     [McpServerTool(Name = "deskhand_record_status"), Description("Status of one recording (id) or, with no id, all recordings this session: state (recording|encoding|completed|error), frames, elapsed, size, file.")]
     public static string RecordStatus(Deskhand.Core.Services.ScreenRecorder rec, string? id = null) =>

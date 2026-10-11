@@ -91,7 +91,7 @@ _Verified in-process (sandbox): rolling→3 valid segments, auto-stitch→1 vali
 
 ## Possible follow-ups (not yet requested)
 
-- **Stitch orientation** — the SourceReader→SinkWriter re-encode handles stride sign but hasn't been visually confirmed upright; eyeball a stitched clip, flip if needed.
+- **Stitch orientation** — ✅ verified upright (v0.2.70) via a deterministic top-white/bottom-black encode→decode round-trip; `Mp4Stitcher.FirstFramePng` added as the reusable poster-frame decoder used for the check.
 - **True remux stitch** — current auto-stitch re-encodes (lossy, slower); a compressed-sample passthrough remux would be lossless and fast.
 
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)

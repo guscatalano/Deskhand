@@ -77,10 +77,59 @@ public static class Mp4Stitcher
         return total;
     }
 
+    /// <summary>Decode the first frame of an MP4 to PNG bytes (a poster frame) — also the orientation self-check.</summary>
+    public static byte[]? FirstFramePng(string path)
+    {
+        if (!File.Exists(path)) return null;
+        var attrs = MFCreateAttributes(1);
+        attrs.Set(SourceReaderAttributeKeys.EnableVideoProcessing, (uint)1);
+        var reader = MFCreateSourceReaderFromURL(path, attrs);
+        attrs.Dispose();
+        try
+        {
+            reader.SetStreamSelection(SourceReaderIndex.AllStreams, false);
+            reader.SetStreamSelection(SourceReaderIndex.FirstVideoStream, true);
+            var rgb = MFCreateMediaType();
+            rgb.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video);
+            rgb.Set(MediaTypeAttributeKeys.Subtype, VideoFormatGuids.Rgb32);
+            reader.SetCurrentMediaType(SourceReaderIndex.FirstVideoStream, rgb);
+            rgb.Dispose();
+            var cur = reader.GetCurrentMediaType(SourceReaderIndex.FirstVideoStream);
+            ulong fsz = cur.GetUInt64(MediaTypeAttributeKeys.FrameSize);
+            int w = (int)(fsz >> 32), h = (int)(fsz & 0xFFFFFFFF);
+            int stride; try { stride = unchecked((int)cur.GetUInt32(MediaTypeAttributeKeys.DefaultStride)); } catch { stride = w * 4; }
+            cur.Dispose();
+            for (int tries = 0; tries < 10; tries++)
+            {
+                var sample = reader.ReadSample(SourceReaderIndex.FirstVideoStream, SourceReaderControlFlag.None, out _, out SourceReaderFlag flags, out _);
+                if ((flags & SourceReaderFlag.EndOfStream) != 0) { sample?.Dispose(); return null; }
+                if (sample is null) continue;
+                try
+                {
+                    using var buf = sample.ConvertToContiguousBuffer();
+                    buf.Lock(out IntPtr src, out _, out _);
+                    try
+                    {
+                        using var bmp = BufferToBitmap(src, w, h, stride);
+                        using var ms = new MemoryStream();
+                        bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                        return ms.ToArray();
+                    }
+                    finally { buf.Unlock(); }
+                }
+                finally { sample.Dispose(); }
+            }
+            return null;
+        }
+        finally { reader.Dispose(); }
+    }
+
     // Copy an RGB32 MF buffer into a top-down 32bpp-ARGB bitmap, honouring the stride sign (negative = bottom-up).
     private static Bitmap BufferToBitmap(IntPtr src, int w, int h, int stride)
     {
         int absStride = Math.Abs(stride) == 0 ? w * 4 : Math.Abs(stride);
+        // The reader's video processor delivers top-down RGB32 here (verified by a synthetic top-white/bottom-black
+        // round-trip); only an explicit negative stride means bottom-up.
         bool bottomUp = stride < 0;
         var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         var bits = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);

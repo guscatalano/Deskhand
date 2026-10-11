@@ -95,6 +95,47 @@ public static class ShellService
 
     public static string NormalizeShell(string? shell) => Normalize(shell);
 
+    /// <summary>Start a shell running a SCRIPT BODY written to a temp file and invoked with <c>-File</c> — so the
+    /// script is never re-parsed/interpolated by a -Command layer (<c>$_</c>, <c>$env:</c>, <c>%VAR%</c> survive
+    /// verbatim). Args are passed as real argv entries. Caller owns output/lifetime via the returned process.</summary>
+    public static (Process? proc, string shell, string? error, string? scriptPath) StartScriptProcess(string? shell, string? scriptBody, string[]? args, string? cwd)
+    {
+        shell = Normalize(shell);
+        scriptBody ??= "";
+        cwd = (cwd ?? "").Trim().Trim('"');
+        if (!Enabled) return (null, shell, "Shell is disabled. Set DESKHAND_ENABLE_SHELL=1 to enable it.", null);
+        if (string.IsNullOrWhiteSpace(scriptBody)) return (null, shell, "No script given.", null);
+        if (cwd.Length > 0 && !Directory.Exists(cwd)) return (null, shell, $"Working directory not found: {cwd}", null);
+        try
+        {
+            string ext = shell == "cmd" ? ".cmd" : ".ps1";
+            string path = Path.Combine(Path.GetTempPath(), "deskhand-" + Guid.NewGuid().ToString("N")[..8] + ext);
+            File.WriteAllText(path, scriptBody);
+            var psi = new ProcessStartInfo
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,
+            };
+            if (cwd.Length > 0) psi.WorkingDirectory = cwd;
+            if (shell == "cmd")
+            {
+                psi.FileName = "cmd.exe"; psi.ArgumentList.Add("/d"); psi.ArgumentList.Add("/c"); psi.ArgumentList.Add(path);
+            }
+            else
+            {
+                psi.FileName = shell == "pwsh" ? "pwsh.exe" : "powershell.exe";
+                psi.ArgumentList.Add("-NoProfile"); psi.ArgumentList.Add("-NonInteractive");
+                psi.ArgumentList.Add("-ExecutionPolicy"); psi.ArgumentList.Add("Bypass");
+                psi.ArgumentList.Add("-File"); psi.ArgumentList.Add(path);
+            }
+            foreach (var a in args ?? Array.Empty<string>()) psi.ArgumentList.Add(a);
+            var proc = Process.Start(psi)!;
+            try { proc.StandardInput.Close(); } catch { }
+            return (proc, shell, null, path);
+        }
+        catch (Exception ex) { return (null, shell, "Failed to start script: " + ex.Message, null); }
+    }
+
     private static ProcessStartInfo BuildPsi(string shell, string command, string cwd)
     {
         var psi = new ProcessStartInfo

@@ -45,6 +45,23 @@ public static class Win32Windows
         return list;
     }
 
+    /// <summary>Resolve a single top-level window by a title substring (case-insensitive) and/or pid. Prefers the
+    /// foreground window, then a titled non-owned window, then the largest. Returns null if nothing matches.</summary>
+    public static Win32Window? Resolve(string? titleContains, int? pid)
+    {
+        var t = (titleContains ?? "").Trim();
+        var matches = List().Where(w =>
+                (t.Length == 0 || (w.Title != null && w.Title.Contains(t, StringComparison.OrdinalIgnoreCase)))
+                && (pid is null || w.Pid == pid))
+            .ToList();
+        if (matches.Count == 0) return null;
+        return matches
+            .OrderByDescending(w => w.Foreground)
+            .ThenByDescending(w => !w.Owned && w.Title != null)
+            .ThenByDescending(w => (long)w.Width * w.Height)
+            .First();
+    }
+
     private static bool IsCloaked(IntPtr h)
     {
         try { return DwmGetWindowAttribute(h, DWMWA_CLOAKED, out int c, sizeof(int)) == 0 && c != 0; }

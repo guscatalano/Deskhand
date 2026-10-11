@@ -380,31 +380,52 @@ public static class DeskhandTools
     {
         if (!Deskhand.Core.Services.ShellService.Enabled) return "{\"error\":\"Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.\",\"type\":\"shell_disabled\"}";
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
-
-        int killMs = timeoutMs ?? 30000;                       // 0 = no limit
         var (proc, sh, err) = Deskhand.Core.Services.ShellService.StartProcess(shell, command, cwd);
         if (proc is null) return Json(new { error = err, type = "shell_error" });
+        return RunShellJob(jobs, audit, proc, sh, command, cwd, timeoutMs, autoDetachMs, async);
+    }
+
+    [McpServerTool(Name = "deskhand_run_script"), Description("Run a SCRIPT BODY (not a one-liner) by writing it to a temp file and invoking it with -File — nothing re-interpolates it, so $_, $PID, $env:, %VAR%, here-strings and multi-line for/Where-Object loops survive VERBATIM (use this instead of deskhand_run_command when $-logic gets mangled). Pass args as a real argv array (in PowerShell read them via $args or a param() block). Same output + AUTO-DETACH behavior as deskhand_run_command (returns a jobId for long scripts — poll deskhand_shell_result). OFF unless DESKHAND_ENABLE_SHELL; requires armed; audited.")]
+    public static string RunScript(ControlState state, AuditLog audit, Deskhand.Core.Services.ShellJobStore jobs,
+        [Description("The full script body, e.g. a multi-line PowerShell script with $_/for/param().")] string script,
+        [Description("Arguments passed to the script (real argv entries; PowerShell: $args / param()).")] string[]? args = null,
+        [Description("\"powershell\" (default), \"pwsh\", or \"cmd\" (a .cmd batch body).")] string? shell = null,
+        [Description("Working directory to start in (optional).")] string? cwd = null,
+        [Description("Kill after this many ms (default 30000; 0 = no limit). Enforced in the background if it auto-detaches.")] int? timeoutMs = null,
+        [Description("Block inline at most this long (default 60000) before handing a long script to a background job.")] int? autoDetachMs = null,
+        [Description("Run in the BACKGROUND immediately: returns { jobId, pid, running }.")] bool async = false)
+    {
+        if (!Deskhand.Core.Services.ShellService.Enabled) return "{\"error\":\"Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.\",\"type\":\"shell_disabled\"}";
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var (proc, sh, err, _) = Deskhand.Core.Services.ShellService.StartScriptProcess(shell, script, args, cwd);
+        if (proc is null) return Json(new { error = err, type = "shell_error" });
+        string label = "<script " + (script.Length <= 60 ? script.Replace("\n", " ") : script[..60].Replace("\n", " ") + "…") + ">";
+        return RunShellJob(jobs, audit, proc, sh, label, cwd, timeoutMs, autoDetachMs, async);
+    }
+
+    // Shared by run_command and run_script: wrap the started process in a job, wait inline for a short run, and
+    // auto-detach a long one so the caller's request never times out.
+    private static string RunShellJob(Deskhand.Core.Services.ShellJobStore jobs, AuditLog audit, System.Diagnostics.Process proc,
+        string sh, string command, string? cwd, int? timeoutMs, int? autoDetachMs, bool async)
+    {
+        int killMs = timeoutMs ?? 30000;                       // 0 = no limit
         var job = jobs.Start(sh, command, (cwd ?? "").Trim().Trim('"'), proc, killMs > 0 ? killMs : (int?)null);
+        string tag = command.Length <= 160 ? command : command[..160] + "…";
 
-        if (async)
-        {
-            audit.Record("shell_run", $"{sh} [async {job.JobId} pid {job.Pid}]: {(command.Length <= 160 ? command : command[..160] + "…")}", "started");
-            return Json(job);
-        }
+        if (async) { audit.Record("shell_run", $"{sh} [async {job.JobId} pid {job.Pid}]: {tag}", "started"); return Json(job); }
 
-        // Wait inline for a short command; a long one detaches so the caller's request never times out.
         int detachMs = Math.Clamp(autoDetachMs ?? 60000, 1000, 110000);
         int waitMs = killMs > 0 ? Math.Min(detachMs, killMs + 500) : detachMs;
         var res = jobs.WaitFor(job.JobId, waitMs);
 
         if (res is not null && !res.Job.Running)
         {
-            audit.Record("shell_run", $"{sh}: {(command.Length <= 160 ? command : command[..160] + "…")}", res.Job.TimedOut ? "TIMEOUT" : $"exit {res.Job.ExitCode} in {res.Job.DurationMs}ms");
+            audit.Record("shell_run", $"{sh}: {tag}", res.Job.TimedOut ? "TIMEOUT" : $"exit {res.Job.ExitCode} in {res.Job.DurationMs}ms");
             return Json(new { shell = sh, command, cwd, exitCode = res.Job.ExitCode, stdout = res.Stdout, stderr = res.Stderr,
                 durationMs = res.Job.DurationMs, timedOut = res.Job.TimedOut, truncated = res.Truncated, jobId = res.Job.JobId });
         }
 
-        audit.Record("shell_run", $"{sh} [auto-detached {job.JobId} pid {job.Pid}]: {(command.Length <= 160 ? command : command[..160] + "…")}", "running");
+        audit.Record("shell_run", $"{sh} [auto-detached {job.JobId} pid {job.Pid}]: {tag}", "running");
         return Json(new { shell = sh, command, cwd, running = true, detached = true, jobId = job.JobId, pid = job.Pid,
             stdout = res?.Stdout ?? "",
             note = $"still running after {detachMs}ms — poll deskhand_shell_result(\"{job.JobId}\") for output + completion, or deskhand_shell_cancel(\"{job.JobId}\") to stop it." });
@@ -569,16 +590,24 @@ public static class DeskhandTools
         return Json(r);
     }
 
-    [McpServerTool(Name = "deskhand_window"), Description("Manage a top-level window by its nativeWindowHandle (from deskhand_list_windows): action = activate|minimize|maximize|restore|close|move|resize|bounds|topmost|notopmost. move needs x,y; resize needs width,height; bounds needs all four (screen pixels); topmost/notopmost pin/unpin above other windows. Returns { ok, hwnd, action, title, state, bounds, error? }. Requires armed; audited.")]
+    [McpServerTool(Name = "deskhand_window"), Description("Manage a top-level window: action = activate|minimize|maximize|restore|close|move|resize|bounds|topmost|notopmost. Target it by hwnd (nativeWindowHandle from list_windows) OR by titleContains (case-insensitive substring) and/or pid — no need to look up the handle first. move needs x,y; resize needs width,height; bounds needs all four (screen pixels). NOTE: move/resize are ignored on a maximized window — restore it first. Returns { ok, hwnd, action, title, state, bounds, error? }. Requires armed; audited.")]
     public static string Window(ControlState state, AuditLog audit,
-        [Description("Native window handle (nativeWindowHandle from list_windows).")] long hwnd,
-        [Description("activate|minimize|maximize|restore|close|move|resize|bounds")] string action,
+        [Description("activate|minimize|maximize|restore|close|move|resize|bounds|topmost|notopmost")] string action,
+        [Description("Native window handle (nativeWindowHandle). Omit to target by titleContains/pid instead.")] long hwnd = 0,
+        [Description("Target the window whose title contains this (case-insensitive) when hwnd is omitted.")] string? titleContains = null,
+        [Description("Target a window owned by this process id when hwnd is omitted.")] int? pid = null,
         [Description("X (screen px) for move/bounds.")] int? x = null,
         [Description("Y (screen px) for move/bounds.")] int? y = null,
         [Description("Width (px) for resize/bounds.")] int? width = null,
         [Description("Height (px) for resize/bounds.")] int? height = null)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        if (hwnd == 0)
+        {
+            var w = Deskhand.Core.Services.Win32Windows.Resolve(titleContains, pid);
+            if (w is null) return Json(new { ok = false, action, error = $"No window matches titleContains=\"{titleContains}\" pid={pid}.", type = "not_found" });
+            hwnd = w.Hwnd;
+        }
         var res = (action ?? "").Trim().ToLowerInvariant() switch
         {
             "activate" or "focus" => Deskhand.Core.Services.WindowService.Activate(hwnd),
@@ -985,9 +1014,20 @@ public static class DeskhandTools
         return Json(new { dmp.ProcessId, dmp.Name, dmp.File, dmp.FileName, dmp.SizeBytes, dmp.Ts, dmp.DurationMs, url = $"/dumps/{dmp.FileName}" });
     }
 
-    [McpServerTool(Name = "deskhand_launch_process"), Description("Launch a program by path or shell name/URL (e.g. \"notepad\", \"C:\\\\app.exe\", \"https://...\"). Waits up to waitForWindowMs for its main window and returns it if it appears.")]
-    public static string LaunchProcess(IAutomationBackend b, string path, string? args = null, string? workingDir = null, int waitForWindowMs = 10000)
-        => Try(() => Json(b.LaunchProcess(path, args, workingDir, waitForWindowMs)));
+    [McpServerTool(Name = "deskhand_launch_process"), Description("Launch a program by path or shell name/URL (e.g. \"notepad\", \"C:\\\\app.exe\", \"https://...\"). Waits up to waitForWindowMs for its main window and returns it if it appears. elevated=false launches it DE-ELEVATED as the signed-in user (medium integrity, like double-clicking it) instead of inheriting Deskhand's elevation — use this so it isn't \"Administrator: …\" and per-user installers behave normally (needs a user signed in; returns { ok, processId, elevated:false }).")]
+    public static string LaunchProcess(ControlState state, AuditLog audit, IAutomationBackend b,
+        string path, string? args = null, string? workingDir = null, int waitForWindowMs = 10000,
+        [Description("true (default) launches with Deskhand's own (elevated) token; false launches de-elevated as the logged-on user.")] bool elevated = true)
+    {
+        if (!elevated)
+        {
+            if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+            var (ok, pid, err) = Deskhand.Core.Services.DeElevatedLauncher.Launch(path, args, workingDir);
+            audit.Record("launch_process", $"{path} (de-elevated)", ok ? $"pid {pid}" : $"FAIL {err}");
+            return Json(new { ok, processId = ok ? pid : (int?)null, elevated = false, error = err });
+        }
+        return Try(() => Json(b.LaunchProcess(path, args, workingDir, waitForWindowMs)));
+    }
 
     [McpServerTool(Name = "deskhand_launch_process_as"), Description("Launch a program into a SPECIFIC Terminal-Services session, on a SPECIFIC window-station\\desktop, running as a SPECIFIC user (CreateProcessAsUser). as=\"session\" (default: run as whoever is logged into the target session), \"credentials\" (run as user/domain/password), or \"system\" (NT AUTHORITY\\SYSTEM in that session). sessionId defaults to the active console session; desktop defaults to \"winsta0\\default\". Returns { ok, processId, sessionId, desktop, as, user, error?, win32?, hint? }. POWER TOOL: OFF unless the host sets DESKHAND_ENABLE_SESSION_LAUNCH, requires the kill switch armed, audited. Crossing a session/user boundary requires the host to run as LocalSystem (e.g. the Deskhand Fleet Launcher service) — otherwise you get a clear ERROR_PRIVILEGE_NOT_HELD with a hint; the same-session desktop switch works without elevation.")]
     public static string LaunchProcessAs(ControlState state, AuditLog audit,
@@ -1204,6 +1244,51 @@ public static class DeskhandTools
     {
         var c = b.CaptureScreen(monitor, Fmt(format), (withTargets || marks) ? 100 : 80);
         return marks ? WithMarks(b, ss, c, save, maxWidth, maxBytes, maxMarks, markFilter, markOnly) : Annotate(CaptureOut(ss, c, save, maxWidth, maxBytes), b, c, withTargets);
+    }
+
+    [McpServerTool(Name = "deskhand_capture_window_by"), Description("Screenshot ONE window found by titleContains (case-insensitive substring) and/or pid — no element ref or hwnd lookup needed. Returns the image inline; save=true saves it on the machine and returns a download URL instead. maxWidth/maxBytes fit a size budget. Requires capture enabled.")]
+    public static IEnumerable<ContentBlock> CaptureWindowBy(IAutomationBackend b, ControlState state, Deskhand.Core.Services.ScreenshotStore ss,
+        [Description("Window title substring to match (case-insensitive).")] string? titleContains = null,
+        [Description("Match a window owned by this process id.")] int? pid = null,
+        string? format = null, bool save = false, int? maxWidth = null, int? maxBytes = null)
+    {
+        if (!state.CaptureEnabled) return new ContentBlock[] { new TextContentBlock { Text = "{\"error\":\"capture disabled\",\"type\":\"capability_disabled\"}" } };
+        var w = Deskhand.Core.Services.Win32Windows.Resolve(titleContains, pid);
+        if (w is null) return new ContentBlock[] { new TextContentBlock { Text = Json(new { error = $"No window matches titleContains=\"{titleContains}\" pid={pid}.", type = "not_found" }) } };
+        var c = b.CaptureWindow(w.Hwnd, Fmt(format), 80);
+        return CaptureOut(ss, c, save, maxWidth, maxBytes);
+    }
+
+    [McpServerTool(Name = "deskhand_type_into"), Description("Focus a window (by titleContains and/or pid, or hwnd) and then type text into it — handles the 'typing went nowhere because the window wasn't foreground' case in one call. By default it PASTES (clipboard + Ctrl+V), which is fast and exact for long or non-ASCII text; set paste=false to send literal keystrokes instead. Then optionally press enter. Returns { ok, hwnd, title, method, error? }. Requires armed; audited.")]
+    public static string TypeInto(IAutomationBackend b, ControlState state, AuditLog audit,
+        [Description("Text to type into the window.")] string text,
+        [Description("Window title substring to focus (case-insensitive).")] string? titleContains = null,
+        [Description("Focus a window owned by this process id.")] int? pid = null,
+        [Description("Target window handle directly (instead of titleContains/pid).")] long hwnd = 0,
+        [Description("Paste via the clipboard (default true); false = send literal keystrokes (note: console windows may ignore keystrokes — keep paste=true there).")] bool paste = true,
+        [Description("Press Enter after typing.")] bool pressEnter = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        string? title = null;
+        if (hwnd == 0)
+        {
+            var w = Deskhand.Core.Services.Win32Windows.Resolve(titleContains, pid);
+            if (w is null) return Json(new { ok = false, error = $"No window matches titleContains=\"{titleContains}\" pid={pid}.", type = "not_found" });
+            hwnd = w.Hwnd; title = w.Title;
+        }
+        var act = Deskhand.Core.Services.WindowService.Activate(hwnd);
+        if (!act.Ok) return Json(new { ok = false, hwnd, title, error = "could not focus the window: " + act.Error, type = "focus_failed" });
+        System.Threading.Thread.Sleep(120);   // let focus settle before typing
+        if (paste)
+        {
+            var set = Deskhand.Core.Services.ClipboardService.SetText(text ?? "");
+            if (!set.Ok) return Json(set);
+            b.SendKeys("ctrl+v");
+        }
+        else b.TypeText(text ?? "");
+        if (pressEnter) { System.Threading.Thread.Sleep(80); b.SendKeys("enter"); }
+        audit.Record("type_into", $"hwnd={hwnd} {(paste ? "paste" : "keys")} {(text ?? "").Length} chars", "ok");
+        return Json(new { ok = true, hwnd, title = title ?? act.Title, method = paste ? "paste" : "keys" });
     }
 
     [McpServerTool(Name = "deskhand_capture_to_clipboard"), Description("Capture the screen (or a region/window) straight onto the clipboard so it can be pasted. target = screen (default) | region (needs x,y,width,height) | window (needs reference or hwnd). Returns { ok, width, height, target, error? }. Requires armed + capture enabled; audited.")]

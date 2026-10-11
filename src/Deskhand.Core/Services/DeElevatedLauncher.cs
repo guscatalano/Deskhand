@@ -34,9 +34,13 @@ public static class DeElevatedLauncher
                 {
                     CreateEnvironmentBlock(out IntPtr env, hDup, false);
                     var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\default" };
+                    // appName must be null (CreateProcessWithTokenW does NOT PATH-search the application name) —
+                    // put the exe as the first token of the command line so bare names like "notepad" resolve.
                     string cmd = args is { Length: > 0 } ? $"\"{path}\" {args}" : $"\"{path}\"";
-                    string? dir = string.IsNullOrWhiteSpace(workingDir) ? System.IO.Path.GetDirectoryName(path) : workingDir;
-                    bool ok = CreateProcessWithTokenW(hDup, 0, path, cmd,
+                    string? dir = string.IsNullOrWhiteSpace(workingDir)
+                        ? (System.IO.Path.IsPathRooted(path) ? System.IO.Path.GetDirectoryName(path) : null)
+                        : workingDir;
+                    bool ok = CreateProcessWithTokenW(hDup, 0, null, cmd,
                         CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_CONSOLE, env, dir, ref si, out var pi);
                     int err = Marshal.GetLastWin32Error();
                     if (env != IntPtr.Zero) DestroyEnvironmentBlock(env);

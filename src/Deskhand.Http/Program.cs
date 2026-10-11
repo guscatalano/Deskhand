@@ -1311,6 +1311,13 @@ api.MapPost("/uia/find", (IAutomationBackend b, FindRequest r) =>
 api.MapGet("/uia/start-apps", (IAutomationBackend b, string? query, int? max) =>
     Results.Ok(b.FindStartApps(query, max ?? 50)));
 
+// Semantic, coordinate-free click/type — find the target and act in one call (reuses the MCP tool logic so both
+// surfaces stay identical).
+api.MapPost("/uia/click", (IAutomationBackend b, ControlState st, UiaClickRequest r) =>
+    Results.Content(Deskhand.McpTools.DeskhandTools.Click(b, st, r.Name, r.AutomationId, r.ControlType, r.Text, r.RootRef, r.Button ?? "left", r.DoubleClick ?? false), "application/json"));
+api.MapPost("/uia/type", (IAutomationBackend b, ControlState st, UiaTypeRequest r) =>
+    Results.Content(Deskhand.McpTools.DeskhandTools.Type(b, st, r.Text ?? "", r.Name, r.AutomationId, r.ControlType, r.Reference, r.RootRef, r.SetValue ?? false), "application/json"));
+
 api.MapPost("/uia/wait", (IAutomationBackend b, WaitRequest r) =>
 {
     var q = new FindQuery(r.Name, r.AutomationId, r.ControlType, r.ClassName, r.Scope ?? "descendants", 1);
@@ -1912,6 +1919,8 @@ record MoveWindowRequest(long Hwnd, string? DesktopId);
 record RecordStartRequest(int? Monitor, string? Format, int? Fps, int? Scale, int? Quality, int? MaxDurationMs, string? OutputName = null, bool? Overlays = null, bool? Resumable = null);
 record RecordMarkRequest(string Id, string? Label);
 record RecordSpeedRequest(string Id, double? Factor);
+record UiaClickRequest(string? Name, string? AutomationId, string? ControlType, string? Text, string? RootRef, string? Button, bool? DoubleClick);
+record UiaTypeRequest(string? Text, string? Name, string? AutomationId, string? ControlType, string? Reference, string? RootRef, bool? SetValue);
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);

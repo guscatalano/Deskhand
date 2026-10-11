@@ -138,7 +138,17 @@ public sealed class LocalAutomationBackend : IAutomationBackend
         if (window is null && waitForWindowMs > 0 && pid > 0)
             try { window = _sta.Invoke(() => _uia.GetTopLevelWindows()).FirstOrDefault(w => w.ProcessId == pid); } catch { }
 
-        return new ProcessLaunchResultDto(pid, name, window is not null, window);
+        // Follow a launcher/stub to the REAL process: when the window belongs to a different process than the one
+        // we started (Store Notepad/Terminal hand the window to a packaged host, then the stub exits), report that
+        // process's pid/name — the caller wants the real target, not the stub that already exited.
+        int outPid = pid; string outName = name;
+        if (window?.ProcessId is int wpid && wpid > 0 && wpid != pid)
+        {
+            outPid = wpid;
+            try { using var wp = System.Diagnostics.Process.GetProcessById(wpid); outName = wp.ProcessName; } catch { }
+        }
+
+        return new ProcessLaunchResultDto(outPid, outName, window is not null, window);
     }
 
     // Does a top-level window's owning process belong to what we just launched? True if it's the launched

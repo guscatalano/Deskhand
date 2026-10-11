@@ -1178,6 +1178,91 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_set_focus"), Description("Raise the element's window to the foreground (defeating the foreground lock) and give it keyboard focus.")]
     public static string SetFocus(IAutomationBackend b, string? reference) => ElementOp(reference, () => { b.SetFocus(reference!); return "ok"; });
 
+    [McpServerTool(Name = "deskhand_click"), Description("Find a target and click it in ONE call — semantic and coordinate-free, so it survives DPI/resolution/layout changes (prefer this over mouse_click{x,y} for replayable flows). Target by UIA automationId / name / controlType (optionally under rootRef), OR by on-screen text via OCR when no UIA target is given/matched. Clicks via the element's Invoke pattern when supported, else a real mouse click at its centre. Returns what was clicked (and how). SENSITIVE/input: requires the kill switch armed.")]
+    public static string Click(IAutomationBackend b, ControlState state,
+        [Description("UIA Name (exact).")] string? name = null,
+        [Description("UIA AutomationId.")] string? automationId = null,
+        [Description("UIA control type, e.g. Button, MenuItem.")] string? controlType = null,
+        [Description("On-screen text to find via OCR and click — used when no UIA target is given or matched.")] string? text = null,
+        [Description("Root element ref to search under; omit for the whole desktop.")] string? rootRef = null,
+        [Description("left | right | middle (default left).")] string button = "left",
+        [Description("Double-click (default false).")] bool doubleClick = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        return Try(() =>
+        {
+            int count = doubleClick ? 2 : 1;
+            if (!string.IsNullOrWhiteSpace(automationId) || !string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(controlType))
+            {
+                var hits = b.Find(rootRef, new FindQuery(name, automationId, controlType, null, "descendants", 5));
+                var el = hits.FirstOrDefault(h => h.BoundingRect is not null) ?? hits.FirstOrDefault();
+                if (el is not null)
+                {
+                    if (el.Patterns.Contains("Invoke")) { b.Invoke(el.Ref); return Json(new { clicked = el.Name, via = "invoke", el.Ref }); }
+                    if (el.BoundingRect is { } r) { int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2; b.MouseClick(button, cx, cy, count); return Json(new { clicked = el.Name, via = "click", x = cx, y = cy, el.Ref }); }
+                    return Json(new { error = "Matched an element with neither Invoke nor bounds.", el.Ref, type = "unclickable" });
+                }
+                if (string.IsNullOrWhiteSpace(text)) return Json(new { error = "No UIA element matched.", type = "not_found" });
+            }
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var cap = b.CaptureScreen(null, ImageFormat.Png, 90);
+                var ocr = Deskhand.Core.Services.OcrService.Recognize(cap.Bytes, cap.Rect.X, cap.Rect.Y);
+                var w = FindOcrTarget(ocr, text!);
+                if (w is null) return Json(new { error = $"Text '{text}' not found on screen.", type = "not_found" });
+                int cx = w.X + w.Width / 2, cy = w.Y + w.Height / 2;
+                b.MouseClick(button, cx, cy, count);
+                return Json(new { clicked = text, via = "ocr", x = cx, y = cy });
+            }
+            return Json(new { error = "Specify a target: name / automationId / controlType, or text.", type = "missing_argument" });
+        });
+    }
+
+    [McpServerTool(Name = "deskhand_type"), Description("Type text into a target in ONE call — coordinate-free. Focuses the target (by automationId / name / controlType under rootRef, or an explicit element reference, or the current focus if none given), then types. With setValue=true the text is set via the UIA Value pattern (atomic, ideal for text fields) instead of key events. SENSITIVE/input: requires the kill switch armed.")]
+    public static string Type(IAutomationBackend b, ControlState state,
+        [Description("The text to type / set.")] string text,
+        [Description("Target UIA Name (exact).")] string? name = null,
+        [Description("Target UIA AutomationId.")] string? automationId = null,
+        [Description("Target UIA control type, e.g. Edit.")] string? controlType = null,
+        [Description("Explicit element ref to type into (takes precedence over name/automationId).")] string? reference = null,
+        [Description("Root element ref to search under; omit for the whole desktop.")] string? rootRef = null,
+        [Description("Set the value atomically via the UIA Value pattern instead of sending keystrokes (default false).")] bool setValue = false)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        return Try(() =>
+        {
+            string? refId = reference;
+            if (string.IsNullOrWhiteSpace(refId) && (!string.IsNullOrWhiteSpace(automationId) || !string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(controlType)))
+            {
+                var el = b.Find(rootRef, new FindQuery(name, automationId, controlType, null, "descendants", 1)).FirstOrDefault();
+                if (el is null) return Json(new { error = "No UIA element matched the target.", type = "not_found" });
+                refId = el.Ref;
+            }
+            if (!string.IsNullOrWhiteSpace(refId))
+            {
+                if (setValue) { b.SetValue(refId!, text ?? ""); return Json(new { typed = text, into = refId, via = "value" }); }
+                b.SetFocus(refId!);
+            }
+            b.TypeText(text ?? "");
+            return Json(new { typed = text, into = refId ?? "<focused>", via = "keys" });
+        });
+    }
+
+    // Pick an OCR word/line box whose text matches the target (whole phrase first, else the longest single word
+    // that contains it) — the landing point for a click-by-text.
+    private static Deskhand.Core.Services.OcrWordDto? FindOcrTarget(Deskhand.Core.Services.OcrResultDto ocr, string target)
+    {
+        if (!ocr.Ok || ocr.Words.Count == 0) return null;
+        target = target.Trim();
+        var exact = ocr.Words.FirstOrDefault(w => string.Equals(w.Text, target, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null) return exact;
+        string first = target.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? target;
+        return ocr.Words
+            .Where(w => w.Text.Contains(first, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(w => w.Text.Length)
+            .FirstOrDefault();
+    }
+
     // ---------- screen recording (GIF / MJPEG-AVI) ----------
 
     [McpServerTool(Name = "deskhand_record_start"), Description("Start recording the screen. format: \"mp4\" (H.264 — streamed straight to disk, so it isn't RAM-bound and allows long clips up to 30 min; best for anything more than a few seconds), \"avi\" (MJPEG, full colour, buffered in RAM, max 5 min), or \"gif\" (animated, 256 colours, buffered, max 5 min). monitor: an index for one monitor, or omit for the whole virtual desktop. A hard maxDurationMs auto-stops and finalizes the file even if stop is never called (runaway-recording safety). Returns a recording id + status; poll deskhand_record_status and call deskhand_record_stop to finish. The finished file is saved on the host, downloadable at /recordings/{id}, or via deskhand_record_read over MCP. (If the host lacks Media Foundation, mp4 transparently falls back to avi.)")]
@@ -1246,10 +1331,10 @@ public static class DeskhandTools
     public static string RecordStatus(Deskhand.Core.Services.ScreenRecorder rec, string? id = null) =>
         Json(id is null ? (object)rec.List() : rec.GetStatus(id));
 
-    [McpServerTool(Name = "deskhand_wait_for"), Description("Block until a NON-VISUAL condition holds, then return — without taking any screenshot, so it never fires the capture toast into a recording (use this instead of polling with captures while a recording is running). Targets: window (title contains 'match', case-insensitive), process (name with/without .exe, or a numeric pid), file (a file OR directory path exists), registry ('HKCU\\\\Path\\\\Key' key exists; '…\\\\Key!Name' value exists; '…\\\\Key!Name=expected' value equals, case-insensitive). expect=\"gone\" inverts the wait (block until absent). Returns { met, timedOut, elapsedMs, polls, detail }. Report-only — never clicks, launches, or changes anything.")]
+    [McpServerTool(Name = "deskhand_wait_for"), Description("Block until a condition holds, then return — without firing the capture toast into a recording (use this instead of polling with captures while a recording is running). Targets: window (title contains 'match', case-insensitive), process (name with/without .exe, or a numeric pid), file (a file OR directory path exists), registry ('HKCU\\\\Path\\\\Key' key exists; '…\\\\Key!Name' value exists; '…\\\\Key!Name=expected' value equals), text (OCR the screen and wait for 'match' text to appear anywhere — e.g. wait for a dialog's label; slower per poll). expect=\"gone\" inverts the wait (block until absent). Returns { met, timedOut, elapsedMs, polls, detail }. Report-only — never clicks, launches, or changes anything.")]
     public static async Task<string> WaitFor(
-        [Description("What to watch: window | process | file | registry.")] string target,
-        [Description("The match spec for the target (title substring / process name or pid / path / registry key[!value[=expected]]).")] string match,
+        [Description("What to watch: window | process | file | registry | text.")] string target,
+        [Description("The match spec for the target (title substring / process name or pid / path / registry key[!value[=expected]] / on-screen text).")] string match,
         [Description("\"present\" (default) waits until it appears; \"gone\" waits until it disappears.")] string expect = "present",
         [Description("Give up after this many ms (default 30000, capped at 300000).")] int timeoutMs = 30000,
         [Description("Poll interval in ms (default 500, clamped 100–10000).")] int pollMs = 500,

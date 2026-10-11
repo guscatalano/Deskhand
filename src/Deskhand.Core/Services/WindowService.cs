@@ -61,14 +61,20 @@ public static class WindowService
     public static WindowActionResultDto Close(long hwnd) => Do(hwnd, "close", h => PostMessage(h, WM_CLOSE, IntPtr.Zero, IntPtr.Zero));
 
     public static WindowActionResultDto Move(long hwnd, int x, int y) => Do(hwnd, "move", h =>
-        SetWindowPos(h, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE));
+    {
+        if (IsIconic(h) || IsZoomed(h)) ShowWindow(h, SW_RESTORE);   // SetWindowPos silently no-ops a maximized/minimized window
+        SetWindowPos(h, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    });
 
     public static WindowActionResultDto Resize(long hwnd, int width, int height) => Do(hwnd, "resize", h =>
-        SetWindowPos(h, IntPtr.Zero, 0, 0, Math.Max(0, width), Math.Max(0, height), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE));
+    {
+        if (IsIconic(h) || IsZoomed(h)) ShowWindow(h, SW_RESTORE);   // ditto — restore out of maximized/minimized first
+        SetWindowPos(h, IntPtr.Zero, 0, 0, Math.Max(0, width), Math.Max(0, height), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    });
 
     public static WindowActionResultDto SetBounds(long hwnd, int x, int y, int width, int height) => Do(hwnd, "set_bounds", h =>
     {
-        if (IsIconic(h)) ShowWindow(h, SW_RESTORE);
+        if (IsIconic(h) || IsZoomed(h)) ShowWindow(h, SW_RESTORE);
         SetWindowPos(h, IntPtr.Zero, x, y, Math.Max(0, width), Math.Max(0, height), SWP_NOZORDER | SWP_NOACTIVATE);
     });
 

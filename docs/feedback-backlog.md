@@ -53,6 +53,21 @@ and re-cut the video. Much of this round **already shipped earlier this session*
   `deskhand_record_read` streams a finished recording back **in chunks over the MCP connection** (v0.2.60) — no more
   ~85-chunk base64 of a 1 GB AVI; also `/recordings/{id}` and `/recordings/seg/{name}`.
 
+**Shipped (v0.2.67):**
+
+- **Semantic click/type convenience** — `deskhand_click` and `deskhand_type` (and `POST /uia/click` · `/uia/type`)
+  find a target by UIA automationId / name / controlType (or on-screen **text** via OCR for click) and act in one call —
+  Invoke when supported, else a real click at the element centre; type focuses the target (or sets the Value pattern
+  with `setValue=true`) — coordinate-free, so replays survive DPI/layout changes.
+- **`wait_for_text`** — `deskhand_wait_for target:"text"` OCRs the screen each poll until the text appears (or is
+  gone); no capture toast.
+- **`launch_process` follows stubs to the real process** — returns the real pid/name when the window is handed off by
+  a launcher/stub that exits (e.g. Store Notepad), not the stub's pid.
+- **Window ops on a maximized window** — `deskhand_window move/resize` restore out of maximized/minimized first, so
+  they no longer silently no-op.
+- **`write_file` creates missing parent directories** — already handled (`WriteFileBase64` creates the parent tree);
+  the field report predated it.
+
 **Open — new:**
 
 - **Session record/replay as a first-class thing** — the headline ask: capture the sequence of deskhand calls (+ results)
@@ -61,16 +76,6 @@ and re-cut the video. Much of this round **already shipped earlier this session*
   broke the flow. _Note: a `MacroRecorder` already exists (`/macro/start|stop|play|expect`) and `/macro/expect` is a
   rudimentary assertion — scope this as "promote macros to named, assertion-rich, regression-test recordings", not a
   greenfield build._
-- **Semantic click/type convenience** — a one-call `click`/`type` **by** UIA name / automation-id / window title /
-  on-screen text, resolving + acting in one step. The primitives all exist (`find_elements`, `find_start_apps`,
-  `invoke`/`set_value`, `element_from_point`, OCR) — this is the ergonomic wrapper that keeps replays resolution/DPI-proof.
-- **`wait_for_text`** — the OCR-condition sibling of `deskhand_wait_for`.
-- **`launch_process` follows stubs to the real process** — return the real pid + main window handle when the launched
-  exe is a launcher/stub that spawns the actual app and exits (e.g. Store Notepad), instead of the stub's pid.
-- **Window ops that work on a maximized window** — `deskhand_window move/resize/focus` should restore-then-apply (and
-  verify) rather than silently no-op on a maximized window.
-- **`write_file` creates missing parent directories** — including a new top-level dir — instead of failing when the
-  parent doesn't exist.
 
 ## Possible follow-ups (not yet requested)
 

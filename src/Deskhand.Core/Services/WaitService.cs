@@ -40,11 +40,12 @@ public static class WaitService
             "process" => () => ProbeProcess(match),
             "file" => () => ProbeFile(match),
             "registry" or "reg" => () => ProbeRegistry(match),
+            "text" or "ocr" => () => ProbeText(match),
             _ => null,
         };
         if (probe is null)
             return new WaitResultDto(false, target, match, expectLabel, 0, 0, false, null,
-                "Unknown target — use window | process | file | registry.");
+                "Unknown target — use window | process | file | registry | text.");
         if (match.Length == 0)
             return new WaitResultDto(false, target, match, expectLabel, 0, 0, false, null, "Empty match.");
 
@@ -104,6 +105,19 @@ public static class WaitService
         if (File.Exists(full)) return (true, $"file, {new FileInfo(full).Length} bytes");
         if (Directory.Exists(full)) return (true, "directory");
         return (false, null);
+    }
+
+    private static (bool, string?) ProbeText(string match)
+    {
+        // OCR the whole virtual desktop and look for the text. Uses ScreenCapture + OcrService directly (not the
+        // host capture tools), so it does NOT fire the capture toast into a recording.
+        var cap = ScreenCapture.CaptureScreen(null, ImageFormat.Jpeg, 70);
+        var ocr = OcrService.Recognize(cap.Bytes);
+        if (!ocr.Ok) return (false, null);
+        int idx = ocr.Text.IndexOf(match, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return (false, null);
+        int from = Math.Max(0, idx - 12), len = Math.Min(ocr.Text.Length - from, match.Length + 24);
+        return (true, "…" + ocr.Text.Substring(from, len).Replace('\n', ' ').Replace('\r', ' ') + "…");
     }
 
     private static (bool, string?) ProbeRegistry(string match)

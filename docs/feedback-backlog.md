@@ -10,6 +10,7 @@ Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 | `run_script` (verbatim) | Takes a script body + args, writes a temp file, runs with `-File` — nothing interpolates `$_`/`$PID`/`$env:` (v0.2.58). |
 | Target windows / captures by title or pid | By-title/pid convenience wrappers over the hwnd-based window/capture tools (v0.2.58). |
 | `record_read` chunked / download handle | `record_stop` now returns `{status, downloadUrl: /recordings/{id}, readVia}`; new `deskhand_record_read(id, offset, length)` downloads a finished recording in ~6 MB chunks over the MCP connection (no direct network needed), returning `{totalSize, nextOffset, done, base64}` — call until `done=true` (v0.2.60). |
+| Non-visual waits | `deskhand_wait_for(target, match, expect, timeoutMs, pollMs)` (and `GET /wait`) blocks until a window (title substring) / process (name or pid) / file (path exists) / registry (`…\Key!Name=expected`) condition holds, `expect="gone"` to invert — **never captures, so no toast into recordings**. Returns `{met, timedOut, elapsedMs, polls, detail}` (v0.2.61). |
 
 ## Shipped (v0.2.57)
 
@@ -23,7 +24,7 @@ Field feedback from AI agents driving Deskhand, triaged. Two rounds so far.
 
 ## Open — bounded / high value (next batch)
 
-- **Non-visual waits** — `wait_for` on window / process / file / registry conditions, so polling doesn't fire the capture toast into recordings (keep the toast; add waits that don't capture). Watcher services already exist.
+- _(empty — batch cleared through v0.2.61)_
 
 ## Open — larger (need a design decision)
 

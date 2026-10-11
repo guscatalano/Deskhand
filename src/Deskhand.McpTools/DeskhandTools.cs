@@ -1216,6 +1216,16 @@ public static class DeskhandTools
     public static string RecordStatus(Deskhand.Core.Services.ScreenRecorder rec, string? id = null) =>
         Json(id is null ? (object)rec.List() : rec.GetStatus(id));
 
+    [McpServerTool(Name = "deskhand_wait_for"), Description("Block until a NON-VISUAL condition holds, then return — without taking any screenshot, so it never fires the capture toast into a recording (use this instead of polling with captures while a recording is running). Targets: window (title contains 'match', case-insensitive), process (name with/without .exe, or a numeric pid), file (a file OR directory path exists), registry ('HKCU\\\\Path\\\\Key' key exists; '…\\\\Key!Name' value exists; '…\\\\Key!Name=expected' value equals, case-insensitive). expect=\"gone\" inverts the wait (block until absent). Returns { met, timedOut, elapsedMs, polls, detail }. Report-only — never clicks, launches, or changes anything.")]
+    public static async Task<string> WaitFor(
+        [Description("What to watch: window | process | file | registry.")] string target,
+        [Description("The match spec for the target (title substring / process name or pid / path / registry key[!value[=expected]]).")] string match,
+        [Description("\"present\" (default) waits until it appears; \"gone\" waits until it disappears.")] string expect = "present",
+        [Description("Give up after this many ms (default 30000, capped at 300000).")] int timeoutMs = 30000,
+        [Description("Poll interval in ms (default 500, clamped 100–10000).")] int pollMs = 500,
+        CancellationToken ct = default)
+        => Json(await Deskhand.Core.Services.WaitService.WaitAsync(target, match, expect, timeoutMs, pollMs, ct).ConfigureAwait(false));
+
     // ---------- record the USER's input (what the human did) ----------
 
     [McpServerTool(Name = "deskhand_user_input_start"), Description("Start recording the USER's own mouse and keyboard input (global hooks). Each click is annotated with the UIA element it landed on (controlType, name, ref), so you can see WHAT was clicked, not just coordinates. Scrolls and typed text are captured too. This is the human's activity — distinct from macro recording, which records the agent's own actions. PRIVACY: this captures real keystrokes (may include passwords); set captureText=false to record mouse only. Poll deskhand_user_input_get, then deskhand_user_input_stop.")]

@@ -425,6 +425,11 @@ api.MapGet("/input/record/status", (Deskhand.Core.Services.InputRecorder ir) => 
 api.MapGet("/input/record/events", (Deskhand.Core.Services.InputRecorder ir, long since) =>
     Results.Ok(new { lastId = ir.LastId, events = ir.Since(since) }));
 
+// Block until a NON-VISUAL condition holds (window|process|file|registry) — never captures, so no toast into
+// recordings. expect=gone inverts. e.g. GET /wait?target=file&match=C:\out.log&timeoutMs=60000
+api.MapGet("/wait", async (string target, string match, string? expect, int? timeoutMs, int? pollMs, CancellationToken ct) =>
+    Results.Ok(await Deskhand.Core.Services.WaitService.WaitAsync(target, match, expect, timeoutMs ?? 30000, pollMs ?? 500, ct)));
+
 // Block until a process starts/exits (event=start|exit), matched by name substring and/or pid.
 api.MapPost("/process/wait", (Deskhand.Core.Events.ProcessWatcher w, ProcessWaitRequest r) =>
 {

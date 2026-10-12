@@ -94,6 +94,15 @@ and re-cut the video. Much of this round **already shipped earlier this session*
   `set_value`/`type`, so a replay can **assert a field/document holds the expected text**. _Note: the reported garbled
   `type_text` tail did NOT reproduce on current `main` once read back correctly via get_text — typing is faithful;
   the earlier observation was the older deployed build and/or a read-too-early race. Chunking is kept as hardening._
+
+**Sandbox finding (v0.2.74) — the type_text bug is REAL on a VM, and the fix is to not synthesize keystrokes.**
+Validated v0.2.73 on an actual disposable Win11 VM (sandboxctl, vmid 903), driving the real Deskhand MCP. On the VM,
+`type_text` still corrupts a long prompt even with chunking (`"the Q3 earnings"` → `"the eeeearnings"`) — synthesized
+keystrokes race under VM input timing and no chunking fully fixes it. `paste_text` and `set_value` are **lossless**
+(118/118 both). So `deskhand_type` now **prefers the UIA Value pattern by default** (lossless, and records as a
+re-resolvable step for replay), falling back to real keystrokes only when there's no Value pattern or `keystrokes=true`.
+The `type_text` primitive keeps chunking but is documented best-effort; prefer `deskhand_type` / `paste_text` for
+reliable text entry. (`assert_text` did its job here — it caught the garbled text and failed the replay loudly.)
 - **Reliable element-text assertion (v0.2.73)** — `deskhand_macro_assert_text(expected, contains, selector…)` re-resolves
   an element at replay and checks its text via the Value/Text pattern (`get_text`), not OCR — the dependable way to
   assert a field/document holds the prompt. An end-to-end **two-process** sandbox test (record+save in one process,

@@ -1305,7 +1305,7 @@ public static class DeskhandTools
         });
     }
 
-    [McpServerTool(Name = "deskhand_type"), Description("Type text into a target in ONE call — coordinate-free. Focuses the target (by automationId / name / controlType under rootRef, or an explicit element reference, or the current focus if none given), then types. With setValue=true the text is set via the UIA Value pattern (atomic, ideal for text fields) instead of key events. SENSITIVE/input: requires the kill switch armed.")]
+    [McpServerTool(Name = "deskhand_type"), Description("Type text into a target in ONE call — coordinate-free. Resolves the target (by automationId / name / controlType under rootRef, or an explicit element reference, or the current focus if none given). By DEFAULT it sets the text atomically via the UIA Value pattern when the target supports it — this is lossless and far more reliable than synthesized keystrokes for long text (synth typing can drop/garble characters under load, e.g. in a VM) and it records as a re-resolvable step for macro replay. Falls back to real keystrokes when the element has no Value pattern (or keystrokes=true forces them, for apps that need real key events). Returns { typed, via: value|keys }. SENSITIVE/input: requires the kill switch armed.")]
     public static string Type(IAutomationBackend b, ControlState state,
         [Description("The text to type / set.")] string text,
         [Description("Target UIA Name (exact).")] string? name = null,
@@ -1313,7 +1313,7 @@ public static class DeskhandTools
         [Description("Target UIA control type, e.g. Edit.")] string? controlType = null,
         [Description("Explicit element ref to type into (takes precedence over name/automationId).")] string? reference = null,
         [Description("Root element ref to search under; omit for the whole desktop.")] string? rootRef = null,
-        [Description("Set the value atomically via the UIA Value pattern instead of sending keystrokes (default false).")] bool setValue = false)
+        [Description("Force real keystrokes even when the Value pattern is available (for apps that need key events, e.g. search-as-you-type). Default false.")] bool keystrokes = false)
     {
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
         return Try(() =>
@@ -1325,11 +1325,13 @@ public static class DeskhandTools
                 if (el is null) return Json(new { error = "No UIA element matched the target.", type = "not_found" });
                 refId = el.Ref;
             }
-            if (!string.IsNullOrWhiteSpace(refId))
+            // Prefer the Value pattern (lossless, recordable) unless keystrokes are forced; fall back to real keys.
+            if (!string.IsNullOrWhiteSpace(refId) && !keystrokes)
             {
-                if (setValue) { b.SetValue(refId!, text ?? ""); return Json(new { typed = text, into = refId, via = "value" }); }
-                b.SetFocus(refId!);
+                try { b.SetValue(refId!, text ?? ""); return Json(new { typed = text, into = refId, via = "value" }); }
+                catch { /* no Value pattern — fall through to keystrokes */ }
             }
+            if (!string.IsNullOrWhiteSpace(refId)) b.SetFocus(refId!);
             b.TypeText(text ?? "");
             return Json(new { typed = text, into = refId ?? "<focused>", via = "keys" });
         });

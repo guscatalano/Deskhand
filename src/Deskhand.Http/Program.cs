@@ -1360,7 +1360,7 @@ api.MapGet("/uia/text", (IAutomationBackend b, string reference) => Results.Ok(n
 api.MapPost("/uia/click", (IAutomationBackend b, ControlState st, UiaClickRequest r) =>
     Results.Content(Deskhand.McpTools.DeskhandTools.Click(b, st, r.Name, r.AutomationId, r.ControlType, r.Text, r.RootRef, r.Button ?? "left", r.DoubleClick ?? false), "application/json"));
 api.MapPost("/uia/type", (IAutomationBackend b, ControlState st, UiaTypeRequest r) =>
-    Results.Content(Deskhand.McpTools.DeskhandTools.Type(b, st, r.Text ?? "", r.Name, r.AutomationId, r.ControlType, r.Reference, r.RootRef, r.SetValue ?? false), "application/json"));
+    Results.Content(Deskhand.McpTools.DeskhandTools.Type(b, st, r.Text ?? "", r.Name, r.AutomationId, r.ControlType, r.Reference, r.RootRef, r.Keystrokes ?? false), "application/json"));
 
 api.MapPost("/uia/wait", (IAutomationBackend b, WaitRequest r) =>
 {
@@ -1965,7 +1965,7 @@ record RecordStopRequest(string Reference, bool? Stitch);
 record RecordMarkRequest(string Id, string? Label);
 record RecordSpeedRequest(string Id, double? Factor);
 record UiaClickRequest(string? Name, string? AutomationId, string? ControlType, string? Text, string? RootRef, string? Button, bool? DoubleClick);
-record UiaTypeRequest(string? Text, string? Name, string? AutomationId, string? ControlType, string? Reference, string? RootRef, bool? SetValue);
+record UiaTypeRequest(string? Text, string? Name, string? AutomationId, string? ControlType, string? Reference, string? RootRef, bool? Keystrokes);
 record InputRecordRequest(bool? CaptureText);
 record SetValueRequest(string Reference, string Text);
 record ExpandRequest(string Reference, bool Expand);

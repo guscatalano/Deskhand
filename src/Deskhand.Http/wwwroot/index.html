@@ -534,7 +534,8 @@
           <select id="monSel"></select>
           <select id="fmtSel"><option value="png">png</option><option value="jpeg">jpeg</option></select>
           <button class="btn p" id="capBtn">Capture</button>
-          <button class="btn" id="liveBtn" title="Live MJPEG view (~4 fps)">▶ Live</button>
+          <select id="liveCodec" title="Live view codec — MJPEG (universal) or H.264 (far less bandwidth)"><option value="mjpeg">MJPEG</option><option value="h264">H.264</option></select>
+          <button class="btn" id="liveBtn" title="Live view">▶ Live</button>
           <button class="btn" id="interactBtn" title="Live control — click, scroll &amp; type directly on the live screen (needs armed)">🖱 Interact</button>
           <button class="btn" id="saveBtn" title="Download the current screenshot">⬇ Save</button>
         </header>
@@ -988,15 +989,20 @@ function finishRec(st){
 }
 function saveImg(src, base){ if(!src){ toast("capture something first",true); return; } const a=document.createElement("a"); a.href=src; const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19); a.download=`${base}-${ts}.${src.startsWith("data:image/jpeg")?"jpg":"png"}`; document.body.appendChild(a); a.click(); a.remove(); toast("saved"); }
 $("#saveBtn").onclick=()=>{ const img=$("#viewer img"); saveImg(img&&img.src, "deskhand-screen"); };
-// live MJPEG view: point an <img> at /capture/stream (multipart/x-mixed-replace). Stop by clearing its src.
-let liveOn=false;
+// live view: MJPEG (<img> at /capture/stream, multipart/x-mixed-replace) or H.264 (<video> + MediaSource at
+// /capture/stream.mp4, fragmented mp4). Interactive control always uses MJPEG (pixel-exact coord mapping).
+let liveOn=false, liveMse=null;
 function liveStop(){
   liveOn=false; const b=$("#liveBtn"); if(b){ b.textContent="▶ Live"; b.classList.remove("a"); }
+  if(liveMse){ try{ liveMse.abort&&liveMse.abort.abort(); }catch(e){} if(liveMse.url){ try{URL.revokeObjectURL(liveMse.url);}catch(e){} } liveMse=null; }
   const v=$("#viewer"); const im=v.querySelector("img.live"); if(im){ im.src=""; im.remove(); }
-  const e=v.querySelector(".vempty"); if(e&&!v.querySelector("img")) e.style.display="";
+  const vv=v.querySelector("video.live"); if(vv){ try{ vv.src=""; vv.load(); }catch(e){} vv.remove(); }
+  const e=v.querySelector(".vempty"); if(e&&!v.querySelector("img,video")) e.style.display="";
   const cb=$("#capBtn"); if(cb) cb.disabled=false;
 }
 function liveStart(opts){
+  const useH264 = $("#liveCodec") && $("#liveCodec").value==="h264" && !(opts&&opts.inputDesktop);
+  if(useH264) return liveStartH264(opts);
   liveOn=true; const b=$("#liveBtn"); b.textContent="■ Stop"; b.classList.add("a");
   const monVal=$("#monSel").value;
   // interactive control wants a snappier feed; passive viewing stays light on bandwidth
@@ -1004,12 +1010,42 @@ function liveStart(opts){
   const idt=(opts&&opts.inputDesktop)?"&inputDesktop=true":"";   // follow whatever desktop owns input (bool query → "true")
   let url="/capture/stream?fps="+fps+"&quality="+q+(mw?"&maxWidth="+mw:"")+idt+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
   if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
-  const v=$("#viewer"); v.querySelectorAll("img").forEach(n=>n.remove());
+  const v=$("#viewer"); v.querySelectorAll("img,video").forEach(n=>n.remove());
   const e=v.querySelector(".vempty"); if(e) e.style.display="none";
   const img=new Image(); img.className="live"; img.style.cssText="display:block;max-width:100%;height:auto";
   img.onerror=()=>{ if(liveOn){ toast("live stream ended",true); liveStop(); } };
   v.insertBefore(img,$("#marker")); $("#marker").style.display="none"; img.src=url;
   $("#capBtn").disabled=true;
+}
+function liveStartH264(opts){
+  const mime='video/mp4; codecs="avc1.42E028"';   // Baseline L4.0 — matches the server's pinned H.264 profile
+  if(!(window.MediaSource && MediaSource.isTypeSupported(mime))){ toast("H.264 live isn't supported by this browser — use MJPEG",true); return; }
+  liveOn=true; const b=$("#liveBtn"); b.textContent="■ Stop"; b.classList.add("a");
+  const monVal=$("#monSel").value; const fps=(opts&&opts.fps)||12;
+  let url="/capture/stream.mp4?fps="+fps+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
+  if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
+  const v=$("#viewer"); v.querySelectorAll("img,video").forEach(n=>n.remove());
+  const e=v.querySelector(".vempty"); if(e) e.style.display="none";
+  const vid=document.createElement("video"); vid.className="live"; vid.autoplay=true; vid.muted=true; vid.playsInline=true;
+  vid.style.cssText="display:block;max-width:100%;height:auto"; v.insertBefore(vid,$("#marker")); $("#marker").style.display="none";
+  $("#capBtn").disabled=true;
+  const ms=new MediaSource(); const obj=URL.createObjectURL(ms); vid.src=obj; liveMse={ms,abort:null,url:obj};
+  ms.addEventListener("sourceopen",async()=>{
+    let sb; try{ sb=ms.addSourceBuffer(mime); sb.mode="sequence"; }catch(err){ toast("MSE init failed",true); liveStop(); return; }
+    const queue=[]; function pump(){ if(!sb.updating && queue.length){ try{ sb.appendBuffer(queue.shift()); }catch(e){} } }
+    sb.addEventListener("updateend",()=>{ // keep the buffer bounded so a long session doesn't grow unboundedly
+      try{ if(sb.buffered.length && vid.currentTime>10 && !sb.updating) sb.remove(0, vid.currentTime-5); }catch(e){}
+      pump();
+    });
+    try{
+      const ctrl=new AbortController(); liveMse.abort=ctrl;
+      const resp=await fetch(url,{signal:ctrl.signal});
+      if(!resp.ok){ toast("H.264 stream HTTP "+resp.status,true); liveStop(); return; }
+      const reader=resp.body.getReader();
+      while(liveOn){ const {done,value}=await reader.read(); if(done) break; queue.push(value); pump(); }
+    }catch(err){ if(liveOn) toast("H.264 stream ended",true); }
+    if(liveOn) liveStop();
+  });
 }
 $("#liveBtn").onclick=()=>{ liveOn?liveStop():liveStart(); };
 

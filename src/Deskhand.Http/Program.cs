@@ -1524,6 +1524,98 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
     }
 });
 
+// Live screen view, H.264 flavour: a fragmented-MP4 stream (video/mp4) that a browser plays in a <video> via
+// MediaSource Extensions. Far less bandwidth than MJPEG (especially idle), and inherently keep-alive since H.264
+// emits tiny P-frames even for a static screen. The in-box MF fragmented sink writes fMP4 to a temp file; we tail
+// that growing file to the client. Gated on captureEnabled; ends on client disconnect. (MJPEG stays the default.)
+api.MapGet("/capture/stream.mp4", async (ControlState st, AuditLog al, ToastNotifier tn, HttpContext ctx,
+    int? monitor, int? fps, int? bitrate, int? maxWidth) =>
+{
+    if (!st.CaptureEnabled) { ctx.Response.StatusCode = 403; await ctx.Response.WriteAsJsonAsync(new { error = "capture disabled", type = "capability_disabled" }); return; }
+    if (!Deskhand.Core.Services.Mp4LiveStreamer.IsSupported) { ctx.Response.StatusCode = 501; await ctx.Response.WriteAsJsonAsync(new { error = "H.264 (Media Foundation) unavailable on this host; use the MJPEG stream", type = "unsupported" }); return; }
+    int frames = Math.Clamp(fps ?? 12, 1, 30);
+    int mw = maxWidth ?? 0;
+    var rect = StreamRectMp4(monitor);
+    int outW = Math.Max(2, (mw > 0 && mw < rect.Width ? mw : rect.Width)) & ~1;
+    int outH = Math.Max(2, (int)Math.Round(rect.Height * (outW / (double)rect.Width))) & ~1;
+    int br = bitrate ?? (int)Math.Clamp((long)outW * outH * frames / 15, 800_000L, 12_000_000L);
+
+    if (st.NotifyOnCapture) { try { tn.Notify($"Deskhand is live-streaming the screen · H.264 · {frames} fps"); } catch { } }
+    al.Record("capture_stream_h264", $"monitor={monitor} fps={frames} br={br} {outW}x{outH}", "started");
+    ctx.Response.Headers.CacheControl = "no-cache, no-store";
+    ctx.Response.ContentType = "video/mp4";
+    var ct = ctx.RequestAborted;
+
+    Deskhand.Core.Services.Mp4LiveStreamer? live = null;
+    try { live = new Deskhand.Core.Services.Mp4LiveStreamer(outW, outH, frames, br); }
+    catch (Exception ex) { ctx.Response.StatusCode = 500; try { await ctx.Response.WriteAsJsonAsync(new { error = ex.Message, type = "h264_init_failed" }); } catch { } return; }
+
+    int periodMs = Math.Max(1000 / frames, 20);
+    var producer = Task.Run(async () =>
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    using var full = new System.Drawing.Bitmap(rect.Width, rect.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    using (var g = System.Drawing.Graphics.FromImage(full))
+                        g.CopyFromScreen(rect.X, rect.Y, 0, 0, rect.Size, System.Drawing.CopyPixelOperation.SourceCopy);
+                    System.Drawing.Bitmap frame = full;
+                    if (outW != rect.Width || outH != rect.Height)
+                    {
+                        frame = new System.Drawing.Bitmap(outW, outH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                        using var g2 = System.Drawing.Graphics.FromImage(frame);
+                        g2.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                        g2.DrawImage(full, 0, 0, outW, outH);
+                    }
+                    live!.WriteFrame(frame);
+                    if (!ReferenceEquals(frame, full)) frame.Dispose();
+                }
+                catch { /* a dropped frame must not kill the stream */ }
+                int rest = periodMs - (int)sw.ElapsedMilliseconds;
+                if (rest > 0) { try { await Task.Delay(rest, ct); } catch { break; } }
+            }
+        }
+        catch { }
+    }, ct);
+
+    // Tail the growing fMP4 file to the client (init segment ftyp+moov first, then moof+mdat fragments).
+    try
+    {
+        using var fs = new FileStream(live.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        long sent = 0; var buf = new byte[64 * 1024]; int idle = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            fs.Seek(sent, SeekOrigin.Begin);
+            int n; bool any = false;
+            while ((n = await fs.ReadAsync(buf.AsMemory(0, buf.Length), ct)) > 0)
+            {
+                await ctx.Response.Body.WriteAsync(buf.AsMemory(0, n), ct);
+                sent += n; any = true;
+            }
+            if (any) { await ctx.Response.Body.FlushAsync(ct); idle = 0; }
+            else { if (++idle > 600) break; try { await Task.Delay(100, ct); } catch { break; } }  // ~60s with no new bytes → give up
+        }
+    }
+    catch (OperationCanceledException) { }
+    catch { }
+    finally { try { live.Dispose(); } catch { } try { await producer; } catch { } }
+
+    static System.Drawing.Rectangle StreamRectMp4(int? monitor)
+    {
+        if (monitor is not null)
+        {
+            var m = Deskhand.Core.Services.DesktopInfo.Monitors().FirstOrDefault(mm => mm.Index == monitor.Value);
+            if (m is not null) return new System.Drawing.Rectangle(m.Bounds.X, m.Bounds.Y, m.Bounds.Width, m.Bounds.Height);
+        }
+        var v = Deskhand.Core.Services.DesktopInfo.VirtualScreen();
+        return new System.Drawing.Rectangle(v.X, v.Y, v.Width, v.Height);
+    }
+});
+
 // By default the image is returned to the caller (base64 JSON, or raw bytes with ?raw=true / Accept:image/*).
 // Pass save=true (body or ?save=true) to instead SAVE it on this machine (screenshots dir, audited, 24h
 // auto-delete) and return the file path + a /screenshots/{name} download URL.

@@ -133,6 +133,16 @@ _All listed follow-ups shipped. Stitch orientation verified upright (v0.2.70); l
   stream now **re-sends the last frame as a keep-alive every ≤5s while idle**, so bytes always flow and an idle
   connection is never closed. (Reported against a v0.2.59 sandbox — predates the recent work.)
 
+## Live view: switchable MJPEG / H.264 (v0.2.76)
+
+- The dashboard live view can now be **either codec**, picked from a toggle next to ▶ Live. **MJPEG** stays the default
+  (universal `<img>`, zero client deps; keep-alive from v0.2.75). **H.264** is a new fragmented-MP4 stream
+  (`GET /capture/stream.mp4`) that the dashboard plays in a `<video>` via MediaSource Extensions — far less bandwidth,
+  especially idle (tiny P-frames), and inherently keep-alive. Server: `Mp4LiveStreamer` live-muxes fragmented MP4 via
+  the in-box MF fragmented sink (Baseline/avc1.42E0, short key-frame interval, low-latency) to a temp file that the
+  endpoint tails to the client; 501 if MF is unavailable (→ use MJPEG). Interactive control keeps MJPEG (pixel-exact
+  coordinate mapping).
+
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 
 - **Window management** — `deskhand_window` already does `activate | minimize | maximize | restore | close | move | resize | bounds | topmost | notopmost` by `nativeWindowHandle`; `deskhand_list_windows` and `deskhand_list_windows_all` give title/pid/rect. Gap: targeting by **title/pid** directly instead of hwnd.

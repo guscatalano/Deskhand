@@ -1488,11 +1488,19 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
 
     try
     {
+        byte[]? lastSent = null;
         while (!ct.IsCancellationRequested)
         {
-            await sig.WaitAsync(ct);
-            byte[]? jpeg; lock (slotLock) { jpeg = slot; slot = null; }
-            if (jpeg is null) continue;
+            // Wait for a new frame, but no longer than the keep-alive interval: when the screen is idle the
+            // producer yields nothing (DXGI skip-when-idle), so without this the response goes byte-silent and a
+            // proxy / NAT / the browser's multipart reader closes the connection after its idle timeout (~20s,
+            // "live stream ended"). On timeout we re-send the last frame so the stream keeps flowing while idle.
+            bool got = await sig.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            byte[]? jpeg = null;
+            if (got) lock (slotLock) { jpeg = slot; slot = null; }
+            jpeg ??= lastSent;                 // idle keep-alive: re-send the last frame
+            if (jpeg is null) continue;        // nothing captured yet
+            lastSent = jpeg;
             var head = System.Text.Encoding.ASCII.GetBytes($"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n");
             await ctx.Response.Body.WriteAsync(head, ct);
             await ctx.Response.Body.WriteAsync(jpeg, ct);

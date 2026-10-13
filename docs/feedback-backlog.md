@@ -124,6 +124,15 @@ _All listed follow-ups shipped. Stitch orientation verified upright (v0.2.70); l
 - **Stitch orientation** — ✅ verified upright (v0.2.70) via a deterministic top-white/bottom-black encode→decode round-trip; `Mp4Stitcher.FirstFramePng` added as the reusable poster-frame decoder used for the check.
 - **True remux stitch** — ✅ shipped (v0.2.71): `Mp4Stitcher.StitchRemux` copies the compressed H.264 samples straight into one MP4 (SourceReader native → SinkWriter passthrough) with rebased timestamps — lossless and fast; `record_stop stitch:true` uses it, falling back to the decode/re-encode path only if passthrough can't be set up. Verified: 3 segments → one valid mp4 of the exact summed duration, byte size ≈ the segments' total (a copy, not a re-encode).
 
+## Dashboard live-view fix (v0.2.75)
+
+- **Live screen stream died after ~20s idle** — the dashboard's `#screen` live view is an MJPEG
+  `multipart/x-mixed-replace` stream (`GET /capture/stream`). The producer uses DXGI skip-when-idle, so a **static
+  desktop yields no frames and the response goes byte-silent**; after ~20s of silence a proxy/NAT (or the browser's
+  multipart reader) closes the idle connection (`img.onerror` → "live stream ended"), forcing a restart. Fix: the
+  stream now **re-sends the last frame as a keep-alive every ≤5s while idle**, so bytes always flow and an idle
+  connection is never closed. (Reported against a v0.2.59 sandbox — predates the recent work.)
+
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 
 - **Window management** — `deskhand_window` already does `activate | minimize | maximize | restore | close | move | resize | bounds | topmost | notopmost` by `nativeWindowHandle`; `deskhand_list_windows` and `deskhand_list_windows_all` give title/pid/rect. Gap: targeting by **title/pid** directly instead of hwnd.

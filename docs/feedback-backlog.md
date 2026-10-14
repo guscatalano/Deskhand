@@ -162,6 +162,16 @@ _All listed follow-ups shipped. Stitch orientation verified upright (v0.2.70); l
   screen. Reuses the fleet launcher's `WTSQueryUserToken` + `CreateProcessAsUser` interop. Installed by
   `installer/install-session-follow.ps1` (disables the logon task, creates the service); the launcher is now
   published into `deskhand.zip`. Driving the secure logon/UAC screen itself remains a Windows boundary (view only).
+- **(v0.2.79) Launch ELEVATED via the linked token.** `WTSQueryUserToken` hands back the UAC-*filtered*
+  (medium-IL) token for an admin when UAC is on, so v0.2.78's service spawned `deskhand-http` non-elevated — a
+  regression vs. the logon task it replaces (RunLevel=Highest) and a blocker for admin ops / secure-desktop /
+  UAC handling. `SessionFollowWorker` now fetches the full linked token (`TokenElevationType==Limited` →
+  `TokenLinkedToken`) and launches with it; falls back to the WTS token for a standard user or when UAC is off.
+- **Validated on a real sandbox (904, v0.2.79).** Service installed, logon task disabled; deskhand-http runs as a
+  child of `deskhand-launcher`, **High IL / isAdmin=True**, reachable on the same port+token. Proved bidirectional
+  following across a console user switch (autologon + reboot): `sandbox → switcher → sandbox`, deskhand relocating
+  into each user's session each time; hypervisor screenshot confirmed the live `switcher` desktop; `desktop_state`
+  reported `inputAvailable:true` and `capture_input_desktop` succeeded post-switch.
 
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 

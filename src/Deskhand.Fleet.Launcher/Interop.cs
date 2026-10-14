@@ -33,6 +33,13 @@ internal static class Interop
     public static extern bool DuplicateTokenEx(IntPtr existing, uint access, IntPtr attrs,
         int impLevel, int tokenType, out IntPtr newToken);
 
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool GetTokenInformation(IntPtr token, int tokenInfoClass, IntPtr info, int infoLen, out int returnLen);
+
+    public const int TokenElevationType = 18;   // TOKEN_INFORMATION_CLASS.TokenElevationType
+    public const int TokenLinkedToken = 19;      // TOKEN_INFORMATION_CLASS.TokenLinkedToken
+    public const int TokenElevationTypeLimited = 3; // UAC-filtered token; a full linked token exists
+
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     public static extern bool CreateProcessAsUser(IntPtr token, string? appName, string cmdLine,
         IntPtr procAttrs, IntPtr threadAttrs, bool inherit, uint creationFlags, IntPtr env,

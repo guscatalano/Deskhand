@@ -80,9 +80,15 @@ public sealed class SessionFollowWorker(ILogger<SessionFollowWorker> log) : Back
     {
         if (!WTSQueryUserToken(session, out IntPtr userToken))
         { log.LogWarning("WTSQueryUserToken failed for session {s} (Win32 {e})", session, Marshal.GetLastWin32Error()); return; }
+        // WTSQueryUserToken hands back the UAC-FILTERED (medium-IL) token for an admin when UAC is on. Launch
+        // deskhand with the FULL (linked) token so it runs ELEVATED — parity with the logon-task (RunLevel=Highest)
+        // model this replaces, and required for admin ops and the secure-desktop/UAC handling. For a standard user,
+        // or with UAC off, there's no limited→full split and we use the token as-is.
+        IntPtr linked = ElevatedLinkedToken(userToken);
+        IntPtr source = linked != IntPtr.Zero ? linked : userToken;
         try
         {
-            if (!DuplicateTokenEx(userToken, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out IntPtr primary))
+            if (!DuplicateTokenEx(source, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out IntPtr primary))
             { log.LogWarning("DuplicateTokenEx failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
             try
             {
@@ -101,6 +107,29 @@ public sealed class SessionFollowWorker(ILogger<SessionFollowWorker> log) : Back
             }
             finally { CloseHandle(primary); }
         }
-        finally { CloseHandle(userToken); }
+        finally { if (linked != IntPtr.Zero) CloseHandle(linked); CloseHandle(userToken); }
+    }
+
+    // Returns the FULL (elevated) linked token for a UAC-filtered admin token, or IntPtr.Zero when there is
+    // none (standard user, or UAC disabled so the token is already full). Caller owns the returned handle.
+    private static IntPtr ElevatedLinkedToken(IntPtr wtsToken)
+    {
+        IntPtr buf = Marshal.AllocHGlobal(sizeof(int));
+        try
+        {
+            if (!GetTokenInformation(wtsToken, TokenElevationType, buf, sizeof(int), out _)) return IntPtr.Zero;
+            if (Marshal.ReadInt32(buf) != TokenElevationTypeLimited) return IntPtr.Zero; // already full/default
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+
+        IntPtr link = Marshal.AllocHGlobal(IntPtr.Size);
+        try
+        {
+            // TOKEN_LINKED_TOKEN is a single handle; LocalSystem (SeTcbPrivilege) may read it. Caller CloseHandles it.
+            if (GetTokenInformation(wtsToken, TokenLinkedToken, link, IntPtr.Size, out _))
+                return Marshal.ReadIntPtr(link);
+        }
+        finally { Marshal.FreeHGlobal(link); }
+        return IntPtr.Zero;
     }
 }

@@ -36,8 +36,18 @@ internal static class Interop
     [DllImport("advapi32.dll", SetLastError = true)]
     public static extern bool GetTokenInformation(IntPtr token, int tokenInfoClass, IntPtr info, int infoLen, out int returnLen);
 
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool SetTokenInformation(IntPtr token, int tokenInfoClass, ref uint info, int infoLen);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentProcess();
+
     public const int TokenElevationType = 18;   // TOKEN_INFORMATION_CLASS.TokenElevationType
     public const int TokenLinkedToken = 19;      // TOKEN_INFORMATION_CLASS.TokenLinkedToken
+    public const int TokenSessionId = 12;        // TOKEN_INFORMATION_CLASS.TokenSessionId
     public const int TokenElevationTypeLimited = 3; // UAC-filtered token; a full linked token exists
 
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]

@@ -152,6 +152,17 @@ _All listed follow-ups shipped. Stitch orientation verified upright (v0.2.70); l
   (`GET /clipboard`), and writes it to the browser (Clipboard API, else an execCommand fallback). Pure dashboard
   change — reuses the existing clipboard endpoints. (Browser-side; validate by eye in interact mode.)
 
+## Switch-user: follow the active console session (v0.2.78)
+
+- The logon-task deployment binds Deskhand to one user's session, so it can't follow a **fast user switch** to a
+  different user. New **session-follow launcher**: a LocalSystem service (`DeskhandLauncher`) with a
+  `SessionFollowWorker` (in `Deskhand.Fleet.Launcher`, selected by `DESKHAND_LAUNCH_EXE`) that keeps
+  `deskhand-http.exe` in whichever session owns the **physical console** — stopping the old instance (freeing the
+  port) and launching a new one in the new user's session on a switch, and running nothing at the logon/switch
+  screen. Reuses the fleet launcher's `WTSQueryUserToken` + `CreateProcessAsUser` interop. Installed by
+  `installer/install-session-follow.ps1` (disables the logon task, creates the service); the launcher is now
+  published into `deskhand.zip`. Driving the secure logon/UAC screen itself remains a Windows boundary (view only).
+
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 
 - **Window management** — `deskhand_window` already does `activate | minimize | maximize | restore | close | move | resize | bounds | topmost | notopmost` by `nativeWindowHandle`; `deskhand_list_windows` and `deskhand_list_windows_all` give title/pid/rect. Gap: targeting by **title/pid** directly instead of hwnd.

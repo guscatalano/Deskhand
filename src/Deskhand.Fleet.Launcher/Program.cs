@@ -15,7 +15,12 @@ using static Deskhand.Fleet.Launcher.Interop;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(o => o.ServiceName = "DeskhandLauncher");
-builder.Services.AddHostedService<AgentLauncherWorker>();
+// DESKHAND_LAUNCH_EXE set → keep that exe (deskhand-http.exe) in the active CONSOLE session so Deskhand follows a
+// fast user switch (the switch-user model). Otherwise → the fleet-agent launcher (an agent in every session).
+if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DESKHAND_LAUNCH_EXE")))
+    builder.Services.AddHostedService<SessionFollowWorker>();
+else
+    builder.Services.AddHostedService<AgentLauncherWorker>();
 builder.Build().Run();
 
 namespace Deskhand.Fleet.Launcher

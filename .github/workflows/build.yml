@@ -90,8 +90,12 @@ jobs:
           # time). Its own self-contained folder under secure/uia so provisioning can copy it to Program Files.
           dotnet publish src/Deskhand.UiaInput -c Release -r win-x64 --self-contained true -o publish/http/secure/uia --nologo
           if (-not (Test-Path publish/http/secure/uia/deskhand-uia.exe)) { throw 'publish missing deskhand-uia.exe' }
-          # Bundle the install helper + example config + secure-input provisioning so the zip is self-contained.
-          Copy-Item installer/install-logon-task.ps1, installer/deskhand.example.json, installer/provision-uia.ps1 publish/http/ -Force
+          # Session-follow launcher (deskhand-launcher.exe): a LocalSystem service that keeps deskhand-http.exe in the
+          # active console session so Deskhand follows a fast user switch. Its own self-contained folder under launcher/.
+          dotnet publish src/Deskhand.Fleet.Launcher -c Release -r win-x64 --self-contained true -o publish/http/launcher --nologo
+          if (-not (Test-Path publish/http/launcher/deskhand-launcher.exe)) { throw 'publish missing deskhand-launcher.exe' }
+          # Bundle the install helpers + example config + secure-input provisioning so the zip is self-contained.
+          Copy-Item installer/install-logon-task.ps1, installer/install-session-follow.ps1, installer/deskhand.example.json, installer/provision-uia.ps1 publish/http/ -Force
           New-Item -ItemType Directory -Force installer/out | Out-Null
           Compress-Archive -Path publish/http/* -DestinationPath installer/out/deskhand.zip -Force
           Write-Host "deskhand.zip -> $([int]((Get-Item installer/out/deskhand.zip).Length/1MB)) MB (self-contained)"

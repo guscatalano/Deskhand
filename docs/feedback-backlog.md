@@ -143,6 +143,15 @@ _All listed follow-ups shipped. Stitch orientation verified upright (v0.2.70); l
   endpoint tails to the client; 501 if MF is unavailable (→ use MJPEG). Interactive control keeps MJPEG (pixel-exact
   coordinate mapping).
 
+## Interactive-mode clipboard bridge (v0.2.77)
+
+- In the dashboard's **Interact** mode, the browser's clipboard and the remote desktop's are separate, so Ctrl+C/V
+  didn't bridge. Now they do: **Ctrl/Cmd+V** (and Shift+Insert) reads the local clipboard off the native `paste` DOM
+  event (works on an http origin, where `navigator.clipboard` is blocked) and sets+pastes it on the remote via
+  `/input/paste`; **Ctrl/Cmd+C/X** (and Ctrl+Insert) runs the copy on the remote, reads its clipboard
+  (`GET /clipboard`), and writes it to the browser (Clipboard API, else an execCommand fallback). Pure dashboard
+  change — reuses the existing clipboard endpoints. (Browser-side; validate by eye in interact mode.)
+
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 
 - **Window management** — `deskhand_window` already does `activate | minimize | maximize | restore | close | move | resize | bounds | topmost | notopmost` by `nativeWindowHandle`; `deskhand_list_windows` and `deskhand_list_windows_all` give title/pid/rect. Gap: targeting by **title/pid** directly instead of hwnd.

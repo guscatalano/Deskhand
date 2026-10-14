@@ -1139,14 +1139,44 @@ const KEYNAMES={"Enter":"enter","Tab":"tab","Escape":"esc","Backspace":"backspac
 // capture at the document so typing works regardless of which element holds browser focus
 document.addEventListener("keydown",(ev)=>{
   if(!interactOn) return;
+  const k=ev.key, cmd=ev.ctrlKey||ev.metaKey;
+  // Clipboard bridge: the browser's clipboard and the remote desktop's are separate, so Ctrl/Cmd+C/X/V (and
+  // Shift/Ctrl+Insert) are special-cased to move text across.
+  //  • PASTE: let the native "paste" DOM event fire (handled below) — do NOT preventDefault, or no paste event.
+  //    (navigator.clipboard.readText is blocked on this http origin; the paste event's clipboardData is not.)
+  if((cmd && !ev.altKey && (k==="v"||k==="V")) || (ev.shiftKey && !ev.ctrlKey && k==="Insert")) return;
   ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
-  const k=ev.key;
+  //  • COPY/CUT: run it on the remote, then pull the remote clipboard back into this browser.
+  if(cmd && !ev.altKey && (k==="c"||k==="C"||k==="x"||k==="X")){ bridgeCopy((ev.ctrlKey?"ctrl+":"win+")+(ev.shiftKey?"shift+":"")+k.toLowerCase()); return; }
+  if(ev.ctrlKey && k==="Insert"){ bridgeCopy("ctrl+insert"); return; }
   // a bare printable character (incl. shifted symbols / capitals) — type it literally
   if(k.length===1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey){ api("/keyboard/type","POST",{text:k},{quiet:true}); return; }
   const mods=[]; if(ev.ctrlKey)mods.push("ctrl"); if(ev.altKey)mods.push("alt"); if(ev.shiftKey)mods.push("shift"); if(ev.metaKey)mods.push("win");
   let tok=KEYNAMES[k]; if(!tok){ if(/^F\d{1,2}$/.test(k)) tok=k.toLowerCase(); else if(k.length===1) tok=k.toLowerCase(); else return; }
   api("/keyboard/keys","POST",{chord:[...mods,tok].join("+")},{quiet:true});
 }, true);
+// local → remote paste: read the text off the native paste event (works on an http origin, unlike the async
+// Clipboard API) and set+paste it on the remote.
+document.addEventListener("paste",(ev)=>{
+  if(!interactOn) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const text=(ev.clipboardData||window.clipboardData)?.getData("text")||"";
+  if(!text){ toast("local clipboard empty",true); return; }
+  api("/input/paste","POST",{text},{quiet:true}).then(()=>toast("pasted "+text.length+" chars → remote")).catch(()=>{});
+}, true);
+// remote → local copy: run the copy chord on the remote, read its clipboard, write to this browser's clipboard
+// (Clipboard API when the origin allows it, else an execCommand textarea fallback for http).
+async function bridgeCopy(chord){
+  try{
+    await api("/keyboard/keys","POST",{chord},{quiet:true});
+    await new Promise(r=>setTimeout(r,180));
+    const c = await api("/clipboard","GET",undefined,{quiet:true});
+    if(!(c&&c.hasText&&c.text)) return;
+    try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(c.text); } else throw 0; }
+    catch{ const ta=document.createElement("textarea"); ta.value=c.text; ta.style.cssText="position:fixed;opacity:0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e){} ta.remove(); }
+    toast("copied "+c.text.length+" chars ← remote");
+  }catch(e){ toast("copy from remote failed",true); }
+}
 $("#secBtn").onclick=guard(async()=>{
   const res=await api("/capture/input-desktop","POST",{format:"png"});
   const kindColor = res.kind==="secure" ? "var(--crit)" : "var(--good)";

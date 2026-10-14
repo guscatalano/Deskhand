@@ -172,6 +172,16 @@ _All listed follow-ups shipped. Stitch orientation verified upright (v0.2.70); l
   following across a console user switch (autologon + reboot): `sandbox → switcher → sandbox`, deskhand relocating
   into each user's session each time; hypervisor screenshot confirmed the live `switcher` desktop; `desktop_state`
   reported `inputAvailable:true` and `capture_input_desktop` succeeded post-switch.
+- **(v0.2.80) Run as SYSTEM at the logon/secure screen so it stays capturable.** v0.2.78/79 ran *nothing* when no
+  user was logged on at the console (logon / switch-user screen), so the secure desktop couldn't be captured at all.
+  The launcher now has two modes: a logged-on user → launch as that user (elevated); **no user → launch deskhand-http
+  as SYSTEM in the console session** (duplicate the service's LocalSystem token, retarget `TokenSessionId` at the
+  console). A SYSTEM process in the console session can `OpenInputDesktop` the Winlogon desktop — exactly what
+  `SecureCapture.CaptureInputDesktop` needs — so `capture_input_desktop` then works on the secure/lock/logon screen.
+  Relaunches whenever the console session OR the mode (user↔system) changes. **Validated on 904:** after a switch to
+  the logon screen, deskhand came back as `nt authority\system`, `desktop_state`→`secure`/`Winlogon`, and
+  `capture_input_desktop` returned the lock/logon screen image (`kind=secure`). Driving *input* on the secure desktop
+  (e.g. answering the UAC consent prompt) remains a separate Windows boundary; this is capture (view).
 
 ## Already supported (reported, but it exists — may just need surfacing / a convenience wrapper)
 

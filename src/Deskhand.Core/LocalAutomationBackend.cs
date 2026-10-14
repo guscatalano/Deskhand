@@ -36,6 +36,35 @@ public sealed class LocalAutomationBackend : IAutomationBackend
         catch { return false; }
     }
     public bool FollowInputDesktop { get; set; } = _isSystem;
+    /// <summary>Result of the one-time attempt to make this SYSTEM process uiAccess (for diagnostics/health).</summary>
+    public static string UiAccessStatus { get; private set; } = _isSystem ? "pending" : "n/a (not SYSTEM)";
+
+    // Capturing the secure desktop only needs desktop-attach, but INJECTING input there (SendInput) is rejected
+    // for a non-uiAccess process. A SYSTEM process can flip its own TokenUIAccess flag (needs SeTcbPrivilege, which
+    // SYSTEM holds) — no code signing / uiAccess manifest required — after which SendInput is accepted on the
+    // secure / lock / logon / UAC-consent desktop. Mirrors Deskhand.SecureHelper's TrySetUiAccess.
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)] private static extern bool OpenProcessToken(IntPtr p, uint access, out IntPtr tok);
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)] private static extern bool LookupPrivilegeValue(string? host, string name, out long luid);
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)] private static extern bool AdjustTokenPrivileges(IntPtr tok, bool disableAll, ref TOKEN_PRIVILEGES newState, uint len, IntPtr prev, IntPtr retLen);
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)] private static extern bool SetTokenInformation(IntPtr tok, int cls, ref int info, uint len);
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] private struct TOKEN_PRIVILEGES { public uint Count; public long Luid; public uint Attributes; }
+    private static string TrySetUiAccess()
+    {
+        try
+        {
+            if (!OpenProcessToken(System.Diagnostics.Process.GetCurrentProcess().Handle, 0x0020 | 0x0008 | 0x0080 /*ADJUST_PRIVILEGES|QUERY|ADJUST_DEFAULT*/, out IntPtr tok))
+                return "OpenProcessToken failed " + System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            if (LookupPrivilegeValue(null, "SeTcbPrivilege", out long luid))
+            {
+                var tp = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attributes = 0x00000002 /*ENABLED*/ };
+                AdjustTokenPrivileges(tok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+            int one = 1;
+            bool ok = SetTokenInformation(tok, 26 /*TokenUIAccess*/, ref one, 4);
+            return ok ? "OK" : "SetTokenInformation(TokenUIAccess) failed " + System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+        }
+        catch (Exception ex) { return "exc " + ex.Message; }
+    }
 
     /// <summary>Route an input action: inline on the default desktop (fast, no regression); through the
     /// desktop-attached pump on a non-secure foreign desktop (screensaver/custom); and to the SYSTEM
@@ -59,6 +88,10 @@ public sealed class LocalAutomationBackend : IAutomationBackend
 
     public LocalAutomationBackend()
     {
+        // SYSTEM console-session instance (session-follow launcher at the logon/secure screen): make ourselves
+        // uiAccess once so SendInput is accepted on the secure desktop (capture alone doesn't need this).
+        if (_isSystem) UiAccessStatus = TrySetUiAccess();
+
         // The STA worker runs this on every (re)start, so if it self-heals after a hung UIA call it comes back
         // with a fresh UIA object + re-attached events — no restart of the process needed.
         _sta = new StaExecutor(onStart: () =>

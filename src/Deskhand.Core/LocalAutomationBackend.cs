@@ -24,7 +24,18 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     private readonly Services.InputDesktopPump _inputPump = new();
     // The SECURE desktop can't be touched from a user-session process; delegate those to the SYSTEM helper.
     private readonly Lazy<Services.SecureHelperClient> _secure = new(() => new Services.SecureHelperClient());
-    public bool FollowInputDesktop { get; set; }
+    // True when this process is LocalSystem (e.g. launched by the session-follow launcher into the console
+    // session at the logon/secure screen). A SYSTEM process in the console session can OpenInputDesktop +
+    // SetThreadDesktop onto the Winlogon desktop and both CAPTURE and DRIVE INPUT on it directly — no separate
+    // SYSTEM helper needed. So when we're SYSTEM, the secure desktop is just another foreign desktop the pump
+    // handles, and interactive desktop-following is on by default.
+    private static readonly bool _isSystem = ComputeIsSystem();
+    private static bool ComputeIsSystem()
+    {
+        try { using var id = System.Security.Principal.WindowsIdentity.GetCurrent(); return id.IsSystem || id.User?.Value == "S-1-5-18"; }
+        catch { return false; }
+    }
+    public bool FollowInputDesktop { get; set; } = _isSystem;
 
     /// <summary>Route an input action: inline on the default desktop (fast, no regression); through the
     /// desktop-attached pump on a non-secure foreign desktop (screensaver/custom); and to the SYSTEM
@@ -34,7 +45,13 @@ public sealed class LocalAutomationBackend : IAutomationBackend
         if (FollowInputDesktop)
         {
             string kind = Services.DesktopInfo.GetDesktopState().Desktop;
-            if (kind == "secure") { _secure.Value.EnsureStarted(); _secure.Value.Input(secureRequest()); return; }
+            // Secure desktop: if we're SYSTEM in the console session, drive it DIRECTLY via the pump (attach to
+            // Winlogon + SendInput). Only a user-session process has to hand it off to the SYSTEM secure helper.
+            if (kind == "secure")
+            {
+                if (_isSystem) { _inputPump.Run(local); return; }
+                _secure.Value.EnsureStarted(); _secure.Value.Input(secureRequest()); return;
+            }
             if (kind != "default") { _inputPump.Run(local); return; }
         }
         lock (_inputGate) local();
@@ -250,10 +267,10 @@ public sealed class LocalAutomationBackend : IAutomationBackend
     // Runs on its own throwaway thread (see SecureCapture) — must NOT use the UIA STA thread.
     public Services.SecureCapture.InputDesktopResult CaptureInputDesktop(ImageFormat format, int jpegQuality)
     {
-        // While following desktops (interactive mode), the secure desktop can't be grabbed by this
-        // user-session process — delegate that one frame to the SYSTEM helper. Everything else (default,
-        // screensaver, custom) this process can capture itself.
-        if (FollowInputDesktop && Services.DesktopInfo.GetDesktopState().Desktop == "secure")
+        // While following desktops (interactive mode), the secure desktop can't be grabbed by a user-session
+        // process — delegate that one frame to the SYSTEM helper. But if WE are SYSTEM (console-session
+        // instance), capture it directly below. Everything else (default, screensaver, custom) we capture too.
+        if (FollowInputDesktop && !_isSystem && Services.DesktopInfo.GetDesktopState().Desktop == "secure")
         {
             try
             {

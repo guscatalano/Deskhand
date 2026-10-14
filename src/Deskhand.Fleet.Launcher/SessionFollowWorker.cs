@@ -95,7 +95,7 @@ public sealed class SessionFollowWorker(ILogger<SessionFollowWorker> log) : Back
         {
             if (!DuplicateTokenEx(source, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out IntPtr primary))
             { log.LogWarning("DuplicateTokenEx(user) failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
-            try { StartWithToken(primary, session, Mode.User); }
+            try { StartWithToken(primary, session, Mode.User, @"winsta0\default"); }
             finally { CloseHandle(primary); }
         }
         finally { if (linked != IntPtr.Zero) CloseHandle(linked); CloseHandle(userToken); }
@@ -118,18 +118,23 @@ public sealed class SessionFollowWorker(ILogger<SessionFollowWorker> log) : Back
                 uint sess = session;
                 if (!SetTokenInformation(primary, TokenSessionId, ref sess, sizeof(uint)))
                 { log.LogWarning("SetTokenInformation(session) failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
-                StartWithToken(primary, session, Mode.System);
+                uint ui = 1;   // born uiAccess so SendInput is accepted on the secure desktop (SeTcbPrivilege, held by LocalSystem)
+                if (!SetTokenInformation(primary, TokenUIAccess, ref ui, sizeof(uint)))
+                    log.LogWarning("SetTokenInformation(UIAccess) failed (Win32 {e}) — secure-desktop input may be rejected", Marshal.GetLastWin32Error());
+                // Launch ON the Winlogon (secure) desktop — like Deskhand.SecureHelper — so a uiAccess SYSTEM
+                // process can inject input there, not only capture it.
+                StartWithToken(primary, session, Mode.System, @"winsta0\winlogon");
             }
             finally { CloseHandle(primary); }
         }
         finally { CloseHandle(selfTok); }
     }
 
-    // Shared: start the target exe with an already-prepared primary token into winsta0\default of the console session.
-    private void StartWithToken(IntPtr primary, uint session, Mode mode)
+    // Shared: start the target exe with an already-prepared primary token on the given desktop of the console session.
+    private void StartWithToken(IntPtr primary, uint session, Mode mode, string desktop)
     {
         CreateEnvironmentBlock(out IntPtr env, primary, false);   // machine env (DESKHAND_TOKEN/PORT) + user env
-        var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\default" };
+        var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = desktop };
         string cmd = $"\"{_exe}\" {_args}".Trim();
         bool ok = CreateProcessAsUser(primary, _exe, cmd, IntPtr.Zero, IntPtr.Zero, false,
             CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, env, Path.GetDirectoryName(_exe), ref si, out var pi);

@@ -48,6 +48,7 @@ internal static class Interop
     public const int TokenElevationType = 18;   // TOKEN_INFORMATION_CLASS.TokenElevationType
     public const int TokenLinkedToken = 19;      // TOKEN_INFORMATION_CLASS.TokenLinkedToken
     public const int TokenSessionId = 12;        // TOKEN_INFORMATION_CLASS.TokenSessionId
+    public const int TokenUIAccess = 26;         // TOKEN_INFORMATION_CLASS.TokenUIAccess (1 = uiAccess; needs SeTcbPrivilege)
     public const int TokenElevationTypeLimited = 3; // UAC-filtered token; a full linked token exists
 
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]

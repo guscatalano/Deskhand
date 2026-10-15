@@ -132,10 +132,20 @@ for desktop automation, run it in the user session. To avoid a stray console win
 **`DESKHAND_HIDE_CONSOLE=1`** (or `hideConsole: true` in `deskhand.json`, or pass `--hidden`) — Deskhand hides
 its console at startup but keeps running in the session so it can still drive the screen.
 
-**`installer/install-logon-task.ps1`** does exactly this — the recommended auto-start. Run it elevated and it
-registers a scheduled task that, at logon, launches Deskhand **in the interactive session** with **highest
-privileges** (so it comes up **elevated with no UAC prompt** — needed to drive elevated apps and answer
-normal-desktop UAC prompts) and **`--hidden`** (no console window):
+**`installer/install-session-follow.ps1`** is the **recommended auto-start** (the default). Run it elevated and
+it installs a LocalSystem service (`DeskhandLauncher`) that keeps `deskhand-http.exe` in whichever session owns
+the **physical console**, launched **as the logged-in user and elevated** — so Deskhand **follows a fast user
+switch** (it relaunches into the new user's session when the console changes), and at the logon / lock / secure
+screen it runs **as SYSTEM** so that desktop stays capturable. It disables the per-user logon task to avoid two
+instances fighting over the port:
+
+```powershell
+installer\install-session-follow.ps1 -Port 8791    # token comes from deskhand.json; follows whoever logs in
+```
+
+**`installer/install-logon-task.ps1`** is the simpler single-user alternative: a scheduled task that, at logon,
+launches Deskhand **in the interactive session** with **highest privileges** (elevated, no UAC prompt) and
+**`--hidden`** (no console window). Use it when you don't need switch-user following or secure-screen capture:
 
 ```powershell
 installer\install-logon-task.ps1 -ExePath C:\Deskhand\deskhand-http.exe -Start   # this user
@@ -144,8 +154,7 @@ installer\install-logon-task.ps1 -Uninstall
 ```
 
 (Standard users can't get the elevated token, so "highest privileges" only elevates for admins; the task
-still runs, unelevated. The Fleet **Launcher** is the SYSTEM-level alternative that spawns a per-session agent
-as the logged-in user.) Put a `deskhand.json` next to the exe for token/port/etc.
+still runs, unelevated.) Put a `deskhand.json` next to the exe for token/port/etc.
 
 ## Web dashboard
 

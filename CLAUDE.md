@@ -80,9 +80,15 @@ thin/unstable trees (Chromium/Electron). Prefer tree/ref targeting over coordina
 
 ## Hosting & process model (matters for anything session- or reboot-related)
 
-- **Recommended desktop-capture mode is the logon scheduled task** (`installer/install-logon-task.ps1`): runs
-  `deskhand-http.exe --hidden` in the interactive session, relaunched fresh on each sign-in. This relaunch is the
-  resume trigger for reboot-surviving recordings.
+- **Default desktop-capture mode is the session-follow launcher** (`installer/install-session-follow.ps1`):
+  a LocalSystem service (`DeskhandLauncher`, `SessionFollowWorker` in `Deskhand.Fleet.Launcher`, selected by the
+  `DESKHAND_LAUNCH_EXE` env var) that keeps `deskhand-http.exe` in whichever session owns the physical console —
+  launched **as the logged-in user, elevated** (full linked token) and **relocated on a fast user switch**; at the
+  logon/lock/secure screen (no user) it launches **as SYSTEM** so that desktop stays capturable. It disables the
+  logon task. This is what "follows whoever's logged in" means and is the recommended install.
+- **Simpler single-user alternative — the logon scheduled task** (`installer/install-logon-task.ps1`): runs
+  `deskhand-http.exe --hidden` in the interactive session, relaunched fresh on each sign-in (the resume trigger for
+  reboot-surviving recordings). No switch-user following; bound to one user.
 - **Windows Service mode** (`installer/install-service.ps1`, `UseWindowsService`, `ServiceName="Deskhand"`) runs in
   **Session 0 with no interactive desktop** — explicitly *not* for desktop capture.
 - **Secure desktop** (UAC/lock/logon): `Deskhand.Broker` (elevated launcher) starts `Deskhand.SecureHelper` as

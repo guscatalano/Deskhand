@@ -30,6 +30,11 @@ public sealed class SessionFollowWorker(ILogger<SessionFollowWorker> log) : Back
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        // Enable SeTcbPrivilege once so we can set TokenUIAccess on a child's token (born uiAccess). LocalSystem
+        // holds SeTcb but services get it DISABLED by default; without this the UIAccess set silently fails and
+        // SendInput on the secure desktop stays ACCESS_DENIED (UIAccess is latched by win32k at process creation,
+        // so a runtime self-grant in the child is ineffective for injection).
+        EnableSeTcb();
         log.LogInformation("Deskhand session-follow launcher started; exe={exe} args={args}", _exe, _args);
         while (!ct.IsCancellationRequested)
         {
@@ -145,6 +150,25 @@ public sealed class SessionFollowWorker(ILogger<SessionFollowWorker> log) : Back
         try { _proc = Process.GetProcessById(pi.dwProcessId); } catch { _proc = null; }
         _session = session; _mode = mode;
         log.LogInformation("launched {exe} (pid {pid}) into console session {s} as {mode}", Path.GetFileName(_exe), pi.dwProcessId, session, mode);
+    }
+
+    // Enable SeTcbPrivilege on our own process token (LocalSystem has it present but disabled) so SetTokenInformation
+    // (TokenUIAccess) on a child's primary token is permitted.
+    private void EnableSeTcb()
+    {
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out IntPtr tok))
+        { log.LogWarning("EnableSeTcb: OpenProcessToken failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
+        try
+        {
+            if (!LookupPrivilegeValue(null, "SeTcbPrivilege", out long luid))
+            { log.LogWarning("EnableSeTcb: LookupPrivilegeValue failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
+            var tp = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attributes = SE_PRIVILEGE_ENABLED };
+            if (!AdjustTokenPrivileges(tok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 0)
+                log.LogWarning("EnableSeTcb: AdjustTokenPrivileges (Win32 {e})", Marshal.GetLastWin32Error());
+            else
+                log.LogInformation("EnableSeTcb: SeTcbPrivilege enabled");
+        }
+        finally { CloseHandle(tok); }
     }
 
     // Returns the FULL (elevated) linked token for a UAC-filtered admin token, or IntPtr.Zero when there is

@@ -45,6 +45,19 @@ internal static class Interop
     [DllImport("kernel32.dll")]
     public static extern IntPtr GetCurrentProcess();
 
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool LookupPrivilegeValue(string? host, string name, out long luid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TOKEN_PRIVILEGES newState, uint len, IntPtr prev, IntPtr retLen);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TOKEN_PRIVILEGES { public uint Count; public long Luid; public uint Attributes; }
+
+    public const uint SE_PRIVILEGE_ENABLED = 0x00000002;
+    public const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
+    public const uint TOKEN_QUERY = 0x0008;
+
     public const int TokenElevationType = 18;   // TOKEN_INFORMATION_CLASS.TokenElevationType
     public const int TokenLinkedToken = 19;      // TOKEN_INFORMATION_CLASS.TokenLinkedToken
     public const int TokenSessionId = 12;        // TOKEN_INFORMATION_CLASS.TokenSessionId

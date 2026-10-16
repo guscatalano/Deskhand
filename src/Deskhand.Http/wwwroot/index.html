@@ -223,7 +223,7 @@
 <body>
 
 <div class="topbar">
-  <span class="brand"><span class="dot" id="liveDot"></span><b>Deskhand</b></span>
+  <span class="brand"><span class="dot" id="liveDot"></span><b>Deskhand</b><span id="ver" class="mono" style="color:var(--ink-3);font-size:11px;font-weight:400;margin-left:6px" title="Deskhand version"></span></span>
   <span class="stat" id="statMachine">connecting…</span>
   <span class="stat">desktop <span class="pill unknown" id="statDesktop">?</span></span>
   <span class="stat" id="statMon"></span>
@@ -2126,8 +2126,9 @@ $("#clickAction").dispatchEvent(new Event("change"));
 
 refresh().then(loadWindows).catch(()=>{ $("#statMachine").textContent="server unreachable"; toast("cannot reach server",true); });
 refreshControl(); macStatus();
-// No-fleet mode: hide fleet-only UI (the Fleet link) when the server reports it.
-api("/health").then(h=>{ if(h&&h.noFleet){ const fl=$("#fleetLink"); if(fl) fl.style.display="none"; } }).catch(()=>{});
+// No-fleet mode: hide fleet-only UI (the Fleet link) when the server reports it; also show the version.
+api("/health").then(h=>{ if(h&&h.noFleet){ const fl=$("#fleetLink"); if(fl) fl.style.display="none"; }
+  const v=$("#ver"); if(v&&h&&h.version){ v.textContent="v"+h.version; v.title="Deskhand "+h.service+" v"+h.version; } }).catch(()=>{});
 setInterval(()=>{ refresh().catch(()=>{}); refreshControl(); macStatus(); },5000);
 
 /* ---------- live UI events (SSE) ---------- */

@@ -155,8 +155,11 @@ bool hybrid = hv is "1" or "true" or "on" or "yes";
 string? fleetToken = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN") ?? Environment.GetEnvironmentVariable("DESKHAND_TOKEN");
 var agentRegistry = hybrid ? new Deskhand.Core.Fleet.AgentRegistry() : null;
 if (agentRegistry is not null) builder.Services.AddSingleton(agentRegistry);
+// The RAW routing backend (ungoverned) — the governed one below wraps it; streaming/recording capture frames
+// through this directly (like the local path uses localBackend) so a per-frame capture isn't audited/gated 30x/s.
+var routingBackend = hybrid ? new Deskhand.Core.Fleet.RoutingBackend(agentRegistry!) : null;
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
-    new GovernedBackend(hybrid ? new Deskhand.Core.Fleet.RoutingBackend(agentRegistry!) : localBackend,
+    new GovernedBackend((IAutomationBackend?)routingBackend ?? localBackend,
         controlState, auditLog, captureNotifier, macroRecorder));
 
 // Also serve MCP over Streamable HTTP at /mcp, sharing the SAME backend + governance + events, so
@@ -199,6 +202,12 @@ if (hybrid)
         finally { agentRegistry.Remove(hello.AgentId); link.Dispose(); auditLog.Record("agent_disconnect", hello.AgentId, "disconnect"); }
     });
     Console.WriteLine("Hybrid mode ON: desktop ops route to per-session agents; agents connect at ws://127.0.0.1:<port>/agent/connect");
+    // Recordings capture IN the session too (local GDI is blind from session 0): pull each frame from the agent.
+    screenRecorder.CaptureSource = rect =>
+    {
+        try { return DecodeToBitmap(routingBackend!.CaptureRegion(rect.X, rect.Y, rect.Width, rect.Height, ImageFormat.Jpeg, 85).Bytes); }
+        catch { return null; }   // no agent yet / transient → skip this tick
+    };
 }
 
 // Reboot-surviving recordings: on startup, resume any recording that was interrupted (its logon task relaunched
@@ -373,6 +382,18 @@ static string BearerOf(HttpContext ctx)
 }
 
 static string Trunc(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+
+// Decode JPEG bytes into a standalone 32bpp bitmap (independent of the source stream — GDI+ otherwise keeps the
+// stream open for the bitmap's lifetime). Used by the hybrid capture paths that need a Bitmap (H.264 / recorder).
+static System.Drawing.Bitmap DecodeToBitmap(byte[] jpeg)
+{
+    using var ms = new System.IO.MemoryStream(jpeg);
+    using var tmp = System.Drawing.Image.FromStream(ms);
+    var bmp = new System.Drawing.Bitmap(tmp.Width, tmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+    using var g = System.Drawing.Graphics.FromImage(bmp);
+    g.DrawImage(tmp, 0, 0, tmp.Width, tmp.Height);
+    return bmp;
+}
 
 // ---- uniform error mapping ----
 app.Use(async (ctx, next) =>
@@ -1478,6 +1499,19 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
         }
         return Deskhand.Core.Services.ScreenCapture.CaptureScaledJpeg(StreamRect(monitor), mw, q, out _, out _);
     }
+    // Hybrid: capture the frame IN the target session via the agent (DXGI/GDI here would be blind from session 0),
+    // then scale in this process. Follows the input desktop (secure/screensaver) like the local path.
+    byte[] CaptureViaAgent()
+    {
+        Deskhand.Core.CaptureResultDto c;
+        if (follow)
+        {
+            var r = routingBackend!.CaptureInputDesktop(ImageFormat.Jpeg, q);
+            c = r.Success && r.Capture is not null ? r.Capture : routingBackend!.CaptureScreen(monitor, ImageFormat.Jpeg, q);
+        }
+        else c = routingBackend!.CaptureScreen(monitor, ImageFormat.Jpeg, q);
+        return Deskhand.Core.Services.ImageScaler.Fit(c.Bytes, c.Format, mw == 0 ? null : mw, null, q).Bytes;
+    }
     Deskhand.Core.Services.DxgiScreenDuplicator? MakeDup()
     {
         try
@@ -1506,7 +1540,8 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 RefreshDesk();
-                bool canDxgi = !follow || deskKind == "default";
+                // Hybrid: never use local DXGI/GDI (blind from session 0) — always capture via the session agent.
+                bool canDxgi = routingBackend is null && (!follow || deskKind == "default");
                 byte[]? f = null;
                 if (canDxgi && dup is null && Environment.TickCount64 >= dupRetryAt) { dup = MakeDup(); if (dup is null) dupRetryAt = Environment.TickCount64 + 1000; }
 
@@ -1518,7 +1553,8 @@ api.MapGet("/capture/stream", async (ControlState st, AuditLog al, ToastNotifier
                 }
                 else
                 {
-                    try { f = CaptureGdi(); } catch { break; }
+                    try { f = routingBackend is not null ? CaptureViaAgent() : CaptureGdi(); }
+                    catch { try { await Task.Delay(500, ct); } catch { break; } continue; }   // no agent yet / transient → retry (client stays connected)
                 }
 
                 if (f is not null)
@@ -1608,21 +1644,36 @@ api.MapGet("/capture/stream.mp4", async (ControlState st, AuditLog al, ToastNoti
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
-                    using var full = new System.Drawing.Bitmap(rect.Width, rect.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                    using (var g = System.Drawing.Graphics.FromImage(full))
-                        g.CopyFromScreen(rect.X, rect.Y, 0, 0, rect.Size, System.Drawing.CopyPixelOperation.SourceCopy);
-                    System.Drawing.Bitmap frame = full;
-                    if (outW != rect.Width || outH != rect.Height)
+                    // Hybrid: capture IN the session via the agent (JPEG), decode, then scale+encode here; local GDI
+                    // (CopyFromScreen) would be blind from session 0.
+                    System.Drawing.Bitmap full;
+                    if (routingBackend is not null)
                     {
-                        frame = new System.Drawing.Bitmap(outW, outH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                        using var g2 = System.Drawing.Graphics.FromImage(frame);
-                        g2.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
-                        g2.DrawImage(full, 0, 0, outW, outH);
+                        var c = routingBackend.CaptureScreen(monitor, ImageFormat.Jpeg, 80);
+                        full = DecodeToBitmap(c.Bytes);
                     }
-                    live!.WriteFrame(frame);
-                    if (!ReferenceEquals(frame, full)) frame.Dispose();
+                    else
+                    {
+                        full = new System.Drawing.Bitmap(rect.Width, rect.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                        using var g = System.Drawing.Graphics.FromImage(full);
+                        g.CopyFromScreen(rect.X, rect.Y, 0, 0, rect.Size, System.Drawing.CopyPixelOperation.SourceCopy);
+                    }
+                    try
+                    {
+                        System.Drawing.Bitmap frame = full;
+                        if (outW != full.Width || outH != full.Height)
+                        {
+                            frame = new System.Drawing.Bitmap(outW, outH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                            using var g2 = System.Drawing.Graphics.FromImage(frame);
+                            g2.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                            g2.DrawImage(full, 0, 0, outW, outH);
+                        }
+                        live!.WriteFrame(frame);
+                        if (!ReferenceEquals(frame, full)) frame.Dispose();
+                    }
+                    finally { full.Dispose(); }
                 }
-                catch { /* a dropped frame must not kill the stream */ }
+                catch { /* a dropped frame (incl. no agent yet) must not kill the stream */ }
                 int rest = periodMs - (int)sw.ElapsedMilliseconds;
                 if (rest > 0) { try { await Task.Delay(rest, ct); } catch { break; } }
             }

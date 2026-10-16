@@ -228,6 +228,20 @@ public sealed class ScreenRecorder : IDisposable
         return cand.Length == 0 ? null : cand[..Math.Min(cand.Length, 80)];
     }
 
+    /// <summary>Optional frame source (hybrid mode): given a virtual-desktop rectangle, return a bitmap captured
+    /// IN the target session via the agent, or null when none is available this tick. When unset, frames are
+    /// grabbed locally via GDI (correct only when the recorder runs in the desktop session).</summary>
+    public Func<Rectangle, Bitmap?>? CaptureSource { get; set; }
+
+    private Bitmap? GrabFrame(Session s)
+    {
+        if (CaptureSource is not null) return CaptureSource(s.Rect);   // from the session agent (null → skip this tick)
+        var full = new Bitmap(s.Rect.Width, s.Rect.Height, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(full))
+            g.CopyFromScreen(s.Rect.X, s.Rect.Y, 0, 0, s.Rect.Size, CopyPixelOperation.SourceCopy);
+        return full;
+    }
+
     private void CaptureFrame(Session s)
     {
         if (s.State != "recording") return;
@@ -243,12 +257,11 @@ public sealed class ScreenRecorder : IDisposable
         if (mp4) { if (s.Busy) return; s.Busy = true; }
         try
         {
-            using var full = new Bitmap(s.Rect.Width, s.Rect.Height, PixelFormat.Format32bppArgb);
-            using (var g = Graphics.FromImage(full))
-                g.CopyFromScreen(s.Rect.X, s.Rect.Y, 0, 0, s.Rect.Size, CopyPixelOperation.SourceCopy);
+            using var full = GrabFrame(s);
+            if (full is null) return;   // hybrid: no agent frame this tick → skip (don't record black); finally resets Busy
 
             Bitmap frame = full;
-            if (s.OutW != s.Rect.Width || s.OutH != s.Rect.Height)
+            if (s.OutW != full.Width || s.OutH != full.Height)
             {
                 frame = new Bitmap(s.OutW, s.OutH, PixelFormat.Format32bppArgb);
                 using var g2 = Graphics.FromImage(frame);

@@ -48,6 +48,10 @@ if ($EnableShell) { [Environment]::SetEnvironmentVariable('DESKHAND_ENABLE_SHELL
 # Don't let the old per-user logon task / session-follow service also bind the port.
 try { Disable-ScheduledTask -TaskName 'Deskhand' -ErrorAction SilentlyContinue | Out-Null } catch {}
 & sc.exe stop DeskhandLauncher *> $null; & sc.exe delete DeskhandLauncher *> $null
+# Kill any deskhand-http already running (e.g. the logon task just started one) — otherwise it keeps port $Port and
+# the new session-0 front-end service can't bind. The service below starts a fresh one in session 0.
+Get-Process deskhand-http -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
 
 # Front end (deskhand-http) as a LocalSystem service in session 0 — it only routes + runs session-agnostic work.
 & sc.exe stop   Deskhand *> $null

@@ -63,6 +63,9 @@ Start-Sleep -Milliseconds 700
 & sc.exe start  Deskhand | Out-Null
 
 # Launcher (agent mode) as a LocalSystem service — spawns a deskhand-agent into each interactive session.
+& sc.exe stop DeskhandAgents *> $null   # delete+recreate so a re-install isn't a silent no-op on an existing (maybe disabled) service
+& sc.exe delete DeskhandAgents *> $null
+Start-Sleep -Milliseconds 500
 & sc.exe create DeskhandAgents binPath= "`"$launcher`"" start= auto obj= LocalSystem DisplayName= "Deskhand Agents" | Out-Null
 & sc.exe description DeskhandAgents "Spawns a Deskhand agent into each interactive session for the hybrid front end." | Out-Null
 & sc.exe failure DeskhandAgents reset= 0 actions= restart/5000/restart/5000/restart/5000 | Out-Null

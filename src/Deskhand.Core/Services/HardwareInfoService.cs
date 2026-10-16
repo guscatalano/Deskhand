@@ -6,7 +6,7 @@ public record VolumeDto(string? DriveLetter, string? Label, string? FileSystem, 
 public record PartitionDto(string? Name, long? SizeBytes, string? Type, bool Bootable, IReadOnlyList<VolumeDto> Volumes);
 public record PhysicalDiskDto(uint Index, string? Model, string? InterfaceType, string? MediaType, string? Serial, long? SizeBytes, uint Partitions, IReadOnlyList<PartitionDto> PartitionList);
 public record HotfixDto(string? HotFixId, string? Description, string? InstalledOn, string? InstalledBy);
-public record DeviceDto(string? Name, string? Class, string? Manufacturer, string? Status, string? DeviceId);
+public record DeviceDto(string? Name, string? Class, string? Manufacturer, string? Status, string? DeviceId, int? ProblemCode = null, string? Problem = null);
 public record DriverDto(string? Device, string? Provider, string? Version, string? Date, string? InfName, bool? Signed);
 public record AudioDeviceDto(string? Name, string? Manufacturer, string? Status);
 public record GpuDto(string? Name, string? DriverVersion, string? DriverDate, long? VramBytes, long? SharedMemoryBytes, string? VideoProcessor, string? Resolution, uint? RefreshHz);
@@ -78,24 +78,61 @@ public static class HardwareInfoService
     }
 
     // ---- PnP devices (Device Manager-like). Optional class filter (e.g. "Net", "Display", "Media"). ----
-    public static IReadOnlyList<DeviceDto> Devices(string? classFilter = null)
+    public static IReadOnlyList<DeviceDto> Devices(string? classFilter = null, bool problemsOnly = false)
     {
         var list = new List<DeviceDto>();
         try
         {
-            using var s = new ManagementObjectSearcher("SELECT Name, PNPClass, Manufacturer, Status, DeviceID FROM Win32_PnPEntity");
+            using var s = new ManagementObjectSearcher("SELECT Name, PNPClass, Manufacturer, Status, DeviceID, ConfigManagerErrorCode FROM Win32_PnPEntity");
             foreach (ManagementObject o in s.Get())
             {
                 var cls = Str(o["PNPClass"]);
                 if (!string.IsNullOrEmpty(classFilter) && !string.Equals(cls, classFilter, StringComparison.OrdinalIgnoreCase)
                     && !(cls?.Contains(classFilter, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
-                list.Add(new DeviceDto(Str(o["Name"]), cls, Str(o["Manufacturer"]), Str(o["Status"]), Str(o["DeviceID"])));
+                int? code = null; try { if (o["ConfigManagerErrorCode"] is not null) code = Convert.ToInt32(o["ConfigManagerErrorCode"]); } catch { }
+                if (problemsOnly && (code is null or 0)) continue;   // only devices with a Device Manager problem
+                string? problem = code is > 0 ? $"Code {code}: {ProblemText(code.Value)}" : null;
+                list.Add(new DeviceDto(Str(o["Name"]), cls, Str(o["Manufacturer"]), Str(o["Status"]), Str(o["DeviceID"]), code, problem));
                 if (list.Count >= MaxRows) break;
             }
         }
         catch { }
-        return list.OrderBy(d => d.Class).ThenBy(d => d.Name).ToList();
+        // problems first, then by class/name
+        return list.OrderByDescending(d => d.ProblemCode is > 0).ThenBy(d => d.Class).ThenBy(d => d.Name).ToList();
     }
+
+    // Device Manager "Code NN" problem text (Win32_PnPEntity.ConfigManagerErrorCode).
+    private static string ProblemText(int code) => code switch
+    {
+        1 => "not configured correctly",
+        3 => "driver may be corrupted, or low on memory/resources",
+        10 => "cannot start",
+        12 => "cannot find enough free resources",
+        14 => "needs a restart to work",
+        18 => "reinstall the drivers",
+        19 => "registry entry is corrupted",
+        21 => "Windows is removing this device",
+        22 => "disabled",
+        24 => "not present, not working, or missing a driver",
+        28 => "drivers are not installed",
+        29 => "disabled because its firmware didn't give it resources",
+        31 => "not working — Windows cannot load the required drivers",
+        32 => "a driver (service) for this device has been disabled",
+        33 => "cannot determine which resources it needs",
+        37 => "driver returned a failure on DriverEntry",
+        38 => "a previous instance of the driver is still in memory",
+        39 => "driver is corrupted or missing",
+        40 => "its service key in the registry is invalid",
+        43 => "Windows stopped it because it reported problems (hardware failure)",
+        44 => "an application or service shut it down",
+        45 => "not connected to the computer",
+        46 => "not available because Windows is shutting down",
+        47 => "prepared for safe removal, but not removed",
+        48 => "blocked — software known to cause problems",
+        49 => "the system hive exceeded its size limit",
+        52 => "cannot verify the driver's digital signature",
+        _ => "has a problem",
+    };
 
     // ---- installed drivers ----
     public static IReadOnlyList<DriverDto> Drivers()

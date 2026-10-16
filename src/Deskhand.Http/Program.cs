@@ -637,7 +637,7 @@ api.MapGet("/hybrid/sessions", (Deskhand.Core.Fleet.AgentRegistry reg) => Result
 // updates (KBs), PnP devices (optional ?class=Net|Display|Media…), drivers, audio devices.
 api.MapGet("/hardware/disks", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Disks()));
 api.MapGet("/hardware/updates", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.WindowsUpdates()));
-api.MapGet("/hardware/devices", (string? @class) => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Devices(@class)));
+api.MapGet("/hardware/devices", (string? @class, bool? problemsOnly) => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Devices(@class, problemsOnly ?? false)));
 api.MapGet("/hardware/drivers", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Drivers()));
 api.MapGet("/hardware/audio", () => Results.Ok(Deskhand.Core.Services.HardwareInfoService.Audio()));
 // Detailed hardware: computer model, BIOS, motherboard, GPUs, monitors, RAM sticks.
@@ -719,7 +719,7 @@ api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.D
 
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
-api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));
+api.MapGet("/fs", (string? path, int? offset, int? limit) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path, offset ?? 0, limit ?? 0)));
 // Read-only file/folder metadata: size, timestamps, attributes, and (for an exe/dll) version info + signature.
 api.MapGet("/fs/details", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Details(path)));
 

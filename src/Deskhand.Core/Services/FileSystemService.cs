@@ -3,7 +3,8 @@ using System.IO.Compression;
 namespace Deskhand.Core.Services;
 
 public record FileEntryDto(string Name, string Path, bool IsDirectory, long? Size, DateTime? Modified, string? Extension);
-public record DirListingDto(string Path, string? Parent, bool IsRoot, IReadOnlyList<FileEntryDto> Entries, string? Error = null);
+public record DirListingDto(string Path, string? Parent, bool IsRoot, IReadOnlyList<FileEntryDto> Entries, string? Error = null,
+    int Total = 0, int Offset = 0, bool HasMore = false);
 public record FileSearchDto(string Root, string Query, int Matches, bool Truncated, bool TimedOut, long ScannedDirs, IReadOnlyList<FileEntryDto> Results, string? Error = null);
 public record ContentMatchDto(string Path, string Name, int Line, string Text);
 public record ContentSearchDto(string Root, string Query, int Matches, int FilesMatched, bool Truncated, bool TimedOut, long ScannedFiles, IReadOnlyList<ContentMatchDto> Results, string? Error = null);
@@ -26,11 +27,12 @@ public record FileDetailsDto(string Path, string Name, bool IsDirectory, long? S
 /// </summary>
 public static class FileSystemService
 {
-    private const int MaxEntries = 5000;   // cap huge directories so a listing can't blow up the response
+    private const int MaxEntries = 5000;   // default page size when no limit is given (legacy single-shot cap)
+    private const int MaxScan = 200_000;   // hard cap on names scanned for the total/sort, to bound memory
 
     /// <summary>Browse a directory. <paramref name="path"/> empty/null lists the drives; otherwise a
     /// folder path (e.g. <c>C:\Users</c>). A file path returns an error pointing at process-launch.</summary>
-    public static DirListingDto Browse(string? path)
+    public static DirListingDto Browse(string? path, int offset = 0, int limit = 0)
     {
         path = (path ?? "").Trim().Trim('"');
         if (path.Length == 0) return Roots();
@@ -49,32 +51,40 @@ public static class FileSystemService
 
         try
         {
-            var di = new DirectoryInfo(full);
-            var entries = new List<FileEntryDto>();
+            // Enumerate NAMES only (cheap — no per-file stat), sort folders-first/alphabetical, then stat ONLY the
+            // requested page. So paging a 50k-file folder reads 50k names but stats just the page (fast + light).
+            string parent = Directory.GetParent(full)?.FullName ?? "";
+            var dirNames = Safe(() => Directory.EnumerateDirectories(full)).Select(System.IO.Path.GetFileName).Where(n => n is not null).Take(MaxScan).ToList();
+            var fileNames = Safe(() => Directory.EnumerateFiles(full)).Select(System.IO.Path.GetFileName).Where(n => n is not null).Take(MaxScan).ToList();
+            dirNames.Sort(StringComparer.OrdinalIgnoreCase);
+            fileNames.Sort(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var d in Safe(() => di.EnumerateDirectories()))
+            int total = dirNames.Count + fileNames.Count;
+            offset = Math.Max(0, offset);
+            int take = limit > 0 ? limit : MaxEntries;   // limit<=0 → the legacy single-shot cap
+
+            // Build the page as a flat folders-then-files sequence without materializing the whole thing.
+            var entries = new List<FileEntryDto>(Math.Min(take, total));
+            for (int i = offset; i < total && entries.Count < take; i++)
             {
-                if (entries.Count >= MaxEntries) break;
-                DateTime? mod = null; try { mod = d.LastWriteTime; } catch { }
-                entries.Add(new FileEntryDto(d.Name, d.FullName, true, null, mod, null));
-            }
-            foreach (var f in Safe(() => di.EnumerateFiles()))
-            {
-                if (entries.Count >= MaxEntries) break;
-                long? size = null; DateTime? mod = null;
-                try { size = f.Length; } catch { }
-                try { mod = f.LastWriteTime; } catch { }
-                entries.Add(new FileEntryDto(f.Name, f.FullName, false, size, mod,
-                    string.IsNullOrEmpty(f.Extension) ? null : f.Extension));
+                if (i < dirNames.Count)
+                {
+                    var name = dirNames[i]!; var fp = System.IO.Path.Combine(full, name);
+                    DateTime? mod = null; try { mod = Directory.GetLastWriteTime(fp); } catch { }
+                    entries.Add(new FileEntryDto(name, fp, true, null, mod, null));
+                }
+                else
+                {
+                    var name = fileNames[i - dirNames.Count]!; var fp = System.IO.Path.Combine(full, name);
+                    long? size = null; DateTime? mod = null;
+                    try { var fi = new FileInfo(fp); size = fi.Length; mod = fi.LastWriteTime; } catch { }
+                    var ext = System.IO.Path.GetExtension(name);
+                    entries.Add(new FileEntryDto(name, fp, false, size, mod, string.IsNullOrEmpty(ext) ? null : ext));
+                }
             }
 
-            // Folders first, then files; each alphabetical, case-insensitive.
-            var ordered = entries
-                .OrderByDescending(e => e.IsDirectory)
-                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            return new DirListingDto(full, Directory.GetParent(full)?.FullName, false, ordered);
+            bool hasMore = offset + entries.Count < total;
+            return new DirListingDto(full, parent, false, entries, null, total, offset, hasMore);
         }
         catch (UnauthorizedAccessException) { return new DirListingDto(full, null, false, Array.Empty<FileEntryDto>(), "Access denied — this folder needs elevation."); }
         catch (Exception ex) { return new DirListingDto(full, null, false, Array.Empty<FileEntryDto>(), ex.Message); }

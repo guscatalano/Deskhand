@@ -140,9 +140,10 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_windows_updates"), Description("Installed Windows updates / hotfixes (KBs), newest first: { hotFixId (e.g. KB5034123), description, installedOn, installedBy }. Read-only (Win32_QuickFixEngineering).")]
     public static string WindowsUpdates() => Json(Deskhand.Core.Services.HardwareInfoService.WindowsUpdates());
 
-    [McpServerTool(Name = "deskhand_devices"), Description("PnP devices (Device Manager-like), read-only: { name, class, manufacturer, status, deviceId }. Optionally filter by PNP class (e.g. \"Net\", \"Display\", \"Media\", \"USB\", \"System\"); omit for all. Can be hundreds of rows.")]
-    public static string Devices([Description("PNP class filter, e.g. \"Net\" / \"Display\" / \"Media\". Empty = all devices.")] string? classFilter = null)
-        => Json(Deskhand.Core.Services.HardwareInfoService.Devices(classFilter));
+    [McpServerTool(Name = "deskhand_devices"), Description("PnP devices (Device Manager-like), read-only: { name, class, manufacturer, status, deviceId, problemCode, problem }. Devices WITH A PROBLEM are listed first; problemCode is the Device Manager code (10=cannot start, 28=no driver, 43=hardware failure, …) and problem is its description (null when the device is working). Set problemsOnly=true to return ONLY devices with a problem (the quick 'what's broken' view). Optionally filter by PNP class (e.g. \"Net\", \"Display\", \"USB\"); omit for all.")]
+    public static string Devices([Description("PNP class filter, e.g. \"Net\" / \"Display\" / \"Media\". Empty = all devices.")] string? classFilter = null,
+        [Description("Only return devices that have a Device Manager problem (a yellow-bang). Default false.")] bool problemsOnly = false)
+        => Json(Deskhand.Core.Services.HardwareInfoService.Devices(classFilter, problemsOnly));
 
     [McpServerTool(Name = "deskhand_drivers"), Description("Installed drivers (read-only, Win32_PnPSignedDriver): { device, provider, version, date, infName, signed }. Can be hundreds of rows and take several seconds (the WMI query is slow).")]
     public static string Drivers() => Json(Deskhand.Core.Services.HardwareInfoService.Drivers());
@@ -251,9 +252,11 @@ public static class DeskhandTools
         return Json(r);
     }
 
-    [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], error? } with folders first. It only lists metadata — it does NOT read file contents; to OPEN a file with its default app, pass its path to deskhand_launch_process. To read the BYTES of a file, use deskhand_read_file. Folders needing elevation return an access error, not a crash.")]
-    public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
-        => Json(Deskhand.Core.Services.FileSystemService.Browse(path));
+    [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], total, offset, hasMore, error? } with folders first. PAGINATED for large folders: pass limit (page size) and offset to page through — total is the full count and hasMore says if more remain (fetch offset+limit next). Only lists metadata — does NOT read file contents; OPEN a file via deskhand_launch_process, read its BYTES via deskhand_read_file. Access-denied folders return an error, not a crash.")]
+    public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null,
+        [Description("Page size (max entries to return). 0/omitted = up to 5000 in one shot.")] int limit = 0,
+        [Description("Skip this many entries (for paging). Default 0.")] int offset = 0)
+        => Json(Deskhand.Core.Services.FileSystemService.Browse(path, offset, limit));
 
     [McpServerTool(Name = "deskhand_file_details"), Description("Read-only metadata for one file or folder: { path, name, isDirectory, size, extension, created, modified, accessed, attributes[], version?, signature?, error? }. For an exe/dll, version = { fileVersion, productVersion, company, product, description, originalFilename, copyright } and signature = { signed, subject, issuer, notAfter } (Authenticode). Reads no file content.")]
     public static string FileDetails([Description("Full path to the file or folder.")] string path)

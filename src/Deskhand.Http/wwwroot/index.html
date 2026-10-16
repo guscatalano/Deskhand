@@ -447,7 +447,7 @@
       <div id="hwAudioDefault"></div>
       <div id="hwAudio" style="margin-top:6px"></div>
       <div class="sect" style="margin-top:18px"><div class="h">Devices</div></div>
-      <div class="row"><input id="hwDevClass" placeholder="class filter: Net · Display · Media · USB · System … (empty = all)" style="flex:1;font-family:var(--mono);font-size:12px"><button class="btn" id="hwDevLoad">Load</button></div>
+      <div class="row"><input id="hwDevClass" placeholder="class filter: Net · Display · Media · USB · System … (empty = all)" style="flex:1;font-family:var(--mono);font-size:12px"><button class="btn" id="hwDevLoad">Load</button><button class="btn" id="hwDevProblems" title="only devices with a Device Manager problem (yellow-bang)">⚠ Problems</button></div>
       <div id="hwDevices" style="margin-top:8px"></div>
       <div class="sect" style="margin-top:18px"><div class="h">Drivers</div></div>
       <div class="row"><button class="btn" id="hwDrvLoad">Load drivers</button><span class="lbl" id="hwDrvMsg" style="color:var(--ink-3)">slow — a few seconds</span></div>
@@ -1358,9 +1358,53 @@ const fsSel=new Set();
 function fmtSize(n){ if(n==null) return ""; const u=["B","KB","MB","GB","TB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return (i?v.toFixed(1):v)+" "+u[i]; }
 function fsUpdateSel(){ $("#fsSelCount").textContent=fsSel.size+" selected"; ["fsZipSel","fsCopySel","fsMoveSel","fsDelSel"].forEach(id=>{ const b=$("#"+id); if(b) b.disabled=fsSel.size===0; }); }
 function fsReload(){ loadFiles(fsIsRoot?"":fsCurrent); }
+let FS_PAGE=500, fsOffset=0, fsTotal=0;
+// Build one file-row element (used for the first page and every "Load more" append).
+function fsMakeRow(e){
+  const row=elm("div","fsrow"+(e.isDirectory?" dir":""));
+  const cbCell=elm("div");
+  if(!fsIsRoot){ const cb=elm("input"); cb.type="checkbox"; cb.onclick=()=>{ if(cb.checked) fsSel.add(e.path); else fsSel.delete(e.path); fsUpdateSel(); }; cbCell.append(cb); }
+  const nm=elm("div","nm"); const tick=elm("span"); tick.style.color="var(--ink-3)"; tick.textContent=e.isDirectory?"▸":"·"; const t=elm("span"); t.textContent=e.name; nm.append(tick,t);
+  if(e.isDirectory) nm.onclick=()=>loadFiles(e.path);
+  const sz=elm("div","sz"); sz.textContent=e.isDirectory?"":fmtSize(e.size);
+  const md=elm("div","md"); md.textContent=e.modified?new Date(e.modified).toLocaleString():"";
+  const act=elm("div","act");
+  const link=(label,cls,fn)=>{ const a=elm("a"); a.textContent=label; if(cls) a.className=cls; a.onclick=guard(fn); return a; };
+  act.append(link("details",null,async()=>fsDetails(e.path,e.name)));
+  if(e.isDirectory){ act.append(link("open",null,async()=>loadFiles(e.path))); }
+  else {
+    act.append(link("view",null,async()=>fsView(e.path,e.name)));
+    act.append(link("download",null,async()=>fsDownload(e.path,e.name)));
+    act.append(link("launch",null,async()=>{ const r=await api("/process/launch","POST",{path:e.path,waitForWindowMs:4000}); toast(r.hasWindow?`launched: ${r.window?.name||r.processName||e.name}`:`launched: ${e.name}`); }));
+    if((e.extension||"").toLowerCase()===".zip") act.append(link("unzip",null,async()=>{ const r=await api("/fs/unzip","POST",{zipPath:e.path}); toast(r.ok?`unzipped (${r.detail})`:r.error,!r.ok); fsReload(); }));
+  }
+  if(!fsIsRoot){
+    act.append(link("rename",null,async()=>{ const nn=prompt("Rename to:",e.name); if(!nn||nn===e.name) return; const r=await api("/fs/rename","POST",{path:e.path,newName:nn}); toast(r.ok?"renamed":r.error,!r.ok); fsReload(); }));
+    act.append(link("delete","danger",async()=>{ if(!confirm(`Delete "${e.name}" to the Recycle Bin?`)) return; const r=await api("/fs/delete","POST",{path:e.path}); toast(r.ok?`deleted (${r.detail})`:r.error,!r.ok); fsReload(); }));
+  }
+  row.append(cbCell,nm,sz,md,act); return row;
+}
+function fsHdrText(){ return fsOffset>=fsTotal ? (fsTotal.toLocaleString()+" entr"+(fsTotal===1?"y":"ies")) : ("showing "+fsOffset.toLocaleString()+" of "+fsTotal.toLocaleString()); }
+// A "Load more" button that fetches + appends the next page (big folders don't dump thousands of rows at once).
+function fsAddMore(hasMore, sect){
+  const old=$("#fsMore"); if(old) old.remove();
+  if(!hasMore || fsIsRoot) return;
+  const b=elm("button","btn sm"); b.id="fsMore"; b.style.margin="8px 0 0 6px"; b.textContent="Load more ("+(fsTotal-fsOffset).toLocaleString()+" left)";
+  b.onclick=guard(async()=>{
+    b.remove();
+    const d=await api("/fs?path="+encodeURIComponent(fsCurrent)+"&limit="+FS_PAGE+"&offset="+fsOffset);
+    (d.entries||[]).forEach(e=>sect.append(fsMakeRow(e)));
+    fsOffset+=(d.entries||[]).length;
+    const cnt=sect.querySelector(".count"); if(cnt) cnt.textContent=fsHdrText();
+    fsAddMore(d.hasMore, sect);
+  });
+  sect.append(b);
+}
 const loadFiles=guard(async(path)=>{
-  const d=await api("/fs?path="+encodeURIComponent(path||""));
+  fsOffset=0;
+  const d=await api("/fs?path="+encodeURIComponent(path||"")+"&limit="+FS_PAGE);
   fsIsRoot=!!d.isRoot; fsParent=d.parent||null; fsCurrent=fsIsRoot?"":(d.path||""); fsLoaded=true;
+  fsTotal=d.total||(d.entries?d.entries.length:0);
   fsSel.clear(); fsUpdateSel();
   $("#fsPath").value=fsCurrent;
   $("#fsUploadBtn").disabled=fsIsRoot;
@@ -1373,35 +1417,13 @@ const loadFiles=guard(async(path)=>{
     segs.forEach((seg,i)=>{ acc = i===0 ? seg+"\\" : acc.replace(/\\$/,"")+"\\"+seg; const sep=elm("span"); sep.textContent=" \\ "; sep.style.color="var(--ink-3)"; crumb.append(sep, mk(seg,acc)); }); }
   const body=$("#fsBody"); body.innerHTML="";
   if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; return; }
-  const nDir=d.entries.filter(e=>e.isDirectory).length, nFile=d.entries.length-nDir;
-  const sect=elm("div","sect"); const h=elm("div","h"); h.innerHTML=`entries <span class="count">${nDir} folder${nDir===1?"":"s"} · ${nFile} file${nFile===1?"":"s"}</span>`; sect.append(h);
-  d.entries.forEach(e=>{
-    const row=elm("div","fsrow"+(e.isDirectory?" dir":""));
-    // select checkbox (not for drive roots)
-    const cbCell=elm("div");
-    if(!fsIsRoot){ const cb=elm("input"); cb.type="checkbox"; cb.onclick=()=>{ if(cb.checked) fsSel.add(e.path); else fsSel.delete(e.path); fsUpdateSel(); }; cbCell.append(cb); }
-    const nm=elm("div","nm"); const tick=elm("span"); tick.style.color="var(--ink-3)"; tick.textContent=e.isDirectory?"▸":"·"; const t=elm("span"); t.textContent=e.name; nm.append(tick,t);
-    if(e.isDirectory) nm.onclick=()=>loadFiles(e.path);
-    const sz=elm("div","sz"); sz.textContent=e.isDirectory?"":fmtSize(e.size);
-    const md=elm("div","md"); md.textContent=e.modified?new Date(e.modified).toLocaleString():"";
-    const act=elm("div","act");
-    const link=(label,cls,fn)=>{ const a=elm("a"); a.textContent=label; if(cls) a.className=cls; a.onclick=guard(fn); return a; };
-    act.append(link("details",null,async()=>fsDetails(e.path,e.name)));
-    if(e.isDirectory){ act.append(link("open",null,async()=>loadFiles(e.path))); }
-    else {
-      act.append(link("view",null,async()=>fsView(e.path,e.name)));
-      act.append(link("download",null,async()=>fsDownload(e.path,e.name)));
-      act.append(link("launch",null,async()=>{ const r=await api("/process/launch","POST",{path:e.path,waitForWindowMs:4000}); toast(r.hasWindow?`launched: ${r.window?.name||r.processName||e.name}`:`launched: ${e.name}`); }));
-      if((e.extension||"").toLowerCase()===".zip") act.append(link("unzip",null,async()=>{ const r=await api("/fs/unzip","POST",{zipPath:e.path}); toast(r.ok?`unzipped (${r.detail})`:r.error,!r.ok); fsReload(); }));
-    }
-    if(!fsIsRoot){
-      act.append(link("rename",null,async()=>{ const nn=prompt("Rename to:",e.name); if(!nn||nn===e.name) return; const r=await api("/fs/rename","POST",{path:e.path,newName:nn}); toast(r.ok?"renamed":r.error,!r.ok); fsReload(); }));
-      act.append(link("delete","danger",async()=>{ if(!confirm(`Delete "${e.name}" to the Recycle Bin?`)) return; const r=await api("/fs/delete","POST",{path:e.path}); toast(r.ok?`deleted (${r.detail})`:r.error,!r.ok); fsReload(); }));
-    }
-    row.append(cbCell,nm,sz,md,act); sect.append(row);
-  });
-  if(!d.entries.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(empty)"; sect.append(em); }
+  const sect=elm("div","sect"); const h=elm("div","h");
+  (d.entries||[]).forEach(e=>sect.append(fsMakeRow(e)));
+  fsOffset=(d.entries||[]).length;
+  h.innerHTML=`entries <span class="count">${fsHdrText()}</span>`; sect.insertBefore(h, sect.firstChild);
+  if(!(d.entries&&d.entries.length)){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(empty)"; sect.append(em); }
   body.append(sect);
+  fsAddMore(d.hasMore, sect);
 });
 // content search (grep): renders matching lines (file · line · text) in place of the listing.
 const fsGrepRender=async(q)=>{
@@ -1986,12 +2008,23 @@ const loadHardware=guard(async()=>{
   adc.append(hwKv("Default recording", fmtEp(ad.recording)));
 });
 $("#hwRefresh").onclick=loadHardware;
-$("#hwDevLoad").onclick=guard(async()=>{
+async function loadDevices(problemsOnly){
   const cls=$("#hwDevClass").value.trim();
-  const devs=await api("/hardware/devices"+(cls?("?class="+encodeURIComponent(cls)):""));
-  const c=$("#hwDevices"); c.innerHTML=`<div class="lbl" style="color:var(--ink-3);margin-bottom:6px">${devs.length} devices</div>`;
-  devs.forEach(d=>c.append(hwKv((d.class||"—")+" · "+(d.name||""), (d.manufacturer||"")+" · "+(d.status||""))));
-});
+  const qs=[]; if(cls) qs.push("class="+encodeURIComponent(cls)); if(problemsOnly) qs.push("problemsOnly=true");
+  const devs=await api("/hardware/devices"+(qs.length?("?"+qs.join("&")):""));
+  const c=$("#hwDevices"); c.innerHTML="";
+  const probs=devs.filter(d=>d.problemCode>0).length;
+  const hdr=elm("div","lbl"); hdr.style.cssText="color:var(--ink-3);margin-bottom:6px";
+  hdr.textContent=devs.length+" device"+(devs.length===1?"":"s")+(probs?(" · "+probs+" with a problem"):(problemsOnly?" · none with a problem ✓":""));
+  c.append(hdr);
+  devs.forEach(d=>{
+    const row=hwKv((d.class||"—")+" · "+(d.name||""), (d.manufacturer||"")+" · "+(d.status||""));
+    if(d.problem){ const p=elm("div"); p.style.cssText="color:var(--crit);font-size:11px;font-family:var(--mono);margin:2px 0 0 2px"; p.textContent="⚠ "+d.problem; row.append(p); }
+    c.append(row);
+  });
+}
+$("#hwDevLoad").onclick=guard(()=>loadDevices(false));
+$("#hwDevProblems").onclick=guard(()=>loadDevices(true));
 $("#hwDrvLoad").onclick=guard(async()=>{
   $("#hwDrvMsg").textContent="loading (a few seconds)…";
   const drv=await api("/hardware/drivers"); $("#hwDrvMsg").textContent=drv.length+" drivers";

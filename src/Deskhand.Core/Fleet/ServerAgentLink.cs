@@ -15,6 +15,7 @@ public sealed class ServerAgentLink(WebSocket ws, AgentHello hello) : IAgentLink
     public string AgentId { get; } = hello.AgentId;
     public string MachineName { get; } = hello.MachineName;
     public MachineInfoDto? Info { get; } = hello.Info;
+    public int SessionId { get; } = hello.SessionId;   // the agent's Windows TS session (-1 if not reported)
 
     public async Task ReadLoopAsync()
     {

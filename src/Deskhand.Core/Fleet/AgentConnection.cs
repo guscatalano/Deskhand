@@ -43,7 +43,7 @@ public static class AgentConnection
         // reports the remote target's host, whereas Environment.MachineName would be the connector's box.
         var info = services.Backend.GetMachineInfo();
         var machineName = string.IsNullOrWhiteSpace(info.MachineName) ? Environment.MachineName : info.MachineName;
-        var hello = new AgentHello(agentId, machineName, info);
+        var hello = new AgentHello(agentId, machineName, info, System.Diagnostics.Process.GetCurrentProcess().SessionId);
         await WsUtil.SendTextAsync(ws, FleetJson.Serialize(hello), gate, ct);
         log?.Invoke($"connected to {serverWsUrl} as '{agentId}'");
 

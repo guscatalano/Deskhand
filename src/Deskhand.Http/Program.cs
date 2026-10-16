@@ -145,8 +145,19 @@ double slowRequestMs = double.TryParse(Environment.GetEnvironmentVariable("DESKH
 builder.Services.AddSingleton(requestLog);
 builder.Services.AddHostedService<WebhookForwarder>();
 builder.Services.AddHostedService<AutoDismissWorker>();   // continuously-present nag auto-dismisser (kill-switch bound)
+
+// Hybrid local-fleet mode (DESKHAND_HYBRID=1): keep the flat tools on 8791, but route DESKTOP ops (the
+// IAutomationBackend seam — UIA/capture/input) to a PER-SESSION agent — by default the active console session.
+// Direct services (files/registry/shell/events/disk) still run in THIS session-0 process. Agents dial in at
+// /agent/connect (wired after the app is built). With the flag off, the backend is the in-process local one.
+var hv = (Environment.GetEnvironmentVariable("DESKHAND_HYBRID") ?? "").Trim().ToLowerInvariant();
+bool hybrid = hv is "1" or "true" or "on" or "yes";
+string? fleetToken = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN") ?? Environment.GetEnvironmentVariable("DESKHAND_TOKEN");
+var agentRegistry = hybrid ? new Deskhand.Core.Fleet.AgentRegistry() : null;
+if (agentRegistry is not null) builder.Services.AddSingleton(agentRegistry);
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
-    new GovernedBackend(localBackend, controlState, auditLog, captureNotifier, macroRecorder));
+    new GovernedBackend(hybrid ? new Deskhand.Core.Fleet.RoutingBackend(agentRegistry!) : localBackend,
+        controlState, auditLog, captureNotifier, macroRecorder));
 
 // Also serve MCP over Streamable HTTP at /mcp, sharing the SAME backend + governance + events, so
 // the dashboard reflects and controls whatever an MCP client does through this one process.
@@ -166,6 +177,29 @@ builder.Services.AddSwaggerGen(o => o.SwaggerDoc("v1", new Microsoft.OpenApi.Mod
 }));
 
 var app = builder.Build();
+
+// Hybrid: accept per-session agents dialing in (ws, loopback by default) and let the RoutingBackend route desktop
+// ops to them. Registered before the global auth middleware so it short-circuits there — the handler does its own
+// fleet-token check (DESKHAND_FLEET_TOKEN, else DESKHAND_TOKEN).
+if (hybrid)
+{
+    app.UseWebSockets();
+    app.Map("/agent/connect", async (HttpContext ctx) =>
+    {
+        if (!string.IsNullOrEmpty(fleetToken) && !FixedEquals(BearerOf(ctx), fleetToken)) { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return; }
+        if (!ctx.WebSockets.IsWebSocketRequest) { ctx.Response.StatusCode = StatusCodes.Status400BadRequest; return; }
+        using var ws = await ctx.WebSockets.AcceptWebSocketAsync();
+        var helloMsg = await Deskhand.Core.Fleet.WsUtil.ReceiveTextAsync(ws, ctx.RequestAborted);
+        var hello = helloMsg is null ? null : Deskhand.Core.Fleet.FleetJson.Deserialize<Deskhand.Core.Fleet.AgentHello>(helloMsg);
+        if (hello is null) return;
+        var link = new Deskhand.Core.Fleet.ServerAgentLink(ws, hello);
+        agentRegistry!.Add(link);
+        auditLog.Record("agent_connect", $"{hello.AgentId} session={hello.SessionId} ({hello.MachineName})", "connect");
+        try { await link.ReadLoopAsync(); }
+        finally { agentRegistry.Remove(hello.AgentId); link.Dispose(); auditLog.Record("agent_disconnect", hello.AgentId, "disconnect"); }
+    });
+    Console.WriteLine("Hybrid mode ON: desktop ops route to per-session agents; agents connect at ws://127.0.0.1:<port>/agent/connect");
+}
 
 // Reboot-surviving recordings: on startup, resume any recording that was interrupted (its logon task relaunched
 // us after a sign-in) under its original id into a new segment; on an orderly shutdown, finalize the open segment

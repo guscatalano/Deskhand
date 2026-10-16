@@ -22,8 +22,10 @@ public static class FleetJson
     public static T? Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, Options);
 }
 
-/// <summary>First message the agent sends after connecting: who it is and what it can do.</summary>
-public sealed record AgentHello(string AgentId, string MachineName, MachineInfoDto Info);
+/// <summary>First message the agent sends after connecting: who it is and what it can do. <see cref="SessionId"/>
+/// is the agent's Windows Terminal-Services session id (so the server can route "the active console session" to the
+/// right agent); -1 from an older agent that doesn't report it.</summary>
+public sealed record AgentHello(string AgentId, string MachineName, MachineInfoDto Info, int SessionId = -1);
 
 /// <summary>Envelope pushed from server → agent.</summary>
 public sealed record FleetCommand(string Id, string Method, JsonElement Args);

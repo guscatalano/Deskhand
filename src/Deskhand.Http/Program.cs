@@ -720,6 +720,8 @@ api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.D
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
 api.MapGet("/fs", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path)));
+// Read-only file/folder metadata: size, timestamps, attributes, and (for an exe/dll) version info + signature.
+api.MapGet("/fs/details", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Details(path)));
 
 // Recursively search a folder tree by file/folder NAME (substring, or a glob with * and ?). Read-only,
 // names only (like /fs) — bounded by maxResults + a time budget so it can't run away. q is the query.

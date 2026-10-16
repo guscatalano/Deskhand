@@ -1386,6 +1386,7 @@ const loadFiles=guard(async(path)=>{
     const md=elm("div","md"); md.textContent=e.modified?new Date(e.modified).toLocaleString():"";
     const act=elm("div","act");
     const link=(label,cls,fn)=>{ const a=elm("a"); a.textContent=label; if(cls) a.className=cls; a.onclick=guard(fn); return a; };
+    act.append(link("details",null,async()=>fsDetails(e.path,e.name)));
     if(e.isDirectory){ act.append(link("open",null,async()=>loadFiles(e.path))); }
     else {
       act.append(link("view",null,async()=>fsView(e.path,e.name)));
@@ -1490,6 +1491,27 @@ const fsView=guard(async(path,name)=>{
     $("#vwMeta").textContent=fmtSize(d.size)+(d.truncated?` · showing first ${fmtSize(d.readBytes)}`:"");
   }
   body.scrollTop=0;
+  $("#txtviewer").hidden=false;
+});
+// file/folder details: size, timestamps, attributes, and (for an exe/dll) version info + signature — shown in the overlay.
+const fsDetails=guard(async(path,name)=>{
+  const d=await api("/fs/details?path="+encodeURIComponent(path));
+  if(d.error){ toast("details: "+d.error,true); return; }
+  const rows=[]; const add=(k,v)=>{ if(v!=null&&v!=="") rows.push(k.padEnd(16)+" "+v); };
+  add("Name", d.name); add("Path", d.path);
+  add("Type", d.isDirectory?"Folder":("File"+(d.extension?" ("+d.extension+")":"")));
+  if(!d.isDirectory&&d.size!=null) add("Size", fmtSize(d.size)+" ("+d.size.toLocaleString()+" bytes)");
+  add("Modified", d.modified); add("Created", d.created); add("Accessed", d.accessed);
+  if(d.attributes&&d.attributes.length) add("Attributes", d.attributes.join(", "));
+  if(d.version){ rows.push(""); rows.push("— Version —");
+    add("File version", d.version.fileVersion); add("Product version", d.version.productVersion);
+    add("Company", d.version.company); add("Product", d.version.product); add("Description", d.version.description);
+    add("Original name", d.version.originalFilename); add("Copyright", d.version.copyright); }
+  if(d.signature){ rows.push(""); rows.push("— Signature —"); add("Signed", d.signature.signed?"yes":"no");
+    if(d.signature.signed){ add("Signer", d.signature.subject); add("Issuer", d.signature.issuer); add("Expires", d.signature.notAfter); } }
+  $("#vwTitle").textContent=name; $("#vwTitle").title=path;
+  $("#vwBody").textContent=rows.join("\n"); $("#vwBody").classList.add("wrap");
+  $("#vwMeta").textContent="details"; vwPath=null;
   $("#txtviewer").hidden=false;
 });
 function vwCloseFn(){ $("#txtviewer").hidden=true; $("#vwBody").textContent=""; vwPath=null; }

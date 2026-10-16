@@ -255,6 +255,10 @@ public static class DeskhandTools
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null)
         => Json(Deskhand.Core.Services.FileSystemService.Browse(path));
 
+    [McpServerTool(Name = "deskhand_file_details"), Description("Read-only metadata for one file or folder: { path, name, isDirectory, size, extension, created, modified, accessed, attributes[], version?, signature?, error? }. For an exe/dll, version = { fileVersion, productVersion, company, product, description, originalFilename, copyright } and signature = { signed, subject, issuer, notAfter } (Authenticode). Reads no file content.")]
+    public static string FileDetails([Description("Full path to the file or folder.")] string path)
+        => Json(Deskhand.Core.Services.FileSystemService.Details(path));
+
     [McpServerTool(Name = "deskhand_search_files"), Description("Recursively search a folder tree by file/folder NAME (read-only). query is a case-insensitive substring, or a glob with * and ? (e.g. \"*.log\", \"config.*\"). Returns { root, query, matches, truncated, timedOut, scannedDirs, results[{name, path, isDirectory, size, modified, extension}] } with folders first. Names only — it does NOT search file contents. Bounded by maxResults (default 200, cap 2000) and an 8s time budget; access-denied subtrees and symlinks are skipped. path must be a folder (not empty).")]
     public static string SearchFiles(
         [Description("Folder to search under, e.g. \"C:\\\\Users\\\\Public\". Required (empty is the drive list, which can't be searched).")] string path,

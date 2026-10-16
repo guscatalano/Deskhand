@@ -12,6 +12,11 @@ public record FileTextDto(string Path, string Name, long Size, long ReadBytes, b
 public record WriteResultDto(string Path, long Size, bool Overwritten, string? Error = null);
 public record FsOpResultDto(string Op, string Path, string? Dest, bool Ok, string? Detail = null, string? Error = null);
 public record RecycleEmptyDto(bool Ok, string? Drive, long? ItemsRemoved, long? BytesFreed, string? Error = null);
+public record FileVersionDto(string? FileVersion, string? ProductVersion, string? Company, string? Product, string? Description, string? OriginalFilename, string? Copyright);
+public record FileSignatureDto(bool Signed, string? Subject, string? Issuer, string? NotAfter);
+public record FileDetailsDto(string Path, string Name, bool IsDirectory, long? Size, string? Extension,
+    string? Created, string? Modified, string? Accessed, IReadOnlyList<string> Attributes,
+    FileVersionDto? Version, FileSignatureDto? Signature, string? Error = null);
 
 /// <summary>
 /// Read-only file-system browsing: list the folders and files in a directory. It never writes, deletes,
@@ -402,6 +407,57 @@ public static class FileSystemService
         catch (Exception ex) { return new FsOpResultDto("create_folder", path, null, false, null, ex.Message); }
     }
 
+    /// <summary>Read-only metadata for a file or folder: size, timestamps, attributes, and — for a PE file
+    /// (exe/dll) — its version info and Authenticode signature. Nothing is changed.</summary>
+    public static FileDetailsDto Details(string? path)
+    {
+        var r = Full(path, "details");
+        if (r.error is not null) return new FileDetailsDto(path ?? "", System.IO.Path.GetFileName(path ?? ""), false, null, null, null, null, null, Array.Empty<string>(), null, null, r.error);
+        var full = r.full!;
+        string name = System.IO.Path.GetFileName(full.TrimEnd('\\'));
+        try
+        {
+            bool isDir = Directory.Exists(full);
+            if (!isDir && !File.Exists(full))
+                return new FileDetailsDto(full, name, false, null, null, null, null, null, Array.Empty<string>(), null, null, "not found");
+
+            var attrs = File.GetAttributes(full);
+            string[] interesting = { "ReadOnly", "Hidden", "System", "Archive", "Compressed", "Encrypted", "ReparsePoint", "Temporary", "Offline", "Directory" };
+            var attrList = interesting.Where(a => attrs.HasFlag(Enum.Parse<FileAttributes>(a))).ToList();
+
+            string L(DateTime t) => t.ToString("yyyy-MM-dd HH:mm:ss");
+            long? size = null; string? created, modified, accessed;
+            if (isDir) { var di = new DirectoryInfo(full); created = L(di.CreationTime); modified = L(di.LastWriteTime); accessed = L(di.LastAccessTime); }
+            else { var fi = new FileInfo(full); size = fi.Length; created = L(fi.CreationTime); modified = L(fi.LastWriteTime); accessed = L(fi.LastAccessTime); }
+
+            FileVersionDto? ver = null; FileSignatureDto? sig = null;
+            if (!isDir)
+            {
+                try
+                {
+                    var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(full);
+                    if (!string.IsNullOrEmpty(vi.FileVersion) || !string.IsNullOrEmpty(vi.ProductVersion) || !string.IsNullOrEmpty(vi.CompanyName) || !string.IsNullOrEmpty(vi.FileDescription))
+                        ver = new FileVersionDto(vi.FileVersion?.Trim(), vi.ProductVersion?.Trim(), vi.CompanyName?.Trim(), vi.ProductName?.Trim(), vi.FileDescription?.Trim(), vi.OriginalFilename?.Trim(), vi.LegalCopyright?.Trim());
+                }
+                catch { }
+                // Authoritative signed status via WinVerifyTrust (covers catalog-signed Windows files that have
+                // no embedded signature); the embedded cert, when present, gives the signer details.
+                bool signed = Signing.IsTrusted(full);
+                string? subj = null, iss = null, notAfter = null;
+                try
+                {
+                    using var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                        System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(full));
+                    subj = cert.Subject; iss = cert.Issuer; notAfter = cert.NotAfter.ToString("yyyy-MM-dd"); signed = true;
+                }
+                catch { }
+                sig = new FileSignatureDto(signed, subj, iss, notAfter);
+            }
+            return new FileDetailsDto(full, name, isDir, size, isDir ? null : System.IO.Path.GetExtension(full), created, modified, accessed, attrList, ver, sig);
+        }
+        catch (Exception ex) { return new FileDetailsDto(full, name, false, null, null, null, null, null, Array.Empty<string>(), null, null, ex.Message); }
+    }
+
     public static FsOpResultDto Delete(string? path, bool permanent)
     {
         var r = Full(path, "delete");
@@ -621,6 +677,85 @@ public static class FileSystemService
         {
             var candidate = (string.IsNullOrEmpty(dir) ? "" : dir + "/") + $"{stem} ({i}){ext}";
             if (used.Add(candidate)) return candidate;
+        }
+    }
+
+    // Authenticode trust check via WinVerifyTrust — returns true when the file has a valid, trusted signature
+    // (embedded OR via a security catalog, like most Windows system binaries). Embedded-only cert extraction
+    // (X509Certificate.CreateFromSignedFile) misses catalog signatures, so this is the authoritative "is signed".
+    private static class Signing
+    {
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private struct WINTRUST_FILE_INFO { public uint cbStruct; public string pcwszFilePath; public IntPtr hFile; public IntPtr pgKnownSubject; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct WINTRUST_DATA
+        {
+            public uint cbStruct; public IntPtr pPolicyCallbackData; public IntPtr pSIPClientData; public uint dwUIChoice;
+            public uint fdwRevocationChecks; public uint dwUnionChoice; public IntPtr pFile; public uint dwStateAction;
+            public IntPtr hWVTStateData; public IntPtr pwszURLReference; public uint dwProvFlags; public uint dwUIContext; public IntPtr pSignatureSettings;
+        }
+        [System.Runtime.InteropServices.DllImport("wintrust.dll", ExactSpelling = true)]
+        private static extern int WinVerifyTrust(IntPtr hwnd, ref Guid pgActionID, IntPtr pWVTData);
+        [System.Runtime.InteropServices.DllImport("wintrust.dll", SetLastError = true)]
+        private static extern bool CryptCATAdminAcquireContext(out IntPtr hCatAdmin, IntPtr pgSubsystem, uint dwFlags);
+        [System.Runtime.InteropServices.DllImport("wintrust.dll")]
+        private static extern bool CryptCATAdminReleaseContext(IntPtr hCatAdmin, uint dwFlags);
+        [System.Runtime.InteropServices.DllImport("wintrust.dll")]
+        private static extern bool CryptCATAdminCalcHashFromFileHandle(IntPtr hFile, ref uint pcbHash, byte[]? pbHash, uint dwFlags);
+        [System.Runtime.InteropServices.DllImport("wintrust.dll")]
+        private static extern IntPtr CryptCATAdminEnumCatalogFromHash(IntPtr hCatAdmin, byte[] pbHash, uint cbHash, uint dwFlags, ref IntPtr phPrevCatInfo);
+        [System.Runtime.InteropServices.DllImport("wintrust.dll")]
+        private static extern bool CryptCATAdminReleaseCatalogContext(IntPtr hCatAdmin, IntPtr hCatInfo, uint dwFlags);
+
+        // Signed if it has a trusted EMBEDDED signature, or its hash is in an installed security catalog (catalog-signed).
+        public static bool IsTrusted(string path) => VerifyEmbedded(path) || InCatalog(path);
+
+        private static bool InCatalog(string path)
+        {
+            IntPtr hCat = IntPtr.Zero;
+            try
+            {
+                if (!CryptCATAdminAcquireContext(out hCat, IntPtr.Zero, 0)) return false;
+                using var fs = File.OpenRead(path);
+                var h = fs.SafeFileHandle.DangerousGetHandle();
+                uint cb = 0; CryptCATAdminCalcHashFromFileHandle(h, ref cb, null, 0);
+                if (cb == 0) return false;
+                var hash = new byte[cb];
+                if (!CryptCATAdminCalcHashFromFileHandle(h, ref cb, hash, 0)) return false;
+                IntPtr prev = IntPtr.Zero;
+                IntPtr hCatInfo = CryptCATAdminEnumCatalogFromHash(hCat, hash, cb, 0, ref prev);
+                if (hCatInfo == IntPtr.Zero) return false;
+                CryptCATAdminReleaseCatalogContext(hCat, hCatInfo, 0);
+                return true;
+            }
+            catch { return false; }
+            finally { if (hCat != IntPtr.Zero) CryptCATAdminReleaseContext(hCat, 0); }
+        }
+
+        private static bool VerifyEmbedded(string path)
+        {
+            IntPtr pFile = IntPtr.Zero, pData = IntPtr.Zero;
+            try
+            {
+                var fi = new WINTRUST_FILE_INFO { cbStruct = (uint)System.Runtime.InteropServices.Marshal.SizeOf<WINTRUST_FILE_INFO>(), pcwszFilePath = path };
+                pFile = System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.InteropServices.Marshal.SizeOf<WINTRUST_FILE_INFO>());
+                System.Runtime.InteropServices.Marshal.StructureToPtr(fi, pFile, false);
+                var wd = new WINTRUST_DATA { cbStruct = (uint)System.Runtime.InteropServices.Marshal.SizeOf<WINTRUST_DATA>(), dwUIChoice = 2 /*WTD_UI_NONE*/, fdwRevocationChecks = 0, dwUnionChoice = 1 /*WTD_CHOICE_FILE*/, pFile = pFile, dwStateAction = 1 /*WTD_STATEACTION_VERIFY*/ };
+                pData = System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.InteropServices.Marshal.SizeOf<WINTRUST_DATA>());
+                System.Runtime.InteropServices.Marshal.StructureToPtr(wd, pData, false);
+                var action = new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE"); // WINTRUST_ACTION_GENERIC_VERIFY_V2
+                int res = WinVerifyTrust((IntPtr)(-1), ref action, pData);     // INVALID_HANDLE_VALUE = no UI
+                wd = System.Runtime.InteropServices.Marshal.PtrToStructure<WINTRUST_DATA>(pData);
+                wd.dwStateAction = 2 /*WTD_STATEACTION_CLOSE*/; System.Runtime.InteropServices.Marshal.StructureToPtr(wd, pData, false);
+                WinVerifyTrust((IntPtr)(-1), ref action, pData);
+                return res == 0;   // 0 = signed and trusted
+            }
+            catch { return false; }
+            finally
+            {
+                if (pData != IntPtr.Zero) System.Runtime.InteropServices.Marshal.FreeHGlobal(pData);
+                if (pFile != IntPtr.Zero) System.Runtime.InteropServices.Marshal.FreeHGlobal(pFile);
+            }
         }
     }
 

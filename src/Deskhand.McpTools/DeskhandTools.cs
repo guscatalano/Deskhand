@@ -129,6 +129,11 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_system_info"), Description("About this machine (read-only): Windows version + BuildLab, uptime, CPU (name/cores/live load %), memory (total/available/load), disks (size/free per drive), network interfaces (IPs/MAC/gateway/DNS), and Windows Firewall per-profile state. Nothing is changed. Takes ~250 ms (samples CPU load).")]
     public static string SystemInfo() => Json(Deskhand.Core.Services.SystemInfoService.Get());
 
+    [McpServerTool(Name = "deskhand_sessions"), Description("HYBRID MODE: the per-session agents currently connected — the interactive sessions a desktop tool can target. Each: { agentId, session, machine, user, elevated }. Desktop ops default to the active console session; to target another, add ?session=<id> to the /mcp URL (or an X-Deskhand-Session: <id> header) — that connection then drives that session (concurrent sessions = separate connections). Empty when hybrid mode is off (desktop tools run in this process's own session).")]
+    public static string Sessions(Deskhand.Core.Fleet.AgentRegistry registry) => Json(
+        registry.All.Select(a => new { agentId = a.AgentId, session = a.SessionId, machine = a.MachineName, user = a.Info?.UserName, elevated = a.Info?.IsElevated })
+                    .OrderBy(x => x.session).ToList());
+
     [McpServerTool(Name = "deskhand_disks"), Description("Physical disks with their partitions and logical volumes (read-only, via WMI): per disk — model, interface, media type, serial, size, partition count; per partition — size, type, bootable; per volume — drive letter, label, file system, size, free space.")]
     public static string Disks() => Json(Deskhand.Core.Services.HardwareInfoService.Disks());
 
@@ -384,7 +389,7 @@ public static class DeskhandTools
     }
 
     [McpServerTool(Name = "deskhand_run_command"), Description("Run a single command in a shell (default PowerShell; shell=\"cmd\" or \"pwsh\") and return its output: { shell, command, cwd, exitCode, stdout, stderr, durationMs, timedOut, truncated, jobId }. STATELESS — each call is a fresh process, so cd/variables do NOT persist between calls (pass cwd for a starting directory). AUTO-DETACH: a command that is still running after autoDetachMs (default 60000) is handed off to a background job and this returns { running:true, detached:true, jobId, pid, stdout } instead of blocking until the transport gives up — poll deskhand_shell_result(jobId) for the rest, or deskhand_shell_cancel(jobId) to stop it. So set a big timeoutMs (e.g. a 15-min install) freely; you'll get a jobId back quickly and the command keeps running. MOST POWERFUL tool (arbitrary code as the current user): OFF unless the host sets DESKHAND_ENABLE_SHELL, requires the kill switch armed, every command audited. Output is capped; the command is killed at timeoutMs (default 30000; 0 = no limit, for long installers/downloads).")]
-    public static string RunCommand(ControlState state, AuditLog audit, Deskhand.Core.Services.ShellJobStore jobs,
+    public static string RunCommand(ControlState state, AuditLog audit, Deskhand.Core.Services.ShellJobStore jobs, Deskhand.Core.Fleet.AgentRegistry registry,
         [Description("The command line to run, e.g. \"Get-Process | Sort CPU -Desc | Select -First 5\".")] string command,
         [Description("\"powershell\" (default), \"pwsh\" (PowerShell 7), or \"cmd\".")] string? shell = null,
         [Description("Working directory to start in (optional).")] string? cwd = null,
@@ -394,6 +399,16 @@ public static class DeskhandTools
     {
         if (!Deskhand.Core.Services.ShellService.Enabled) return "{\"error\":\"Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.\",\"type\":\"shell_disabled\"}";
         if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        // Hybrid: run_command defaults to this (session-0) host; ?session=N routes it to that session's agent so it
+        // runs AS THAT USER. (Routed execution is synchronous — the agent handles its own timeout; the host's
+        // auto-detach/job polling applies only to the local path.)
+        if (Deskhand.Core.Fleet.RoutingBackend.TargetSession.Value is int ts && ts > 0)
+        {
+            var link = registry.GetBySession(ts);
+            if (link is null) return "{\"error\":\"No Deskhand agent is connected in session " + ts + ".\",\"type\":\"no_agent\"}";
+            audit.Record("run_command", $"session={ts}: {command}", "routed");
+            return new Deskhand.Core.Fleet.RemoteAgentObserver(link).RunCommand(shell, command, cwd, timeoutMs).GetRawText();
+        }
         var (proc, sh, err) = Deskhand.Core.Services.ShellService.StartProcess(shell, command, cwd);
         if (proc is null) return Json(new { error = err, type = "shell_error" });
         return RunShellJob(jobs, audit, proc, sh, command, cwd, timeoutMs, autoDetachMs, async);

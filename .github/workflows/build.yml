@@ -98,8 +98,13 @@ jobs:
           # active console session so Deskhand follows a fast user switch. Its own self-contained folder under launcher/.
           dotnet publish src/Deskhand.Fleet.Launcher -c Release -r win-x64 --self-contained true -o publish/http/launcher --nologo
           if (-not (Test-Path publish/http/launcher/deskhand-launcher.exe)) { throw 'publish missing deskhand-launcher.exe' }
+          # Per-session agent (deskhand-agent.exe): hybrid mode spawns one into each interactive session; it connects
+          # back to deskhand-http's /agent/connect and does the desktop work in its session. Its own self-contained
+          # folder under agent/.
+          dotnet publish src/Deskhand.Fleet.Agent -c Release -r win-x64 --self-contained true -o publish/http/agent --nologo
+          if (-not (Test-Path publish/http/agent/deskhand-agent.exe)) { throw 'publish missing deskhand-agent.exe' }
           # Bundle the install helpers + example config + secure-input provisioning so the zip is self-contained.
-          Copy-Item installer/install-logon-task.ps1, installer/install-session-follow.ps1, installer/deskhand.example.json, installer/provision-uia.ps1 publish/http/ -Force
+          Copy-Item installer/install-logon-task.ps1, installer/install-session-follow.ps1, installer/install-hybrid.ps1, installer/deskhand.example.json, installer/provision-uia.ps1 publish/http/ -Force
           New-Item -ItemType Directory -Force installer/out | Out-Null
           Compress-Archive -Path publish/http/* -DestinationPath installer/out/deskhand.zip -Force
           Write-Host "deskhand.zip -> $([int]((Get-Item installer/out/deskhand.zip).Length/1MB)) MB (self-contained)"

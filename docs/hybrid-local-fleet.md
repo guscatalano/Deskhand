@@ -46,10 +46,23 @@ deskhand-agent  (one per interactive session)            = LocalAutomationBacken
   / input tool calls route to the console agent; direct services still run locally.
 - **Phase 2 — streaming + recording.** `/capture/stream`, `/capture/stream.mp4`, and `ScreenRecorder` currently
   grab frames via `ScreenCapture` directly (blind from session 0); make them pull frames from the target agent.
-- **Phase 3 — session targeting + logon agent + installer.** `session=` override across desktop tools (and shell);
-  a **SYSTEM agent on the logon/secure screen** (reuse session-follow's SYSTEM-at-logon logic) so the console is
-  driveable before login; `install-hybrid.ps1` (front end as a session-0 service + launcher spawning per-session
-  agents, incl. the logon-screen agent).
+- **Phase 3 — session targeting + shell routing + installer.** Per-request **`?session=<id>`** (or
+  `X-Deskhand-Session`) sets `RoutingBackend.TargetSession` for that request/MCP-connection — concurrent callers
+  stay independent, no tool signatures change; default = active console. `GET /hybrid/sessions` + `deskhand_sessions`
+  list the connected session agents. **`run_command` routing:** defaults to the session-0 front end; `?session=N`
+  routes it to that session's agent (runs as that user) via `RemoteAgentObserver`. `install-hybrid.ps1` installs the
+  front end as a session-0 service (`DESKHAND_HYBRID=1`) + the launcher in agent mode (`DeskhandAgents` service)
+  spawning a `deskhand-agent` into each session; the agent is now published into `deskhand.zip` (agent/).
+
+### Status
+- Phases 1 & 2 & 3 implemented and shipping (v0.2.91 → v0.2.93). Phase 1 routing and Phase 2 MJPEG streaming
+  validated locally end-to-end.
+- **Deferred follow-up:** a **SYSTEM agent on the logon/secure screen** (so the console is driveable *before* any
+  user signs in) — `AgentLauncherWorker` today spawns agents only into active *user* sessions; adding a SYSTEM agent
+  at the logon screen (reusing session-follow's SYSTEM-at-logon logic) is the remaining piece. Until then, desktop
+  ops at the logon screen return "no agent in session N".
+- **Known limit:** routed `run_command` is synchronous (the agent handles its own timeout); the host's
+  auto-detach/job polling applies only to the local (session-0) path.
 
 ## Governance & edge cases
 

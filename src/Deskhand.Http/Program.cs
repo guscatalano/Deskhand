@@ -153,11 +153,13 @@ builder.Services.AddHostedService<AutoDismissWorker>();   // continuously-presen
 var hv = (Environment.GetEnvironmentVariable("DESKHAND_HYBRID") ?? "").Trim().ToLowerInvariant();
 bool hybrid = hv is "1" or "true" or "on" or "yes";
 string? fleetToken = Environment.GetEnvironmentVariable("DESKHAND_FLEET_TOKEN") ?? Environment.GetEnvironmentVariable("DESKHAND_TOKEN");
-var agentRegistry = hybrid ? new Deskhand.Core.Fleet.AgentRegistry() : null;
-if (agentRegistry is not null) builder.Services.AddSingleton(agentRegistry);
+// Always present (empty when not hybrid) so the sessions listing can resolve it; only POPULATED in hybrid, where
+// /agent/connect accepts agents into it.
+var agentRegistry = new Deskhand.Core.Fleet.AgentRegistry();
+builder.Services.AddSingleton(agentRegistry);
 // The RAW routing backend (ungoverned) — the governed one below wraps it; streaming/recording capture frames
 // through this directly (like the local path uses localBackend) so a per-frame capture isn't audited/gated 30x/s.
-var routingBackend = hybrid ? new Deskhand.Core.Fleet.RoutingBackend(agentRegistry!) : null;
+var routingBackend = hybrid ? new Deskhand.Core.Fleet.RoutingBackend(agentRegistry) : null;
 builder.Services.AddSingleton<IAutomationBackend>(_ =>
     new GovernedBackend((IAutomationBackend?)routingBackend ?? localBackend,
         controlState, auditLog, captureNotifier, macroRecorder));
@@ -208,6 +210,18 @@ if (hybrid)
         try { return DecodeToBitmap(routingBackend!.CaptureRegion(rect.X, rect.Y, rect.Width, rect.Height, ImageFormat.Jpeg, 85).Bytes); }
         catch { return null; }   // no agent yet / transient → skip this tick
     };
+    // Per-request session targeting (concurrent multi-session): ?session=N or X-Deskhand-Session: N picks which
+    // session's agent a desktop call routes to; absent/"console" → the active console. Each HTTP request (and each
+    // MCP call, which is its own request) carries its own target, so concurrent callers stay independent. No tool
+    // signatures change. Set on the async flow before the endpoint resolves the backend.
+    app.Use(async (ctx, next) =>
+    {
+        var sv = ctx.Request.Query["session"].ToString();
+        if (string.IsNullOrEmpty(sv)) sv = ctx.Request.Headers["X-Deskhand-Session"].ToString();
+        if (!string.IsNullOrEmpty(sv) && !sv.Equals("console", StringComparison.OrdinalIgnoreCase) && int.TryParse(sv, out var sid))
+            Deskhand.Core.Fleet.RoutingBackend.TargetSession.Value = sid;
+        await next();
+    });
 }
 
 // Reboot-surviving recordings: on startup, resume any recording that was interrupted (its logon task relaunched
@@ -611,6 +625,13 @@ api.MapGet("/token", () => Results.Ok(new { token }));
 
 // About this machine (read-only): Windows version/buildlab, uptime, CPU, memory, disks, network, firewall.
 api.MapGet("/system", () => Results.Ok(Deskhand.Core.Services.SystemInfoService.Get()));
+// Hybrid: the per-session agents currently connected — what ?session= / X-Deskhand-Session can target. Empty when
+// not in hybrid mode (desktop ops then run locally). The active console is the default target when none is given.
+api.MapGet("/hybrid/sessions", (Deskhand.Core.Fleet.AgentRegistry reg) => Results.Ok(new
+{
+    hybrid,
+    agents = reg.All.Select(a => new { agentId = a.AgentId, session = a.SessionId, machine = a.MachineName, user = a.Info?.UserName, elevated = a.Info?.IsElevated }).OrderBy(x => x.session).ToList(),
+}));
 
 // Hardware / software inventory (read-only, via WMI): physical disks+partitions+volumes, installed Windows
 // updates (KBs), PnP devices (optional ?class=Net|Display|Media…), drivers, audio devices.
@@ -862,11 +883,20 @@ api.MapPost("/fs/empty-recycle-bin", (ControlState st, AuditLog al, string? driv
 
 // One-shot shell: run a command in PowerShell/cmd and return its output. MOST POWERFUL capability
 // (arbitrary code as the current user) — OFF unless DESKHAND_ENABLE_SHELL is set, gated on armed, audited.
-api.MapPost("/shell/run", (ControlState st, AuditLog al, Deskhand.Core.Services.ShellJobStore jobs, ShellRunRequest r) =>
+api.MapPost("/shell/run", (ControlState st, AuditLog al, Deskhand.Core.Services.ShellJobStore jobs, Deskhand.Core.Fleet.AgentRegistry reg, ShellRunRequest r) =>
 {
     if (!Deskhand.Core.Services.ShellService.Enabled)
         return Results.Json(new { error = "Shell is disabled. Set DESKHAND_ENABLE_SHELL=1.", type = "shell_disabled" }, statusCode: 403);
     if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    // Hybrid: default runs here (session-0 host); ?session=N routes to that session's agent (runs as that user).
+    if (Deskhand.Core.Fleet.RoutingBackend.TargetSession.Value is int ts && ts > 0)
+    {
+        var link = reg.GetBySession(ts);
+        if (link is null) return Results.Json(new { error = $"No Deskhand agent is connected in session {ts}.", type = "no_agent" }, statusCode: 400);
+        al.Record("shell_run", $"session={ts}: {Trunc(r.Command ?? "", 160)}", "routed");
+        using var doc = System.Text.Json.JsonDocument.Parse(new Deskhand.Core.Fleet.RemoteAgentObserver(link).RunCommand(r.Shell, r.Command, r.Cwd, r.TimeoutMs).GetRawText());
+        return Results.Json(doc.RootElement.Clone());
+    }
 
     // Async: start the process, return a jobId + pid immediately, and keep running in the background. Poll
     // /shell/jobs/{id} for output + status; stop it (incl. a hung installer) with /shell/jobs/{id}/cancel.

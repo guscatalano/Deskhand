@@ -42,7 +42,65 @@ public static class DiagnosticsService
         catch { }
     }
 
-    private static string LevelName(byte? lvl) => lvl switch { 1 => "Critical", 2 => "Error", 3 => "Warning", 4 => "Information", _ => "?" };
+    /// <summary>General read-only event-log query. <paramref name="log"/> is any log/channel name — System,
+    /// Application, Security, Setup, or an operational channel like "Microsoft-Windows-TaskScheduler/Operational".
+    /// Filters (all optional): <paramref name="provider"/> (source name, exact), <paramref name="eventId"/>,
+    /// <paramref name="level"/> as a severity FLOOR (critical|error|warning|information|all — that severity or
+    /// worse; "information" also includes classic Level-0 Info), and <paramref name="sinceMinutes"/> (only events
+    /// newer than now − N minutes). Newest first, capped at <paramref name="count"/> (1–1000).</summary>
+    public static IReadOnlyList<EventEntryDto> Query(string log = "Application", string? provider = null,
+        int? eventId = null, string level = "warning", int? sinceMinutes = null, int count = 50)
+    {
+        count = Math.Clamp(count, 1, 1000);
+        var conds = new List<string>();
+        string lv = LevelClause(level);
+        if (lv.Length > 0) conds.Add(lv);
+        if (eventId is int id) conds.Add($"EventID={id}");
+        if (sinceMinutes is int m && m > 0) conds.Add($"TimeCreated[timediff(@SystemTime) <= {(long)m * 60_000}]");
+        if (!string.IsNullOrWhiteSpace(provider))
+        {
+            if (provider.Contains('\'')) throw new ArgumentException("provider must not contain a single quote");
+            conds.Add($"Provider[@Name='{provider.Trim()}']");
+        }
+        string xpath = conds.Count > 0 ? $"*[System[{string.Join(" and ", conds)}]]" : "*";
+        var list = new List<EventEntryDto>();
+        try
+        {
+            var query = new EventLogQuery(log, PathType.LogName, xpath) { ReverseDirection = true };
+            using var reader = new EventLogReader(query);
+            int n = 0;
+            for (EventRecord? r = reader.ReadEvent(); r is not null && n < count; r = reader.ReadEvent(), n++)
+            {
+                using (r)
+                {
+                    string? msg = null;
+                    try { msg = r.FormatDescription(); } catch { }
+                    if (msg is { Length: > 1000 }) msg = msg[..1000] + "…";
+                    string lvlName; try { lvlName = r.LevelDisplayName ?? LevelName(r.Level); } catch { lvlName = LevelName(r.Level); }
+                    list.Add(new EventEntryDto(log, lvlName, r.Id, r.ProviderName,
+                        r.TimeCreated?.ToString("yyyy-MM-dd HH:mm:ss"), msg?.Replace("\r\n", " ").Trim()));
+                }
+            }
+        }
+        catch (EventLogNotFoundException) { throw new InvalidOperationException($"event log/channel '{log}' not found"); }
+        catch (UnauthorizedAccessException) { throw new InvalidOperationException($"access denied reading '{log}' — the Security log needs elevation (SeSecurityPrivilege)"); }
+        catch (EventLogException ex) { throw new InvalidOperationException($"cannot read '{log}': {ex.Message}"); }
+        return list;
+    }
+
+    // Severity FLOOR → XPath Level clause (Windows levels: 1 Critical, 2 Error, 3 Warning, 4 Information, 5 Verbose;
+    // classic System/Application logs tag Information as Level 0, so "information" includes 0 too).
+    private static string LevelClause(string? level) => (level ?? "warning").Trim().ToLowerInvariant() switch
+    {
+        "critical" => "(Level=1)",
+        "error" => "(Level=1 or Level=2)",
+        "warning" => "(Level=1 or Level=2 or Level=3)",
+        "information" or "info" => "(Level=0 or Level=1 or Level=2 or Level=3 or Level=4)",
+        "verbose" or "all" or "" => "",
+        _ => "(Level=1 or Level=2 or Level=3)"
+    };
+
+    private static string LevelName(byte? lvl) => lvl switch { 1 => "Critical", 2 => "Error", 3 => "Warning", 4 => "Information", 5 => "Verbose", 0 => "Information", _ => "?" };
 
     // ---- disk health: WMI drive status + SMART failure prediction ----
     public static IReadOnlyList<DiskHealthDto> DiskHealth()

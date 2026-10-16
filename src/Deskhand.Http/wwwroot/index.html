@@ -476,7 +476,19 @@
       <div class="swsec" data-sec="start" hidden><div id="swStart"></div></div>
       <div class="swsec" data-sec="task" hidden><input class="swfilter" data-t="task" placeholder="filter tasks…"><div id="swTask"></div></div>
       <div class="swsec" data-sec="conn" hidden><input class="swfilter" data-t="conn" placeholder="filter by port / process / address…"><div id="swConn"></div></div>
-      <div class="swsec" data-sec="logs" hidden><input class="swfilter" data-t="logs" placeholder="filter logs (level, source, message…)"><div id="swEvt"></div></div>
+      <div class="swsec" data-sec="logs" hidden>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+          <input id="evtLog" list="evtLogs" value="Application" placeholder="log / channel" style="width:240px" title="System, Application, Security, Setup, or a channel like Microsoft-Windows-TaskScheduler/Operational">
+          <datalist id="evtLogs"><option>Application</option><option>System</option><option>Security</option><option>Setup</option><option>Microsoft-Windows-TaskScheduler/Operational</option><option>Microsoft-Windows-WindowsUpdateClient/Operational</option><option>Microsoft-Windows-PowerShell/Operational</option></datalist>
+          <select id="evtLevel" title="severity floor"><option value="warning">Warning+</option><option value="critical">Critical</option><option value="error">Error+</option><option value="information">Info+</option><option value="all">All</option></select>
+          <input id="evtProvider" placeholder="source (optional)" style="width:150px" title="provider/source name, exact">
+          <input id="evtId" type="number" placeholder="event id" style="width:92px">
+          <input id="evtMins" type="number" placeholder="last N min" style="width:92px" title="only events newer than now − N minutes">
+          <input id="evtCount" type="number" value="50" style="width:72px" title="max events (1–1000)">
+          <button class="btn sm" id="evtGo">Query</button>
+          <span id="evtMsg" style="color:var(--ink-3);font-size:11px"></span>
+        </div>
+        <input class="swfilter" data-t="logs" placeholder="filter results (level, source, message…)"><div id="swEvt"></div></div>
       <div class="swsec" data-sec="misc" hidden><div id="swMisc"></div></div>
       <div class="swsec" data-sec="env" hidden><input class="swfilter" data-t="env" placeholder="filter env…"><div id="swEnv"></div></div>
     </div>
@@ -2007,10 +2019,35 @@ function renderLogs(){
   });
   if(!list.length){ const em=elm("div"); em.style.cssText="color:var(--ink-3);padding:8px;font-size:12px"; em.textContent="(no matching events)"; ev.append(em); }
 }
+// run a specific event-log query from the controls and replace the view
+let evtQueried=false;
+async function queryLogs(){
+  const p=new URLSearchParams();
+  p.set("log",($("#evtLog").value||"Application").trim());
+  p.set("level",$("#evtLevel").value);
+  const prov=$("#evtProvider").value.trim(); if(prov) p.set("provider",prov);
+  const id=$("#evtId").value.trim(); if(id) p.set("eventId",id);
+  const mins=$("#evtMins").value.trim(); if(mins) p.set("sinceMinutes",mins);
+  const cnt=$("#evtCount").value.trim(); if(cnt) p.set("count",cnt);
+  $("#evtMsg").textContent="querying…";
+  try{
+    const res=await api("/diagnostics/events/query?"+p.toString());
+    swData.logs=res||[]; evtQueried=true;
+    $("#evtMsg").textContent=swData.logs.length+" event"+(swData.logs.length===1?"":"s");
+    renderLogs();
+  }catch(e){
+    swData.logs=[]; renderLogs();
+    $("#evtMsg").textContent=(e.status?e.status+" ":"")+(e.message||"query failed");
+  }
+}
+$("#evtGo").onclick=queryLogs;
+["evtLog","evtProvider","evtId","evtMins","evtCount"].forEach(id=>{ const el=$("#"+id); if(el) el.addEventListener("keydown",e=>{ if(e.key==="Enter") queryLogs(); }); });
+$("#evtLevel").addEventListener("change",queryLogs);
 // sub-nav: show one section at a time
 function swShow(sec){
   document.querySelectorAll('#swNav [data-sec]').forEach(b=>{ const on=b.dataset.sec===sec; b.style.background=on?"var(--accent)":""; b.style.color=on?"#fff":""; });
   document.querySelectorAll('#tab-software .swsec').forEach(s=>s.hidden=s.dataset.sec!==sec);
+  if(sec==="logs" && !evtQueried) queryLogs();   // first open → run the control-driven query (replaces the quick overview)
 }
 document.querySelectorAll('#swNav [data-sec]').forEach(b=>b.onclick=()=>swShow(b.dataset.sec));
 swShow("prog");

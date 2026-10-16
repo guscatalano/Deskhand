@@ -220,8 +220,12 @@ public static class DeskhandTools
     public static string Ping([Description("Hostname or IP to ping.")] string host, [Description("Timeout in ms (default 3000).")] int timeoutMs = 3000)
         => Json(Deskhand.Core.Services.NetworkService.Ping(host, timeoutMs));
 
-    [McpServerTool(Name = "deskhand_event_errors"), Description("Recent error/warning events (read-only) from the System + Application logs, newest first: { log, level, eventId, source, time, message }. count = max per log (default 50).")]
+    [McpServerTool(Name = "deskhand_event_errors"), Description("Recent error/warning events (read-only) from the System + Application logs, newest first: { log, level, eventId, source, time, message }. count = max per log (default 50). For any other log/channel, a specific source/eventId, Information events, or a time window, use deskhand_event_query.")]
     public static string EventErrors(int count = 50) => Json(Deskhand.Core.Services.DiagnosticsService.RecentErrors(count));
+
+    [McpServerTool(Name = "deskhand_event_query"), Description("Query the Windows Event Log (read-only). log = any log/channel name — System, Application, Security, Setup, or a channel like \"Microsoft-Windows-TaskScheduler/Operational\" (default Application). Filters: provider (source name, exact), eventId, level = severity FLOOR critical|error|warning|information|all (default warning = that severity or worse; 'information' also includes Info), sinceMinutes (only events newer than now−N minutes), count (max 1–1000, default 50). Newest first: { log, level, eventId, source, time, message }. Reading Security needs elevation. For a quick cross-log error sweep use deskhand_event_errors.")]
+    public static string EventQuery(string log = "Application", string? provider = null, int? eventId = null, string level = "warning", int? sinceMinutes = null, int count = 50)
+        => Json(Deskhand.Core.Services.DiagnosticsService.Query(log, provider, eventId, level, sinceMinutes, count));
 
     [McpServerTool(Name = "deskhand_disk_health"), Description("Disk health (read-only): per drive { model, serial, status, predictFailure (SMART) }. SMART predict needs elevation on some drivers.")]
     public static string DiskHealth() => Json(Deskhand.Core.Services.DiagnosticsService.DiskHealth());

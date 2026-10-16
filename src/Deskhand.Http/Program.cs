@@ -633,6 +633,12 @@ api.MapGet("/net/connections", () => Results.Ok(Deskhand.Core.Services.NetConnec
 api.MapGet("/net/adapters", () => Results.Ok(Deskhand.Core.Services.NetworkService.Adapters()));
 api.MapGet("/net/ping", (string? host, int? timeoutMs) => Results.Ok(Deskhand.Core.Services.NetworkService.Ping(host, timeoutMs ?? 3000)));
 api.MapGet("/diagnostics/events", (int? count) => Results.Ok(Deskhand.Core.Services.DiagnosticsService.RecentErrors(count ?? 50)));
+// General read-only event-log query: any log/channel + optional provider / eventId / level floor / time window.
+api.MapGet("/diagnostics/events/query", (string? log, string? provider, int? eventId, string? level, int? sinceMinutes, int? count) =>
+{
+    try { return Results.Ok(Deskhand.Core.Services.DiagnosticsService.Query(log ?? "Application", provider, eventId, level ?? "warning", sinceMinutes, count ?? 50)); }
+    catch (Exception ex) { return Results.Json(new { error = ex.Message, type = "event_query" }, statusCode: 400); }
+});
 api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.DiagnosticsService.DiskHealth()));
 
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing

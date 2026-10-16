@@ -796,6 +796,14 @@ api.MapPost("/fs/zip", (ControlState st, AuditLog al, FsZipRequest r) =>
     FsOp(st, al, "file_zip", () => Deskhand.Core.Services.FileSystemService.Zip(r.Sources, r.Dest, r.Overwrite ?? false)));
 api.MapPost("/fs/unzip", (ControlState st, AuditLog al, FsUnzipRequest r) =>
     FsOp(st, al, "file_unzip", () => Deskhand.Core.Services.FileSystemService.Unzip(r.ZipPath, r.Dest, r.Overwrite ?? false)));
+// Empty the Recycle Bin to reclaim disk space (DESTRUCTIVE, irreversible). armed + audited. drive empty = all drives.
+api.MapPost("/fs/empty-recycle-bin", (ControlState st, AuditLog al, string? drive) =>
+{
+    if (!st.Armed) return Results.Json(new { error = "disarmed", type = "disarmed" }, statusCode: 403);
+    var r = Deskhand.Core.Services.FileSystemService.EmptyRecycleBin(drive);
+    if (r.Ok) al.Record("recycle_empty", r.Drive ?? "(all drives)", $"items={r.ItemsRemoved} bytes={r.BytesFreed}");
+    return r.Ok ? Results.Ok(r) : Results.Json(r, statusCode: 400);
+});
 
 // One-shot shell: run a command in PowerShell/cmd and return its output. MOST POWERFUL capability
 // (arbitrary code as the current user) — OFF unless DESKHAND_ENABLE_SHELL is set, gated on armed, audited.

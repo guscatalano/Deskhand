@@ -314,6 +314,16 @@ public static class DeskhandTools
         return Json(r);
     }
 
+    [McpServerTool(Name = "deskhand_empty_recycle_bin"), Description("Permanently empty the Recycle Bin to reclaim disk space. drive empty = all drives, or a drive like \"C\" / \"C:\\\\\" for just that one. DESTRUCTIVE and irreversible. Requires the kill switch to be armed; audited. Returns { ok, drive, itemsRemoved, bytesFreed, error? } (counts are queried just before emptying).")]
+    public static string EmptyRecycleBin(ControlState state, AuditLog audit,
+        [Description("Drive to empty (e.g. \"C\"); empty = all drives.")] string? drive = null)
+    {
+        if (!state.Armed) return "{\"error\":\"disarmed\",\"type\":\"disarmed\"}";
+        var r = Deskhand.Core.Services.FileSystemService.EmptyRecycleBin(drive);
+        if (r.Ok) audit.Record("recycle_empty", r.Drive ?? "(all drives)", $"items={r.ItemsRemoved} bytes={r.BytesFreed}");
+        return Json(r);
+    }
+
     [McpServerTool(Name = "deskhand_rename_path"), Description("Rename a file or folder in place. newName is a bare name (no path separators), placed in the same folder. Requires the kill switch to be armed; audited.")]
     public static string RenamePath(ControlState state, AuditLog audit,
         [Description("Path of the file/folder to rename.")] string path,

@@ -11,6 +11,7 @@ public record FileContentDto(string Path, long Size, string? Base64, string? Err
 public record FileTextDto(string Path, string Name, long Size, long ReadBytes, bool Truncated, bool Binary, string? Text, string? Error = null);
 public record WriteResultDto(string Path, long Size, bool Overwritten, string? Error = null);
 public record FsOpResultDto(string Op, string Path, string? Dest, bool Ok, string? Detail = null, string? Error = null);
+public record RecycleEmptyDto(bool Ok, string? Drive, long? ItemsRemoved, long? BytesFreed, string? Error = null);
 
 /// <summary>
 /// Read-only file-system browsing: list the folders and files in a directory. It never writes, deletes,
@@ -647,5 +648,38 @@ public static class FileSystemService
             };
             return SHFileOperation(ref op);
         }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct SHQUERYRBINFO { public int cbSize; public long i64Size; public long i64NumItems; }
+        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int SHQueryRecycleBin(string? pszRootPath, ref SHQUERYRBINFO pSHQueryRBInfo);
+        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int SHEmptyRecycleBin(IntPtr hwnd, string? pszRootPath, uint dwFlags);
+        private const uint SHERB_NOCONFIRMATION = 0x1, SHERB_NOPROGRESSUI = 0x2, SHERB_NOSOUND = 0x4;
+
+        public static (long items, long size) Query(string? root)
+        {
+            var info = new SHQUERYRBINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<SHQUERYRBINFO>() };
+            return SHQueryRecycleBin(root, ref info) == 0 ? (info.i64NumItems, info.i64Size) : (-1, -1);
+        }
+        public static int Empty(string? root) =>
+            SHEmptyRecycleBin(IntPtr.Zero, root, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
+    }
+
+    /// <summary>Permanently empty the Recycle Bin (all drives, or one <paramref name="drive"/> like "C" / "C:\").
+    /// DESTRUCTIVE and irreversible. Reports how much was removed (queried before emptying).</summary>
+    public static RecycleEmptyDto EmptyRecycleBin(string? drive = null)
+    {
+        string? root = string.IsNullOrWhiteSpace(drive) ? null : drive!.Trim().Trim('"');
+        if (root is { Length: 1 }) root += ":\\";                       // "C" -> "C:\"
+        else if (root is { Length: 2 } && root[1] == ':') root += "\\"; // "C:" -> "C:\"
+        long? items = null, bytes = null;
+        try { var (qi, qs) = RecycleBin.Query(root); if (qi >= 0) { items = qi; bytes = qs; } } catch { }
+        int rc;
+        try { rc = RecycleBin.Empty(root); }
+        catch (Exception ex) { return new RecycleEmptyDto(false, root, items, bytes, ex.Message); }
+        if (rc == 0) return new RecycleEmptyDto(true, root, items, bytes);
+        if (items == 0) return new RecycleEmptyDto(true, root, 0, 0);   // already empty — SHEmptyRecycleBin can report an error for an empty bin
+        return new RecycleEmptyDto(false, root, items, bytes, $"SHEmptyRecycleBin failed (HRESULT 0x{rc:X8}).");
     }
 }

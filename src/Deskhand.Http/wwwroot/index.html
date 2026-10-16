@@ -991,9 +991,21 @@ function saveImg(src, base){ if(!src){ toast("capture something first",true); re
 $("#saveBtn").onclick=()=>{ const img=$("#viewer img"); saveImg(img&&img.src, "deskhand-screen"); };
 // live view: MJPEG (<img> at /capture/stream, multipart/x-mixed-replace) or H.264 (<video> + MediaSource at
 // /capture/stream.mp4, fragmented mp4). Interactive control always uses MJPEG (pixel-exact coord mapping).
-let liveOn=false, liveMse=null;
+let liveOn=false, liveMse=null, liveOpts=null, liveReopen=null, liveRetry=null, liveTries=0, liveEpoch=0;
+// A live stream can drop for reasons that are NOT "the user stopped it": a proxy/NAT idle-close on a long
+// session, a transient network blip, or the session-follow launcher killing+relaunching deskhand-http on a
+// console/session change (switch user, lock→unlock). Giving up on the first drop is what left the Interact
+// view frozen ("going stale"). Instead, any drop while liveOn schedules an automatic reconnect with backoff;
+// a Stop (liveOn=false) — including leaving the Screen tab or ending interact — cancels it.
+function liveReconnect(){
+  if(!liveOn || liveRetry || !liveReopen) return;              // stopped, or a retry already pending
+  const delay=Math.min(500*Math.pow(1.6,liveTries), 5000);     // ~0.5s → 5s cap
+  liveTries++;
+  liveRetry=setTimeout(()=>{ liveRetry=null; if(liveOn && liveReopen) liveReopen(); }, delay);
+}
 function liveStop(){
-  liveOn=false; const b=$("#liveBtn"); if(b){ b.textContent="▶ Live"; b.classList.remove("a"); }
+  liveOn=false; if(liveRetry){ clearTimeout(liveRetry); liveRetry=null; } liveReopen=null; liveTries=0;
+  const b=$("#liveBtn"); if(b){ b.textContent="▶ Live"; b.classList.remove("a"); }
   if(liveMse){ try{ liveMse.abort&&liveMse.abort.abort(); }catch(e){} if(liveMse.url){ try{URL.revokeObjectURL(liveMse.url);}catch(e){} } liveMse=null; }
   const v=$("#viewer"); const im=v.querySelector("img.live"); if(im){ im.src=""; im.remove(); }
   const vv=v.querySelector("video.live"); if(vv){ try{ vv.src=""; vv.load(); }catch(e){} vv.remove(); }
@@ -1002,8 +1014,13 @@ function liveStop(){
 }
 function liveStart(opts){
   const useH264 = $("#liveCodec") && $("#liveCodec").value==="h264" && !(opts&&opts.inputDesktop);
-  if(useH264) return liveStartH264(opts);
-  liveOn=true; const b=$("#liveBtn"); b.textContent="■ Stop"; b.classList.add("a");
+  liveOn=true; liveOpts=opts||{}; liveTries=0;
+  const b=$("#liveBtn"); b.textContent="■ Stop"; b.classList.add("a");
+  if(useH264){ liveReopen=()=>liveOpenH264(liveOpts); return liveOpenH264(liveOpts); }
+  liveReopen=()=>liveOpenMjpeg(liveOpts);
+  liveOpenMjpeg(liveOpts);
+}
+function liveOpenMjpeg(opts){
   const monVal=$("#monSel").value;
   // interactive control wants a snappier feed; passive viewing stays light on bandwidth
   const fps=(opts&&opts.fps)||4, q=(opts&&opts.quality)||55, mw=(opts&&opts.maxWidth)||0;
@@ -1012,15 +1029,18 @@ function liveStart(opts){
   if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
   const v=$("#viewer"); v.querySelectorAll("img,video").forEach(n=>n.remove());
   const e=v.querySelector(".vempty"); if(e) e.style.display="none";
+  const ep=++liveEpoch;                                    // only the current connection may reset/reconnect
   const img=new Image(); img.className="live"; img.style.cssText="display:block;max-width:100%;height:auto";
-  img.onerror=()=>{ if(liveOn){ toast("live stream ended",true); liveStop(); } };
-  v.insertBefore(img,$("#marker")); $("#marker").style.display="none"; img.src=url;
+  img.onload=()=>{ if(ep===liveEpoch) liveTries=0; };      // a frame arrived → stream healthy, reset the backoff
+  img.onerror=()=>{ if(ep===liveEpoch && liveOn) liveReconnect(); };   // dropped → reconnect instead of giving up
+  v.insertBefore(img,$("#marker")); $("#marker").style.display="none"; img.src=url+"&t="+Date.now();   // cache-bust: never reuse a dead connection
   $("#capBtn").disabled=true;
 }
-function liveStartH264(opts){
+function liveOpenH264(opts){
   const mime='video/mp4; codecs="avc1.42E028"';   // Baseline L4.0 — matches the server's pinned H.264 profile
-  if(!(window.MediaSource && MediaSource.isTypeSupported(mime))){ toast("H.264 live isn't supported by this browser — use MJPEG",true); return; }
-  liveOn=true; const b=$("#liveBtn"); b.textContent="■ Stop"; b.classList.add("a");
+  if(!(window.MediaSource && MediaSource.isTypeSupported(mime))){ toast("H.264 live isn't supported by this browser — use MJPEG",true); liveStop(); return; }
+  if(liveMse){ try{ liveMse.abort&&liveMse.abort.abort(); }catch(e){} if(liveMse.url){ try{URL.revokeObjectURL(liveMse.url);}catch(e){} } liveMse=null; }   // reconnect: drop the previous MediaSource
+  const ep=++liveEpoch;                                    // only the current connection may reset/reconnect
   const monVal=$("#monSel").value; const fps=(opts&&opts.fps)||12;
   let url="/capture/stream.mp4?fps="+fps+(monVal!==""?"&monitor="+encodeURIComponent(monVal):"");
   if(AUTH_TOKEN) url+="&token="+encodeURIComponent(AUTH_TOKEN);
@@ -1040,11 +1060,11 @@ function liveStartH264(opts){
     try{
       const ctrl=new AbortController(); liveMse.abort=ctrl;
       const resp=await fetch(url,{signal:ctrl.signal});
-      if(!resp.ok){ toast("H.264 stream HTTP "+resp.status,true); liveStop(); return; }
+      if(!resp.ok){ if(liveOn && ep===liveEpoch) liveReconnect(); return; }
       const reader=resp.body.getReader();
-      while(liveOn){ const {done,value}=await reader.read(); if(done) break; queue.push(value); pump(); }
-    }catch(err){ if(liveOn) toast("H.264 stream ended",true); }
-    if(liveOn) liveStop();
+      while(liveOn && ep===liveEpoch){ const {done,value}=await reader.read(); if(done) break; liveTries=0; queue.push(value); pump(); }   // bytes flowing → healthy, reset backoff
+    }catch(err){ /* aborted (Stop) or dropped — fall through to reconnect */ }
+    if(liveOn && ep===liveEpoch) liveReconnect();
   });
 }
 $("#liveBtn").onclick=()=>{ liveOn?liveStop():liveStart(); };

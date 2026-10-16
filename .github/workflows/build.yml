@@ -14,6 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Dashboard JS tests (live-view auto-reconnect)
+        shell: pwsh
+        run: node tests/web/live-reconnect.test.js
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:

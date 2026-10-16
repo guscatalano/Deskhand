@@ -55,12 +55,12 @@ deskhand-agent  (one per interactive session)            = LocalAutomationBacken
   spawning a `deskhand-agent` into each session; the agent is now published into `deskhand.zip` (agent/).
 
 ### Status
-- Phases 1 & 2 & 3 implemented and shipping (v0.2.91 → v0.2.93). Phase 1 routing and Phase 2 MJPEG streaming
-  validated locally end-to-end.
-- **Deferred follow-up:** a **SYSTEM agent on the logon/secure screen** (so the console is driveable *before* any
-  user signs in) — `AgentLauncherWorker` today spawns agents only into active *user* sessions; adding a SYSTEM agent
-  at the logon screen (reusing session-follow's SYSTEM-at-logon logic) is the remaining piece. Until then, desktop
-  ops at the logon screen return "no agent in session N".
+- Phases 1 & 2 & 3 implemented and shipping (v0.2.91 → v0.2.94). Phase 1 routing, Phase 2 MJPEG streaming, and
+  Phase 3 session-targeting + shell routing validated locally end-to-end.
+- **Logon-screen SYSTEM agent (v0.2.94):** `AgentLauncherWorker` now also runs a SYSTEM agent in the console
+  session on `winsta0\winlogon` whenever no user is logged on at the console (logon / lock / UAC-secure screen),
+  and stops it when a user signs in (the per-user agent takes over). So the console is driveable/capturable before
+  login. Driving *input* on the secure desktop stays the separate Windows boundary (uiAccess/SeTcb — gated).
 - **Known limit:** routed `run_command` is synchronous (the agent handles its own timeout); the host's
   auto-detach/job polling applies only to the local (session-0) path.
 

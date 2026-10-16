@@ -437,8 +437,6 @@
       <div class="row"><button class="btn p" id="hwRefresh">↻ Refresh</button><span class="lbl" id="hwWhen" style="color:var(--ink-3)"></span></div>
       <div class="sect" style="margin-top:12px"><div class="h">Disks &amp; partitions <span class="count" id="hwDiskCount"></span></div></div>
       <div id="hwDisks"></div>
-      <div class="sect" style="margin-top:18px"><div class="h">Windows updates <span class="count" id="hwUpdCount"></span></div></div>
-      <div id="hwUpdates"></div>
       <div class="sect" style="margin-top:18px"><div class="h">System · BIOS · motherboard</div></div>
       <div id="hwSystem"></div>
       <div class="sect" style="margin-top:18px"><div class="h">Graphics &amp; displays</div></div>
@@ -463,6 +461,7 @@
       <div class="row"><button class="btn p" id="swRefresh">↻ Refresh</button><span class="lbl" id="swWhen" style="color:var(--ink-3)"></span></div>
       <div class="swnav" id="swNav" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 10px">
         <button class="btn sm" data-sec="prog">Programs</button>
+        <button class="btn sm" data-sec="upd">Updates</button>
         <button class="btn sm" data-sec="svc">Services</button>
         <button class="btn sm" data-sec="start">Startup</button>
         <button class="btn sm" data-sec="task">Tasks</button>
@@ -472,6 +471,7 @@
         <button class="btn sm" data-sec="env">Environment</button>
       </div>
       <div class="swsec" data-sec="prog"><input class="swfilter" data-t="prog" placeholder="filter programs…"><div id="swProg"></div></div>
+      <div class="swsec" data-sec="upd" hidden><input class="swfilter" data-t="upd" placeholder="filter updates (KB, description, date…)"><div id="swUpd"></div></div>
       <div class="swsec" data-sec="svc" hidden><input class="swfilter" data-t="svc" placeholder="filter services…"><div id="swSvc"></div></div>
       <div class="swsec" data-sec="start" hidden><div id="swStart"></div></div>
       <div class="swsec" data-sec="task" hidden><input class="swfilter" data-t="task" placeholder="filter tasks…"><div id="swTask"></div></div>
@@ -1941,8 +1941,6 @@ const loadHardware=guard(async()=>{
     (d.partitionList||[]).forEach(p=>{ const vols=(p.volumes||[]).map(v=>`${v.driveLetter||""} ${v.label||""} ${v.fileSystem||""}${v.sizeBytes?(" · "+fmtSize(v.freeBytes)+" free / "+fmtSize(v.sizeBytes)):""}`).join("; ")||"(no volume)"; h+=`<div class="syskv"><span class="k">${p.type||"partition"} · ${fmtSize(p.sizeBytes)}</span><span class="v">${vols}</span></div>`; });
     card.innerHTML=h; dc.append(card);
   });
-  const ups=await api("/hardware/updates"); $("#hwUpdCount").textContent=ups.length;
-  const uc=$("#hwUpdates"); uc.innerHTML=""; ups.forEach(u=>uc.append(hwKv((u.hotFixId||"")+" · "+(u.description||""), u.installedOn)));
   const au=await api("/hardware/audio"); $("#hwAudioCount").textContent=au.length;
   const ac=$("#hwAudio"); ac.innerHTML=""; au.forEach(a=>ac.append(hwKv(a.name, (a.manufacturer||"")+" · "+(a.status||""))));
   // detailed hardware: computer/BIOS/board, GPUs, monitors, RAM
@@ -1983,6 +1981,7 @@ $("#hwDrvLoad").onclick=guard(async()=>{
 let swLoaded=false; const swData={};
 const SW={
   prog:{el:"#swProg",cnt:"#swProgCount",row:p=>hwKv(p.name+(p.version?(" "+p.version):""),[p.publisher,p.installDate,p.scope].filter(Boolean).join(" · ")),m:p=>p.name+" "+(p.publisher||"")},
+  upd:{el:"#swUpd",cnt:"#swUpdCount",row:u=>hwKv((u.hotFixId||"")+" · "+(u.description||""),u.installedOn),m:u=>(u.hotFixId||"")+" "+(u.description||"")+" "+(u.installedOn||"")},
   svc:{el:"#swSvc",cnt:"#swSvcCount",row:s=>hwKv(s.displayName||s.name,[s.state,s.startMode,s.account].filter(Boolean).join(" · ")),m:s=>s.name+" "+(s.displayName||"")+" "+(s.state||"")},
   task:{el:"#swTask",cnt:"#swTaskCount",row:t=>hwKv(t.path,[t.state,t.nextRun&&("next "+t.nextRun)].filter(Boolean).join(" · ")),m:t=>t.path+" "+(t.state||"")},
   conn:{el:"#swConn",cnt:"#swConnCount",row:c=>hwKv(c.protocol+" "+c.localAddress+(c.remoteAddress?(" → "+c.remoteAddress):""),c.state+" · "+(c.process||"?")+" ("+c.pid+")"),m:c=>c.localAddress+" "+(c.remoteAddress||"")+" "+(c.process||"")+" "+c.state},
@@ -1999,12 +1998,12 @@ function swRender(t){
 }
 const loadSoftware=guard(async()=>{
   swLoaded=true; $("#swWhen").textContent="loading…";
-  const [prog,svc,start,task,conn,evt,printers,shares,disk,env]=await Promise.all([
+  const [prog,svc,start,task,conn,evt,printers,shares,disk,env,ups]=await Promise.all([
     api("/software/programs"),api("/software/services"),api("/software/startup"),api("/software/tasks"),
     api("/net/connections"),api("/diagnostics/events?count=30"),api("/software/printers"),api("/software/shares"),
-    api("/diagnostics/disk-health"),api("/software/env")]);
-  Object.assign(swData,{prog,svc,task,conn,env,logs:evt});
-  ["prog","svc","task","conn","env"].forEach(swRender);
+    api("/diagnostics/disk-health"),api("/software/env"),api("/hardware/updates")]);
+  Object.assign(swData,{prog,svc,task,conn,env,logs:evt,upd:ups});
+  ["prog","upd","svc","task","conn","env"].forEach(swRender);
   const st=$("#swStart"); st.innerHTML=""; start.forEach(s=>st.append(hwKv(s.name,[s.command,s.location].filter(Boolean).join("  ·  "))));
   renderLogs();
   const mc=$("#swMisc"); mc.innerHTML="";
@@ -2012,7 +2011,7 @@ const loadSoftware=guard(async()=>{
   shares.forEach(s=>mc.append(hwKv("Share: "+(s.name||""),[s.path,s.description].filter(Boolean).join(" · "))));
   disk.forEach(d=>mc.append(hwKv("Disk: "+(d.model||""),"status "+(d.status||"?")+(d.predictFailure!=null?(" · SMART "+(d.predictFailure?"FAIL":"ok")):""))));
   // counts on the sub-nav buttons
-  const counts={prog:prog.length,svc:svc.length,start:start.length,task:task.length,conn:conn.length,logs:evt.length,misc:(printers.length+shares.length+disk.length),env:env.length};
+  const counts={prog:prog.length,upd:ups.length,svc:svc.length,start:start.length,task:task.length,conn:conn.length,logs:evt.length,misc:(printers.length+shares.length+disk.length),env:env.length};
   document.querySelectorAll('#swNav [data-sec]').forEach(b=>{ b.dataset.base=b.dataset.base||b.textContent; const c=counts[b.dataset.sec]; b.textContent=c!=null?`${b.dataset.base} (${c})`:b.dataset.base; });
   $("#swWhen").textContent="as of "+new Date().toLocaleTimeString();
 });

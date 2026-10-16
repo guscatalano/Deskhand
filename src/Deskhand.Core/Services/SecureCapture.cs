@@ -29,7 +29,15 @@ public static class SecureCapture
 
         // MTA: an STA thread creates a hidden OLE window, which makes SetThreadDesktop fail
         // with ERROR_BUSY. A clean MTA thread with no windows can switch desktops freely.
-        var thread = new Thread(() => result = Run(format, jpegQuality))
+        // CATCH everything: Run does GDI (CopyFromScreen) that can throw Win32Exception "handle is invalid"
+        // transiently (e.g. a secure-desktop transition / the display DC momentarily gone). An exception
+        // escaping this background thread would be UNHANDLED and terminate the whole process — return a failed
+        // result instead so one bad capture never crashes the agent.
+        var thread = new Thread(() =>
+        {
+            try { result = Run(format, jpegQuality); }
+            catch (Exception ex) { result = new InputDesktopResult(false, "", "unknown", null, "Input-desktop capture failed: " + ex.Message); }
+        })
         {
             IsBackground = true,
             Name = "Deskhand-DesktopAttach",

@@ -62,6 +62,20 @@ Start-Sleep -Milliseconds 700
 & sc.exe failure Deskhand reset= 0 actions= restart/5000/restart/5000/restart/5000 | Out-Null
 & sc.exe start  Deskhand | Out-Null
 
+# Wait for the front end to actually be listening before returning. On a freshly-provisioned box the FIRST run of
+# deskhand-http is slow (Defender real-time-scans the ~260 MB of just-extracted self-contained binaries, and the box
+# is still busy with boot/OOBE), which can push startup past a short external verify window. Blocking here makes the
+# install self-verifying: it returns only once 8791 is up (or throws a clear error), so any downstream check passes
+# immediately rather than racing the cold start.
+$deadline = (Get-Date).AddSeconds(180)
+while (-not (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 2
+}
+if (-not (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) {
+    $svc = Get-Service Deskhand -ErrorAction SilentlyContinue
+    throw "Deskhand front end is not listening on $Port after 180s (service status: $(if ($svc) { $svc.Status } else { 'not registered' }))."
+}
+
 # Launcher (agent mode) as a LocalSystem service — spawns a deskhand-agent into each interactive session.
 & sc.exe stop DeskhandAgents *> $null   # delete+recreate so a re-install isn't a silent no-op on an existing (maybe disabled) service
 & sc.exe delete DeskhandAgents *> $null

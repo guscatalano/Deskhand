@@ -255,8 +255,9 @@ public static class DeskhandTools
     [McpServerTool(Name = "deskhand_browse_files"), Description("Browse the file system (read-only): list the folders and files in a directory. path is empty for the drive roots, or a folder like \"C:\\\\Users\". Returns { path, parent, isRoot, entries[{name, path, isDirectory, size, modified, extension}], total, offset, hasMore, error? } with folders first. PAGINATED for large folders: pass limit (page size) and offset to page through — total is the full count and hasMore says if more remain (fetch offset+limit next). Only lists metadata — does NOT read file contents; OPEN a file via deskhand_launch_process, read its BYTES via deskhand_read_file. Access-denied folders return an error, not a crash.")]
     public static string BrowseFiles([Description("Directory path, e.g. \"C:\\\\Users\\\\Public\". Empty lists the drives.")] string? path = null,
         [Description("Page size (max entries to return). 0/omitted = up to 5000 in one shot.")] int limit = 0,
-        [Description("Skip this many entries (for paging). Default 0.")] int offset = 0)
-        => Json(Deskhand.Core.Services.FileSystemService.Browse(path, offset, limit));
+        [Description("Skip this many entries (for paging). Default 0.")] int offset = 0,
+        [Description("Name filter (case-insensitive substring) applied across the WHOLE folder before paging — so it matches entries on any page. Empty = no filter.")] string? filter = null)
+        => Json(Deskhand.Core.Services.FileSystemService.Browse(path, offset, limit, filter));
 
     [McpServerTool(Name = "deskhand_file_details"), Description("Read-only metadata for one file or folder: { path, name, isDirectory, size, extension, created, modified, accessed, attributes[], version?, signature?, error? }. For an exe/dll, version = { fileVersion, productVersion, company, product, description, originalFilename, copyright } and signature = { signed, subject, issuer, notAfter } (Authenticode). Reads no file content.")]
     public static string FileDetails([Description("Full path to the file or folder.")] string path)

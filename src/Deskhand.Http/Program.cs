@@ -719,7 +719,7 @@ api.MapGet("/diagnostics/disk-health", () => Results.Ok(Deskhand.Core.Services.D
 
 // Read-only file browser. path = "" (drive roots) | a folder like "C:\Users". Open a file by handing
 // its path to /process/launch (shell-execute), which also opens documents and URLs.
-api.MapGet("/fs", (string? path, int? offset, int? limit) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path, offset ?? 0, limit ?? 0)));
+api.MapGet("/fs", (string? path, int? offset, int? limit, string? filter) => Results.Ok(Deskhand.Core.Services.FileSystemService.Browse(path, offset ?? 0, limit ?? 0, filter)));
 // Read-only file/folder metadata: size, timestamps, attributes, and (for an exe/dll) version info + signature.
 api.MapGet("/fs/details", (string? path) => Results.Ok(Deskhand.Core.Services.FileSystemService.Details(path)));
 

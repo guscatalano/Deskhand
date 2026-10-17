@@ -32,7 +32,7 @@ public static class FileSystemService
 
     /// <summary>Browse a directory. <paramref name="path"/> empty/null lists the drives; otherwise a
     /// folder path (e.g. <c>C:\Users</c>). A file path returns an error pointing at process-launch.</summary>
-    public static DirListingDto Browse(string? path, int offset = 0, int limit = 0)
+    public static DirListingDto Browse(string? path, int offset = 0, int limit = 0, string? filter = null)
     {
         path = (path ?? "").Trim().Trim('"');
         if (path.Length == 0) return Roots();
@@ -54,8 +54,11 @@ public static class FileSystemService
             // Enumerate NAMES only (cheap — no per-file stat), sort folders-first/alphabetical, then stat ONLY the
             // requested page. So paging a 50k-file folder reads 50k names but stats just the page (fast + light).
             string parent = Directory.GetParent(full)?.FullName ?? "";
-            var dirNames = Safe(() => Directory.EnumerateDirectories(full)).Select(System.IO.Path.GetFileName).Where(n => n is not null).Take(MaxScan).ToList();
-            var fileNames = Safe(() => Directory.EnumerateFiles(full)).Select(System.IO.Path.GetFileName).Where(n => n is not null).Take(MaxScan).ToList();
+            // Optional name filter, applied across the WHOLE folder before paging (so search covers every page).
+            string f = (filter ?? "").Trim();
+            bool Match(string? n) => n is not null && (f.Length == 0 || n.Contains(f, StringComparison.OrdinalIgnoreCase));
+            var dirNames = Safe(() => Directory.EnumerateDirectories(full)).Select(System.IO.Path.GetFileName).Where(Match).Take(MaxScan).ToList();
+            var fileNames = Safe(() => Directory.EnumerateFiles(full)).Select(System.IO.Path.GetFileName).Where(Match).Take(MaxScan).ToList();
             dirNames.Sort(StringComparer.OrdinalIgnoreCase);
             fileNames.Sort(StringComparer.OrdinalIgnoreCase);
 

@@ -394,6 +394,14 @@
         <button class="btn sm" id="fsSearchClear" title="Back to the folder listing" hidden>Clear</button>
       </div>
       <div class="coordbar" id="fsCrumb" style="margin:10px 0"></div>
+      <div class="row" id="fsPager" style="margin:0 0 8px;align-items:center;gap:8px;display:none">
+        <input type="text" id="fsFilter" placeholder="filter this folder by name (all pages)…" style="flex:1;font-family:var(--mono);font-size:12px">
+        <label class="lbl" style="color:var(--ink-3);white-space:nowrap">per page
+          <select id="fsPageSize" style="margin-left:4px"><option>50</option><option selected>100</option><option>200</option><option>500</option><option>1000</option></select></label>
+        <button class="btn sm" id="fsPrev" title="Previous page">‹ Prev</button>
+        <span class="lbl" id="fsPos" style="color:var(--ink-3);white-space:nowrap;min-width:130px;text-align:center"></span>
+        <button class="btn sm" id="fsNext" title="Next page">Next ›</button>
+      </div>
       <div id="fsBody"></div>
     </div>
   </div>
@@ -1358,8 +1366,8 @@ const fsSel=new Set();
 function fmtSize(n){ if(n==null) return ""; const u=["B","KB","MB","GB","TB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return (i?v.toFixed(1):v)+" "+u[i]; }
 function fsUpdateSel(){ $("#fsSelCount").textContent=fsSel.size+" selected"; ["fsZipSel","fsCopySel","fsMoveSel","fsDelSel"].forEach(id=>{ const b=$("#"+id); if(b) b.disabled=fsSel.size===0; }); }
 function fsReload(){ loadFiles(fsIsRoot?"":fsCurrent); }
-let FS_PAGE=500, fsOffset=0, fsTotal=0;
-// Build one file-row element (used for the first page and every "Load more" append).
+let fsPageSize=100, fsPageOffset=0, fsTotal=0, fsFilter="", fsHasMore=false;
+// Build one file-row element.
 function fsMakeRow(e){
   const row=elm("div","fsrow"+(e.isDirectory?" dir":""));
   const cbCell=elm("div");
@@ -1384,27 +1392,33 @@ function fsMakeRow(e){
   }
   row.append(cbCell,nm,sz,md,act); return row;
 }
-function fsHdrText(){ return fsOffset>=fsTotal ? (fsTotal.toLocaleString()+" entr"+(fsTotal===1?"y":"ies")) : ("showing "+fsOffset.toLocaleString()+" of "+fsTotal.toLocaleString()); }
-// A "Load more" button that fetches + appends the next page (big folders don't dump thousands of rows at once).
-function fsAddMore(hasMore, sect){
-  const old=$("#fsMore"); if(old) old.remove();
-  if(!hasMore || fsIsRoot) return;
-  const b=elm("button","btn sm"); b.id="fsMore"; b.style.margin="8px 0 0 6px"; b.textContent="Load more ("+(fsTotal-fsOffset).toLocaleString()+" left)";
-  b.onclick=guard(async()=>{
-    b.remove();
-    const d=await api("/fs?path="+encodeURIComponent(fsCurrent)+"&limit="+FS_PAGE+"&offset="+fsOffset);
-    (d.entries||[]).forEach(e=>sect.append(fsMakeRow(e)));
-    fsOffset+=(d.entries||[]).length;
-    const cnt=sect.querySelector(".count"); if(cnt) cnt.textContent=fsHdrText();
-    fsAddMore(d.hasMore, sect);
-  });
-  sect.append(b);
+function fsUpdatePager(shown){
+  const pos=$("#fsPos"); if(pos){
+    const from=fsTotal===0?0:fsPageOffset+1, to=fsPageOffset+shown;
+    pos.textContent=(fsPageOffset>0||fsHasMore) ? (from.toLocaleString()+"–"+to.toLocaleString()+" of "+fsTotal.toLocaleString()) : (fsTotal.toLocaleString()+" item"+(fsTotal===1?"":"s"));
+  }
+  const prev=$("#fsPrev"); if(prev) prev.disabled=fsPageOffset<=0;
+  const next=$("#fsNext"); if(next) next.disabled=!fsHasMore;
 }
+// Fetch + render the CURRENT page (replaces the listing). The name filter is applied server-side across the whole
+// folder, so it finds matches on any page, and Prev/Next walk the (filtered) set.
+const fsLoadPage=guard(async()=>{
+  const d=await api("/fs?path="+encodeURIComponent(fsCurrent)+"&limit="+fsPageSize+"&offset="+fsPageOffset+(fsFilter?("&filter="+encodeURIComponent(fsFilter)):""));
+  fsTotal=d.total||0; fsHasMore=!!d.hasMore;
+  const body=$("#fsBody"); body.innerHTML="";
+  if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; fsUpdatePager(0); return; }
+  const sect=elm("div","sect");
+  (d.entries||[]).forEach(e=>sect.append(fsMakeRow(e)));
+  if(!(d.entries&&d.entries.length)){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent=fsFilter?"(no matches in this folder)":"(empty)"; sect.append(em); }
+  body.append(sect);
+  fsUpdatePager((d.entries||[]).length);
+});
 const loadFiles=guard(async(path)=>{
-  fsOffset=0;
-  const d=await api("/fs?path="+encodeURIComponent(path||"")+"&limit="+FS_PAGE);
+  fsPageOffset=0; fsFilter=""; { const fi=$("#fsFilter"); if(fi) fi.value=""; }
+  // first fetch establishes isRoot/parent/path; the listing itself comes from the same response
+  const d=await api("/fs?path="+encodeURIComponent(path||"")+"&limit="+fsPageSize);
   fsIsRoot=!!d.isRoot; fsParent=d.parent||null; fsCurrent=fsIsRoot?"":(d.path||""); fsLoaded=true;
-  fsTotal=d.total||(d.entries?d.entries.length:0);
+  fsTotal=d.total||(d.entries?d.entries.length:0); fsHasMore=!!d.hasMore;
   fsSel.clear(); fsUpdateSel();
   $("#fsPath").value=fsCurrent;
   $("#fsUploadBtn").disabled=fsIsRoot;
@@ -1415,16 +1429,20 @@ const loadFiles=guard(async(path)=>{
   crumb.append(mk("This PC",""));
   if(fsCurrent){ const segs=fsCurrent.replace(/\\+$/,"").split("\\").filter(Boolean); let acc="";
     segs.forEach((seg,i)=>{ acc = i===0 ? seg+"\\" : acc.replace(/\\$/,"")+"\\"+seg; const sep=elm("span"); sep.textContent=" \\ "; sep.style.color="var(--ink-3)"; crumb.append(sep, mk(seg,acc)); }); }
+  const pg=$("#fsPager"); if(pg) pg.style.display=fsIsRoot?"none":"flex";
   const body=$("#fsBody"); body.innerHTML="";
-  if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; return; }
-  const sect=elm("div","sect"); const h=elm("div","h");
+  if(d.error){ body.innerHTML='<div style="color:var(--crit);padding:10px">'+d.error+'</div>'; fsUpdatePager(0); return; }
+  const sect=elm("div","sect");
   (d.entries||[]).forEach(e=>sect.append(fsMakeRow(e)));
-  fsOffset=(d.entries||[]).length;
-  h.innerHTML=`entries <span class="count">${fsHdrText()}</span>`; sect.insertBefore(h, sect.firstChild);
   if(!(d.entries&&d.entries.length)){ const em=elm("div"); em.style.cssText="color:var(--ink-3);font-size:12px;padding:6px 7px"; em.textContent="(empty)"; sect.append(em); }
   body.append(sect);
-  fsAddMore(d.hasMore, sect);
+  fsUpdatePager((d.entries||[]).length);
 });
+$("#fsPrev").onclick=guard(async()=>{ if(fsPageOffset>0){ fsPageOffset=Math.max(0,fsPageOffset-fsPageSize); await fsLoadPage(); } });
+$("#fsNext").onclick=guard(async()=>{ if(fsHasMore){ fsPageOffset+=fsPageSize; await fsLoadPage(); } });
+$("#fsPageSize").onchange=guard(async()=>{ fsPageSize=parseInt($("#fsPageSize").value,10)||100; fsPageOffset=0; await fsLoadPage(); });
+let fsFilterT=null;
+$("#fsFilter").addEventListener("input",()=>{ clearTimeout(fsFilterT); fsFilterT=setTimeout(()=>{ fsFilter=$("#fsFilter").value.trim(); fsPageOffset=0; fsLoadPage(); }, 300); });
 // content search (grep): renders matching lines (file · line · text) in place of the listing.
 const fsGrepRender=async(q)=>{
   const d=await api("/fs/grep?path="+encodeURIComponent(fsCurrent)+"&q="+encodeURIComponent(q)+"&max=500");

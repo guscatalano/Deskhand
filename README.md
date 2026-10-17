@@ -123,38 +123,45 @@ in a **`deskhand.json`** config file for a reproducible, file-based install:
 - Applies to all four hosts (dashboard, MCP stdio, fleet server, fleet agent). A sample is in
   [`installer/deskhand.example.json`](installer/deskhand.example.json).
 
-### Running it in the background (window, service, logon)
+### Running it in the background (service, sessions, logon)
 
-Deskhand drives the **interactive desktop** (UIA, input, capture), so it must run **in the logged-in
-session** — not as a classic Windows service, which lives in **session 0** and is blind to the desktop.
-`installer/install-service.ps1` can register it as a service, but that path only fits session-0-safe uses;
-for desktop automation, run it in the user session. To avoid a stray console window there, set
-**`DESKHAND_HIDE_CONSOLE=1`** (or `hideConsole: true` in `deskhand.json`, or pass `--hidden`) — Deskhand hides
-its console at startup but keeps running in the session so it can still drive the screen.
+Deskhand drives the **interactive desktop** (UIA, input, capture), which lives in a user's session — not in
+**session 0**, where Windows services run blind to the desktop. The **default** install bridges that with a
+**hybrid local-fleet**: a session-0 **LocalSystem service** hosts the API/MCP on the port and stays up across
+sign-ins, and **spawns a per-session `deskhand-agent`** into each interactive session (and a SYSTEM agent at the
+logon / lock / secure screen), then **routes desktop operations to the right session's agent**. You get a stable
+endpoint that's reachable before anyone logs in, survives logoff / switch-user, and can drive multiple sessions
+at once — without the session-0 blindness.
 
-**`installer/install-session-follow.ps1`** is the **recommended auto-start** (the default). Run it elevated and
-it installs a LocalSystem service (`DeskhandLauncher`) that keeps `deskhand-http.exe` in whichever session owns
-the **physical console**, launched **as the logged-in user and elevated** — so Deskhand **follows a fast user
-switch** (it relaunches into the new user's session when the console changes), and at the logon / lock / secure
-screen it runs **as SYSTEM** so that desktop stays capturable. It disables the per-user logon task to avoid two
-instances fighting over the port:
+**`installer/install-hybrid.ps1`** is the recommended install. Run it elevated; it creates the front-end service
+(`Deskhand`, session 0), creates the agent launcher (`DeskhandAgents`) that spawns the per-session agents,
+disables any per-user logon task, and starts both:
 
 ```powershell
-installer\install-session-follow.ps1 -Port 8791    # token comes from deskhand.json; follows whoever logs in
+installer\install-hybrid.ps1 -Port 8791 -Token <secret> -Bind any -EnableShell
 ```
 
-**`installer/install-logon-task.ps1`** is the simpler single-user alternative: a scheduled task that, at logon,
-launches Deskhand **in the interactive session** with **highest privileges** (elevated, no UAC prompt) and
-**`--hidden`** (no console window). Use it when you don't need switch-user following or secure-screen capture:
+Desktop ops default to the **active console** session; target another with **`?session=<id>`** (or an
+`X-Deskhand-Session` header) — `deskhand_sessions` / `GET /hybrid/sessions` lists the connected sessions.
+`run_command` runs in the session-0 service by default; `?session=<id>` runs it in that session **as that user**.
+It's gated behind `DESKHAND_HYBRID=1`, which the installer sets. See [`docs/hybrid-local-fleet.md`](docs/hybrid-local-fleet.md).
 
-```powershell
-installer\install-logon-task.ps1 -ExePath C:\Deskhand\deskhand-http.exe -Start   # this user
-installer\install-logon-task.ps1 -AllUsers                                        # any user who logs on
-installer\install-logon-task.ps1 -Uninstall
-```
+**Alternatives** (single-instance — deskhand-http runs *in* the session itself; simpler when you don't need the
+multi-session front end):
 
-(Standard users can't get the elevated token, so "highest privileges" only elevates for admins; the task
-still runs, unelevated.) Put a `deskhand.json` next to the exe for token/port/etc.
+- **`installer/install-session-follow.ps1`** — a LocalSystem service (`DeskhandLauncher`) that keeps ONE
+  `deskhand-http.exe` in whichever session owns the physical console, elevated, and relocates it on a fast user
+  switch (SYSTEM at the logon/secure screen). One instance, follows the console user.
+  `installer\install-session-follow.ps1 -Port 8791`
+- **`installer/install-logon-task.ps1`** — the simplest: a scheduled task that launches Deskhand in the
+  interactive session at logon, elevated and windowless. Bound to one user; no switch-user following.
+  `installer\install-logon-task.ps1 -AllUsers`
+- **`installer/install-service.ps1`** — deskhand-http itself as a session-0 service. **Blind to the desktop**
+  (UIA/capture/input hit an empty session 0); only for read-only inventory / files / shell / metrics. Prefer the
+  hybrid above for anything that touches the screen.
+
+(To avoid a stray console window when Deskhand runs in a session, set **`DESKHAND_HIDE_CONSOLE=1`** / `hideConsole:
+true` / `--hidden`.) Put a `deskhand.json` next to the exe for token/port/etc.
 
 ## Web dashboard
 

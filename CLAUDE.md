@@ -80,15 +80,21 @@ thin/unstable trees (Chromium/Electron). Prefer tree/ref targeting over coordina
 
 ## Hosting & process model (matters for anything session- or reboot-related)
 
-- **Default desktop-capture mode is the session-follow launcher** (`installer/install-session-follow.ps1`):
-  a LocalSystem service (`DeskhandLauncher`, `SessionFollowWorker` in `Deskhand.Fleet.Launcher`, selected by the
-  `DESKHAND_LAUNCH_EXE` env var) that keeps `deskhand-http.exe` in whichever session owns the physical console —
-  launched **as the logged-in user, elevated** (full linked token) and **relocated on a fast user switch**; at the
-  logon/lock/secure screen (no user) it launches **as SYSTEM** so that desktop stays capturable. It disables the
-  logon task. This is what "follows whoever's logged in" means and is the recommended install.
-- **Simpler single-user alternative — the logon scheduled task** (`installer/install-logon-task.ps1`): runs
-  `deskhand-http.exe --hidden` in the interactive session, relaunched fresh on each sign-in (the resume trigger for
-  reboot-surviving recordings). No switch-user following; bound to one user.
+- **Default is the hybrid local-fleet** (`installer/install-hybrid.ps1`, `DESKHAND_HYBRID=1`, `docs/hybrid-local-fleet.md`):
+  deskhand-http runs as a **session-0 LocalSystem service** (`Deskhand`) hosting the flat tools on 8791, and a second
+  service (`DeskhandAgents` = the launcher in agent mode) **spawns a per-session `deskhand-agent` into each interactive
+  session** (plus a SYSTEM agent at the logon/secure screen). In hybrid, the host's `IAutomationBackend` is a
+  `RoutingBackend` (`Deskhand.Core.Fleet`) that forwards desktop ops (UIA/capture/input) to the target session's agent
+  (default = active console; `?session=<id>` / `X-Deskhand-Session` to pick another, `GET /hybrid/sessions` to list);
+  direct services (files/registry/shell/events/disk) run in the session-0 host. Streaming + ScreenRecorder also pull
+  frames from the agent in hybrid. This is the recommended install (stable endpoint, multi-session, reachable before login).
+- **Alternative — the session-follow launcher** (`installer/install-session-follow.ps1`): a LocalSystem service
+  (`DeskhandLauncher`, `SessionFollowWorker` in `Deskhand.Fleet.Launcher`, selected by `DESKHAND_LAUNCH_EXE`) that keeps
+  ONE `deskhand-http.exe` in whichever session owns the physical console — as the logged-in user, elevated (full linked
+  token), relocated on a fast user switch, SYSTEM at the logon/secure screen. One instance, no routing.
+- **Alternative — the logon scheduled task** (`installer/install-logon-task.ps1`): runs `deskhand-http.exe --hidden`
+  in the interactive session, relaunched fresh on each sign-in (the resume trigger for reboot-surviving recordings).
+  No switch-user following; bound to one user.
 - **Windows Service mode** (`installer/install-service.ps1`, `UseWindowsService`, `ServiceName="Deskhand"`) runs in
   **Session 0 with no interactive desktop** — explicitly *not* for desktop capture.
 - **Secure desktop** (UAC/lock/logon): `Deskhand.Broker` (elevated launcher) starts `Deskhand.SecureHelper` as

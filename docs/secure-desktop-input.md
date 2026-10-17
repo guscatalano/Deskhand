@@ -35,24 +35,34 @@ Two opt-in mechanisms exist (gated behind `DESKHAND_ENABLE_SECURE_DESKTOP_INPUT=
    then **destroy the signing key** (the embedded signature stays valid, but no reusable
    "sign-anything-trusted" key remains). `POST /secure/deprovision-input` reverses it.
 
-These **may** work for the lock/logon surfaces (the kiosk / auto-logon case — untested here because
-testing it risks locking the operator out), which historically accept SYSTEM/uiAccess input.
+## What does NOT work: driving ANY secure desktop (lock / logon / UAC) — tested, confirmed
 
-## What does NOT work: the UAC consent prompt
-
-Driving the **UAC consent prompt** (`consent.exe`) by synthetic input is **blocked by Windows** and
-no mechanism we deploy on demand defeats it. Tested exhaustively on a live prompt:
+Driving **any** secure desktop (`consent.exe` for UAC, **and** the lock / logon / credential screen)
+by synthetic input is **blocked by Windows**, and no mechanism we deploy on demand defeats it. This was
+initially proven for the UAC consent prompt, then — the previously "untested" case — for the **lock/logon
+screen** too, on sandbox 903 (v0.2.103):
 
 | Approach | On Winlogon | uiAccess token | `SendInput` result |
 |---|---|---|---|
 | SYSTEM helper | yes (attached) | no | ACCESS_DENIED (Win32 5) |
 | Signed uiAccess helper (launched on Default) | no (`OpenInputDesktop(Winlogon)` denied) | yes | ACCESS_DENIED |
-| SYSTEM helper + self-granted `TokenUIAccess=1`, attached to Winlogon | yes | yes | ACCESS_DENIED |
+| SYSTEM helper + **self-granted** `TokenUIAccess=1`, attached to Winlogon | yes | yes | ACCESS_DENIED |
+| **SYSTEM hybrid logon agent, `TokenUIAccess=1` set BEFORE process creation (born-uiAccess), attached to Winlogon** → **lock/logon screen** | yes | yes (verified `UIAccess=1` on the live process) | **ACCESS_DENIED (Win32 5)** |
 
-Even with **all three ingredients present and verified**, the consent UI refuses the injection. This
-is a deliberate UAC security boundary: only genuine human input, or an accessibility tool that Windows
-itself launches on the secure desktop via AtBroker, reaches the consent prompt. (Registering Deskhand
-as such an AT is the only untested avenue, and Microsoft may still block the consent "Yes".)
+The last row is the decisive one: a process that is SYSTEM, **born** with uiAccess (not the ineffective
+post-start self-grant — win32k latches UIAccess at process creation), and attached to the Winlogon
+desktop — i.e. **every ingredient present and verified** — still gets `SendInput` → `Win32 5` on the
+Windows lock/logon screen. So the earlier assumption that LogonUI (itself SYSTEM) would accept
+same-integrity injection is **false**: the secure desktop rejects synthetic input regardless of token,
+integrity, or desktop attachment. It is a deliberate Windows security boundary (the lock/logon/consent
+surfaces are trustworthy precisely because only the physical input path reaches them). The **only**
+remaining avenue is registering as an accessibility tool that Windows itself launches on the secure
+desktop via AtBroker — untested, a per-machine registration, and Microsoft may still block credential/
+consent entry.
+
+**Capture, by contrast, works on all of these** (the SYSTEM agent returns the live lock/logon/UAC image).
+And raising the secure desktop via **SendSAS** (Ctrl+Alt+Del, `POST /secure/attention`) works from the
+SYSTEM host. It is only *driving* input on the secure desktop that Windows refuses.
 
 ## The practical way to automate UAC: move it off the secure desktop
 

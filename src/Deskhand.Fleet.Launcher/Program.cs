@@ -39,6 +39,7 @@ namespace Deskhand.Fleet.Launcher
         protected override async Task ExecuteAsync(CancellationToken ct)
         {
             log.LogInformation("Deskhand launcher started; agent={agent} url={url}", _agentExe, _wsUrl);
+            EnableSeTcb();   // once: lets us set TokenUIAccess on the SYSTEM logon agent's token (born uiAccess)
             while (!ct.IsCancellationRequested)
             {
                 try { EnsureAgents(); }
@@ -99,6 +100,15 @@ namespace Deskhand.Fleet.Launcher
                     uint sess = session;
                     if (!SetTokenInformation(primary, TokenSessionId, ref sess, sizeof(uint)))
                     { log.LogWarning("logon-agent SetTokenInformation(session) failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
+                    uint ui = 1;   // born uiAccess: set BEFORE CreateProcessAsUser (win32k latches UIAccess at process
+                                   // creation; a self-grant after start is ignored). Needs SeTcb, held by LocalSystem. This
+                                   // lets SendInput cross UIPI to elevated windows on a NORMAL desktop. It does NOT unlock
+                                   // the SECURE desktop: a SYSTEM + born-uiAccess + Winlogon-attached process STILL gets
+                                   // SendInput ACCESS_DENIED on the lock/logon/UAC screen (proven on sandbox 903, v0.2.103) —
+                                   // that's a hard Windows boundary. Kept for parity with SessionFollowWorker. See
+                                   // docs/secure-desktop-input.md.
+                    if (!SetTokenInformation(primary, TokenUIAccess, ref ui, sizeof(uint)))
+                        log.LogWarning("logon-agent SetTokenInformation(UIAccess) failed (Win32 {e})", Marshal.GetLastWin32Error());
                     CreateEnvironmentBlock(out IntPtr env, primary, false);   // machine env: DESKHAND_FLEET_URL/TOKEN
                     var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\winlogon" };
                     string agentId = $"{Environment.MachineName}-S{session}";
@@ -115,6 +125,25 @@ namespace Deskhand.Fleet.Launcher
                 finally { CloseHandle(primary); }
             }
             finally { CloseHandle(selfTok); }
+        }
+
+        // Enable SeTcbPrivilege on our own process token (LocalSystem has it present but disabled) so setting
+        // TokenUIAccess on the logon agent's primary token is permitted — the key to born-uiAccess input.
+        private void EnableSeTcb()
+        {
+            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out IntPtr tok))
+            { log.LogWarning("EnableSeTcb: OpenProcessToken failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
+            try
+            {
+                if (!LookupPrivilegeValue(null, "SeTcbPrivilege", out long luid))
+                { log.LogWarning("EnableSeTcb: LookupPrivilegeValue failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
+                var tp = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attributes = SE_PRIVILEGE_ENABLED };
+                if (!AdjustTokenPrivileges(tok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 0)
+                    log.LogWarning("EnableSeTcb: AdjustTokenPrivileges (Win32 {e})", Marshal.GetLastWin32Error());
+                else
+                    log.LogInformation("EnableSeTcb: SeTcbPrivilege enabled");
+            }
+            finally { CloseHandle(tok); }
         }
 
         private static HashSet<uint> ActiveUserSessions()

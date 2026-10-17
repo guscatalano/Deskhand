@@ -123,9 +123,12 @@ public sealed class SessionFollowWorker(ILogger<SessionFollowWorker> log) : Back
                 uint sess = session;
                 if (!SetTokenInformation(primary, TokenSessionId, ref sess, sizeof(uint)))
                 { log.LogWarning("SetTokenInformation(session) failed (Win32 {e})", Marshal.GetLastWin32Error()); return; }
-                uint ui = 1;   // born uiAccess so SendInput is accepted on the secure desktop (SeTcbPrivilege, held by LocalSystem)
+                uint ui = 1;   // born uiAccess (SeTcbPrivilege, held by LocalSystem): lets SendInput cross UIPI to elevated
+                               // windows on a NORMAL desktop. NOTE: this does NOT unlock the SECURE desktop — a SYSTEM +
+                               // born-uiAccess + Winlogon-attached process still gets SendInput ACCESS_DENIED on the
+                               // lock/logon/UAC screen (proven on sandbox 903, v0.2.103). See docs/secure-desktop-input.md.
                 if (!SetTokenInformation(primary, TokenUIAccess, ref ui, sizeof(uint)))
-                    log.LogWarning("SetTokenInformation(UIAccess) failed (Win32 {e}) — secure-desktop input may be rejected", Marshal.GetLastWin32Error());
+                    log.LogWarning("SetTokenInformation(UIAccess) failed (Win32 {e})", Marshal.GetLastWin32Error());
                 // Launch ON the Winlogon (secure) desktop — like Deskhand.SecureHelper — so a uiAccess SYSTEM
                 // process can inject input there, not only capture it.
                 StartWithToken(primary, session, Mode.System, @"winsta0\winlogon");

@@ -32,6 +32,16 @@ if (-not (Test-Path $http))     { throw "deskhand-http.exe not found in $Install
 if (-not (Test-Path $launcher)) { throw "launcher\deskhand-launcher.exe not found in $InstallDir" }
 if (-not (Test-Path $agent))    { throw "agent\deskhand-agent.exe not found in $InstallDir" }
 if ($Bind -eq 'any' -and -not $Token) { throw "Binding to the network (any) requires -Token." }
+# Guard: fail loudly if handed an UNEXPANDED placeholder as the token. A Groundhogfile that single-quotes the secret
+# ('${secret:DESKHAND_TOKEN}') stops PowerShell expanding the '${env:GROUNDHOG_SECRET_...}' it rewrites it to, so we
+# would silently set DESKHAND_TOKEN to that literal string — a token nobody can reproduce, leaving every external
+# client with a 401 while the box looks healthy. Surface it here instead of shipping a broken, unreachable box.
+if ($Token -match '\$\{') {
+    throw ("The -Token value is an unexpanded placeholder: '$Token'. The caller passed a literal " +
+           '${...} instead of the real secret, so DESKHAND_TOKEN would become that literal string and every ' +
+           'external client would get 401. Fix: in the caller (e.g. the Groundhogfile), DOUBLE-quote the secret ' +
+           'so it expands — "${secret:DESKHAND_TOKEN}" not ' + "'" + '${secret:DESKHAND_TOKEN}' + "'" + ' — then re-run.')
+}
 
 # Machine env the services (and the agents they spawn) read. The agents authenticate to /agent/connect with the
 # fleet token (= the Deskhand token here); the launcher runs in AGENT mode (DESKHAND_LAUNCH_EXE unset).

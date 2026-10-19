@@ -1295,6 +1295,11 @@ api.MapGet("/update/status", () =>
         c.Current, c.Latest, c.UpdateAvailable, c.Name, c.Notes, c.PublishedAt, c.AssetName, c.AssetSize, c.Enabled, c.Error,
         autoUpdate = Deskhand.Core.Services.UpdateService.AutoUpdate,
         autoUpdateIntervalMin = Deskhand.Core.Services.UpdateService.AutoUpdateIntervalMinutes,
+        // Back-off: if a version keeps failing to apply, the auto-updater holds off instead of re-downloading
+        // hourly. Surfaced so an operator can see WHY a reachable box isn't advancing.
+        backoffTarget = Deskhand.Core.Services.UpdateService.BackoffStatus().target,
+        backoffAttempts = Deskhand.Core.Services.UpdateService.BackoffStatus().attempts,
+        backoffHoldingOff = Deskhand.Core.Services.UpdateService.BackoffStatus().holdingOff,
     });
 });
 

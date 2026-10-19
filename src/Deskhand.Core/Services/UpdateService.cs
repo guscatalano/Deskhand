@@ -103,6 +103,16 @@ public static class UpdateService
         WriteState(new UpdateState(latest, s.Target == latest ? s.Attempts + 1 : 1, DateTime.UtcNow));
     }
 
+    /// <summary>Back-off state for /update/status: the version recent apply attempts targeted, how many
+    /// consecutive attempts have been made at it, and whether the auto-updater is currently holding off (so an
+    /// operator can see WHY a reachable box isn't advancing instead of guessing). Null target = no failed run.</summary>
+    public static (string? target, int attempts, bool holdingOff) BackoffStatus()
+    {
+        var s = ReadState();
+        bool holding = s.Target is not null && s.Attempts >= MaxAutoAttempts && DateTime.UtcNow - s.LastUtc < BackoffWindow;
+        return (s.Target, s.Attempts, holding);
+    }
+
     public static async Task<UpdateCheckDto> CheckAsync()
     {
         _ = Task.Run(SweepStaleWorkDirs);   // opportunistically clear leftover staging folders (non-blocking)

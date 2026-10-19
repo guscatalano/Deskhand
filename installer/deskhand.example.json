@@ -13,17 +13,16 @@
   "enableSessionLaunch": false,
   "enableFirewallAdmin": false,
   "enableSelfUpdate": false,
-  "//autoUpdate": "true = check GitHub Releases on an interval and apply newer versions automatically (implies enableSelfUpdate)",
+  "//autoUpdate": "true = check for newer versions on an interval and apply them automatically (implies enableSelfUpdate)",
   "autoUpdate": false,
   "autoUpdateIntervalMin": 60,
+  "//updateManifestUrl": "Optional: update from this manifest JSON URL INSTEAD of GitHub (an internal mirror, the controller's payload server, S3…). Shape: {\"version\":\"0.2.108\",\"url\":\"https://…/deskhand.zip\",\"sha256\":\"<hex>\",\"size\":274198858}. One source for a whole fleet; works where GitHub is unreachable.",
+  "updateManifestUrl": "",
 
   "maxToolChars": 200000,
   "maxUploadMb": 1024,
   "uiaTimeoutMs": 2000,
 
   "//hideConsole": "true = run windowless in the logged-in session (no cmd window); still drives the desktop (unlike a session-0 service)",
-  "hideConsole": false,
-
-  "//noFleet": "true = single-machine deployment; hides fleet-only UI (the Fleet link) in the dashboard",
-  "noFleet": false
+  "hideConsole": false
 }

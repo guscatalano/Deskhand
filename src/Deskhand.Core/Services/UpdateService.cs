@@ -58,6 +58,7 @@ public static class UpdateService
 
     public static async Task<UpdateCheckDto> CheckAsync()
     {
+        _ = Task.Run(SweepStaleWorkDirs);   // opportunistically clear leftover staging folders (non-blocking)
         string cur = BuildInfo.Version;
         try
         {
@@ -79,6 +80,7 @@ public static class UpdateService
     {
         if (!Enabled)
             return new UpdateApplyDto(false, BuildInfo.Version, null, null, "Self-update is disabled. Set DESKHAND_ENABLE_SELF_UPDATE=1.");
+        SweepStaleWorkDirs();   // clear leftovers from prior (incl. failed) applies before staging a fresh one
         try
         {
             var rel = await LatestReleaseAsync();
@@ -156,7 +158,29 @@ public static class UpdateService
         } catch {
           # Leave the old install intact on failure; the operator can extract the staged zip manually.
         }
+        # Delete the staging work dir (the ~260 MB zip + its extraction) so updates don't fill the drive.
+        # Deletes staging + zip even if the running .ps1 itself can't be removed; the remnant is swept next check.
+        try { Remove-Item -Path (Split-Path -Parent $Staging) -Recurse -Force -ErrorAction SilentlyContinue } catch {}
         """;
+
+    /// <summary>Delete leftover <c>%TEMP%\deskhand-update-*</c> staging folders from past updates. Each holds
+    /// the downloaded <c>deskhand.zip</c> (~260 MB) plus its extraction, so a failed/interrupted apply — or an
+    /// older build that never cleaned up — can quietly fill the drive. The updater script removes its own folder
+    /// after a successful apply; this is the safety net that also clears an accumulated backlog. Skips anything
+    /// touched in the last 10 min so it can't race an in-flight apply's handoff. Best-effort; never throws.</summary>
+    public static void SweepStaleWorkDirs()
+    {
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddMinutes(-10);
+            foreach (var dir in Directory.EnumerateDirectories(Path.GetTempPath(), "deskhand-update-*"))
+            {
+                try { if (Directory.GetLastWriteTimeUtc(dir) < cutoff) Directory.Delete(dir, recursive: true); }
+                catch { /* in use, partially gone, or racing another delete — skip it */ }
+            }
+        }
+        catch { /* temp not enumerable — ignore */ }
+    }
 
     private static async Task<(string tag, string? name, string? notes, string? published, string? asset, long size)?> LatestReleaseAsync()
     {

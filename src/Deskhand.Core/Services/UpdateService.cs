@@ -56,9 +56,57 @@ public static class UpdateService
     /// <summary>The most recent check result, cached for a fast /update/status (populated at startup).</summary>
     public static UpdateCheckDto? Cached { get; private set; }
 
+    // ---- failed-apply back-off ----
+    // A self-update that can't complete (disk full, flaky network, a file still locked) would otherwise
+    // re-download the ~260 MB zip every interval forever. We record each apply attempt per target version;
+    // after a few failures at the same version the auto-updater holds off until a back-off window passes. A
+    // successful update (the new version is now running) clears the record on the next check.
+    private sealed record UpdateState(string? Target, int Attempts, DateTime LastUtc);
+
+    private static string StatePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Deskhand", "update-state.json");
+
+    private static UpdateState ReadState()
+    {
+        try { return JsonSerializer.Deserialize<UpdateState>(File.ReadAllText(StatePath)) ?? new(null, 0, default); }
+        catch { return new(null, 0, default); }
+    }
+
+    private static void WriteState(UpdateState s)
+    {
+        try { Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!); File.WriteAllText(StatePath, JsonSerializer.Serialize(s)); }
+        catch { /* best-effort */ }
+    }
+
+    private static void ClearStateIfUpdated()
+    {
+        var s = ReadState();
+        if (s.Target is not null && CompareVersions(BuildInfo.Version, s.Target) >= 0)
+            try { File.Delete(StatePath); } catch { }
+    }
+
+    private const int MaxAutoAttempts = 3;
+    private static readonly TimeSpan BackoffWindow = TimeSpan.FromHours(24);
+
+    /// <summary>Whether the auto-updater should attempt <paramref name="latest"/> now, or hold off because it has
+    /// already failed to apply this same version several times recently (so it doesn't re-download every interval).
+    /// A manual apply ignores this.</summary>
+    public static bool ShouldAutoApply(string latest)
+    {
+        var s = ReadState();
+        return !(s.Target == latest && s.Attempts >= MaxAutoAttempts && DateTime.UtcNow - s.LastUtc < BackoffWindow);
+    }
+
+    private static void RecordApplyAttempt(string latest)
+    {
+        var s = ReadState();
+        WriteState(new UpdateState(latest, s.Target == latest ? s.Attempts + 1 : 1, DateTime.UtcNow));
+    }
+
     public static async Task<UpdateCheckDto> CheckAsync()
     {
         _ = Task.Run(SweepStaleWorkDirs);   // opportunistically clear leftover staging folders (non-blocking)
+        ClearStateIfUpdated();              // a prior update that landed clears its back-off record
         string cur = BuildInfo.Version;
         try
         {
@@ -130,7 +178,12 @@ public static class UpdateService
             if (!File.Exists(Path.Combine(staging, Path.GetFileName(exe))))
                 return new UpdateApplyDto(false, BuildInfo.Version, latest, null, $"Downloaded {Asset} doesn't contain {Path.GetFileName(exe)} — not a matching build.");
 
-            // Detached updater: wait a beat, stop THIS process, copy staged files over the install dir, relaunch.
+            // Record the attempt so a repeatedly-failing apply backs off instead of re-downloading hourly; a
+            // successful update clears this on the next check (ClearStateIfUpdated), once the new version runs.
+            RecordApplyAttempt(latest);
+
+            // Detached updater: wait a beat, stop THIS process (or the services), copy staged files over the
+            // install dir, relaunch.
             string script = Path.Combine(work, "apply.ps1");
             await File.WriteAllTextAsync(script, UpdaterScript());
             Process.Start(new ProcessStartInfo
@@ -149,14 +202,43 @@ public static class UpdateService
 
     private static string UpdaterScript() => """
         param([int]$AppPid, [string]$Staging, [string]$AppDir, [string]$Exe)
+        $ErrorActionPreference = 'SilentlyContinue'
         Start-Sleep -Seconds 1
-        try { Stop-Process -Id $AppPid -Force -ErrorAction SilentlyContinue } catch {}
-        Start-Sleep -Seconds 2
-        try {
-          Copy-Item -Path (Join-Path $Staging '*') -Destination $AppDir -Recurse -Force
-          Start-Process -FilePath $Exe -WorkingDirectory $AppDir
-        } catch {
-          # Leave the old install intact on failure; the operator can extract the staged zip manually.
+
+        function Stop-Svc($n) {
+          if (Get-Service $n -ErrorAction SilentlyContinue) {
+            & sc.exe stop $n | Out-Null
+            for ($i = 0; $i -lt 40; $i++) { if ((Get-Service $n).Status -eq 'Stopped') { break }; Start-Sleep -Milliseconds 500 }
+          }
+        }
+
+        # A service install (the hybrid default, or UseWindowsService) can't be updated by killing one PID:
+        # the SCM restarts the service on a crash, and the launcher + per-session agents keep their binaries
+        # locked. So GRACEFULLY stop the services (sc stop doesn't trigger the SCM's restart action), kill any
+        # lingering Deskhand processes to release file handles, copy, then start the services back up.
+        if (Get-Service Deskhand -ErrorAction SilentlyContinue) {
+          Stop-Svc 'DeskhandAgents'
+          Stop-Svc 'DeskhandLauncher'
+          Stop-Svc 'Deskhand'
+          Get-Process deskhand-agent,deskhand-launcher,deskhand-http,deskhand-secure,deskhand-broker,deskhand-uia -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          for ($i = 0; $i -lt 5; $i++) {
+            try { Copy-Item -Path (Join-Path $Staging '*') -Destination $AppDir -Recurse -Force -ErrorAction Stop; break }
+            catch { Start-Sleep -Seconds 2 }   # a handle may be slow to release; retry
+          }
+          if (Get-Service Deskhand -ErrorAction SilentlyContinue)       { & sc.exe start Deskhand | Out-Null }
+          if (Get-Service DeskhandAgents -ErrorAction SilentlyContinue) { & sc.exe start DeskhandAgents | Out-Null }
+          if (Get-Service DeskhandLauncher -ErrorAction SilentlyContinue) { & sc.exe start DeskhandLauncher | Out-Null }
+        } else {
+          # Plain self-contained install: stop this process and relaunch the exe directly.
+          try { Stop-Process -Id $AppPid -Force -ErrorAction SilentlyContinue } catch {}
+          Start-Sleep -Seconds 2
+          try {
+            Copy-Item -Path (Join-Path $Staging '*') -Destination $AppDir -Recurse -Force
+            Start-Process -FilePath $Exe -WorkingDirectory $AppDir
+          } catch {
+            # Leave the old install intact on failure; the operator can extract the staged zip manually.
+          }
         }
         # Delete the staging work dir (the ~260 MB zip + its extraction) so updates don't fill the drive.
         # Deletes staging + zip even if the running .ps1 itself can't be removed; the remnant is swept next check.

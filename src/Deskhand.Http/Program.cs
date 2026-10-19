@@ -254,7 +254,11 @@ if (Deskhand.Core.Services.UpdateService.AutoUpdate)
             try
             {
                 var chk = await Deskhand.Core.Services.UpdateService.CheckAsync();
-                if (chk.UpdateAvailable)
+                if (chk.UpdateAvailable && chk.Latest is not null && !Deskhand.Core.Services.UpdateService.ShouldAutoApply(chk.Latest))
+                {
+                    Console.WriteLine($"Auto-update: {chk.Latest} available but holding off — it has failed to apply repeatedly (backing off ~24h). A manual /update/apply still forces it.");
+                }
+                else if (chk.UpdateAvailable)
                 {
                     Console.WriteLine($"Auto-update: {chk.Current} -> {chk.Latest} available; applying…");
                     var res = await Deskhand.Core.Services.UpdateService.ApplyAsync();

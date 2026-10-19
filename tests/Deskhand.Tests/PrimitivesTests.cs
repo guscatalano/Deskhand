@@ -1,7 +1,7 @@
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Clipboard round-trip, window-management guards, and OCR error handling. The clipboard is STA/
 /// session-affine so the round-trip is skipped if the host can't open it; OCR's positive path needs a language

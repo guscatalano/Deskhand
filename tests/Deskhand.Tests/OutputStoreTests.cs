@@ -1,7 +1,7 @@
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>The spill buffer that protects against client-side truncation of large tool results: save the whole
 /// thing, page it back deterministically.</summary>

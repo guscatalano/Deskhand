@@ -5,7 +5,7 @@ using Xunit;
 using CoreImageFormat = Deskhand.Core.ImageFormat;
 using SdImageFormat = System.Drawing.Imaging.ImageFormat;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Stress the Set-of-Mark builder: coordinate mapping (with a non-zero capture origin), capping/total,
 /// label + type filters, dedup, off-screen/zero-size exclusion, ranking, a valid annotated image, and the OCR

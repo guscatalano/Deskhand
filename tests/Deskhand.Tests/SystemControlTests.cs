@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Process / service / environment / UAC control. Privileged mutations (machine env, service changes,
 /// UAC registry) aren't performed here — those return clean access errors off-box — but the process lifecycle,

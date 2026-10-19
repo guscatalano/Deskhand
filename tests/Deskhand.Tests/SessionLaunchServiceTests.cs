@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>
 /// Tests for launching into a specific session/desktop/user. Cross-session and cross-user launches need

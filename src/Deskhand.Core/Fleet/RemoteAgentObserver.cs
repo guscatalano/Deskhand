@@ -31,7 +31,6 @@ public sealed class RemoteAgentObserver(IAgentLink link)
     public JsonElement InputStop() => Call(FleetMethods.InputStop, null);
     public JsonElement InputGet(long since) => Call(FleetMethods.InputGet, new { sinceId = since });
 
-    public JsonElement InstallAgent(string? agentPath) => Call(FleetMethods.RdpInstallAgent, new { agentPath });
     public JsonElement RegistryBrowse(string? path) => Call(FleetMethods.RegistryBrowse, new { path });
     public JsonElement DumpProcess(int pid) => Call(FleetMethods.DumpProcess, new { pid });
     public JsonElement DumpList() => Call(FleetMethods.DumpList, null);

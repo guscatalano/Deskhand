@@ -2,7 +2,7 @@ using System.Text.Json;
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Trajectory recording: start → auto steps per action (with screenshots) → stop, written as
 /// meta.json + steps.jsonl + NNN.jpg. Uses a fake capture delegate so it's deterministic.</summary>

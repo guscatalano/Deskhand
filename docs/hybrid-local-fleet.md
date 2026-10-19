@@ -24,7 +24,7 @@ by `GovernedBackend` as today) instead of `LocalAutomationBackend`. One swap cov
 deskhand-http  (session 0, LocalSystem service)          port 8791, flat deskhand_* tools (+ /mcp)
    ├─ direct services (files / registry / shell / events / disk / recycle / inventory)  → run here, locally
    ├─ GovernedBackend( RoutingBackend )  → forwards IAutomationBackend calls to the target session's agent
-   └─ agent-connect endpoint + AgentRegistry (reused from Deskhand.Fleet.Server)
+   └─ agent-connect WebSocket endpoint + AgentRegistry (hosted in deskhand-http; Deskhand.Core.Fleet primitives)
           ▲ ws  (loopback, shared-token auth)
 deskhand-agent  (one per interactive session)            = LocalAutomationBackend + GovernedBackend (exists)
    spawned into each session by the launcher; does the pixels / UIA / input IN its session

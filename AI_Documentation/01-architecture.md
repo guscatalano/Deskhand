@@ -1,5 +1,11 @@
 # 01 — Architecture
 
+> **Historical note:** the standalone multi-PC **fleet server** (`Deskhand.Fleet.Server`) and the
+> protocol-level **RDP** backend (`Deskhand.Rdp`) referenced below were removed; the single-machine
+> **hybrid** model (session-0 host + per-session `deskhand-agent`, routed via `RoutingBackend`) replaced
+> the fleet role. The `Deskhand.Core.Fleet` primitives are kept but now serve only the hybrid. See the
+> top-level `README.md` / `CLAUDE.md`.
+
 ## Solution layout
 
 ```

@@ -1,7 +1,7 @@
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>The auto-dismisser's safety rails: match-all rules are rejected (never "close anything"), config is
 /// opt-in, and a disarmed tick does nothing.</summary>

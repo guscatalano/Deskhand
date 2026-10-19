@@ -1,7 +1,7 @@
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>The complete Win32 enumeration + the report-only appearance watcher (no clicking).</summary>
 public class WindowWatchTests

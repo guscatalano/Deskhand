@@ -1,7 +1,7 @@
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Metrics rendering, webhook registration, and fetch input validation (no network).</summary>
 public class ObservabilityTests

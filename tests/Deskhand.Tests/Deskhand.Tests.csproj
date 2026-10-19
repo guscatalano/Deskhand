@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Deskhand.Rdp\Deskhand.Rdp.csproj" />
+    <ProjectReference Include="..\..\src\Deskhand.Core\Deskhand.Core.csproj" />
   </ItemGroup>
 
 </Project>

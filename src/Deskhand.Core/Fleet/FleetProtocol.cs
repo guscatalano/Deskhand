@@ -83,7 +83,6 @@ public static class FleetMethods
     public const string InputStart = "input_start";
     public const string InputStop = "input_stop";
     public const string InputGet = "input_get";
-    public const string RdpInstallAgent = "rdp_install_agent";
     public const string RegistryBrowse = "registry_browse";
     public const string FirewallRules = "firewall_rules";
     public const string FirewallOpen = "firewall_open";

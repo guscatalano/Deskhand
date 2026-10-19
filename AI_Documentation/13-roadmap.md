@@ -3,6 +3,11 @@
 Deskhand's design (`Deskhand.html`) lays out five delivery phases. Phases 1–3 are substantially built in
 this repo; Phases 4–5 are "kept open" by the `IAutomationBackend` seam and are not implemented.
 
+> **Historical note:** an earlier build added a standalone multi-PC **fleet server** (Phase 4) and a
+> protocol-level **RDP** backend (Phase 5); both were later **removed**. The single-machine **hybrid**
+> model (session-0 host routing desktop ops to a per-session `deskhand-agent`) now fills the fleet role.
+> Any Phase 4 / Phase 5 material below is historical — see `README.md` / `CLAUDE.md`.
+
 ## Phase 1 — Prove the spine · DONE
 
 Default desktop, end to end. HTTP (stdio for MCP) host → the shared `IAutomationBackend` → in-session

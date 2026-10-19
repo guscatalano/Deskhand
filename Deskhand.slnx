@@ -10,17 +10,11 @@
     <Project Path="src/Deskhand.Fleet.Launcher/Deskhand.Fleet.Launcher.csproj">
       <Platform Project="x64" />
     </Project>
-    <Project Path="src/Deskhand.Fleet.Server/Deskhand.Fleet.Server.csproj">
-      <Platform Project="x64" />
-    </Project>
     <Project Path="src/Deskhand.Http/Deskhand.Http.csproj" />
     <Project Path="src/Deskhand.Mcp/Deskhand.Mcp.csproj">
       <Platform Project="x64" />
     </Project>
     <Project Path="src/Deskhand.McpTools/Deskhand.McpTools.csproj">
-      <Platform Project="x64" />
-    </Project>
-    <Project Path="src/Deskhand.Rdp/Deskhand.Rdp.csproj">
       <Platform Project="x64" />
     </Project>
     <Project Path="src/Deskhand.SecureHelper/Deskhand.SecureHelper.csproj">
@@ -31,7 +25,7 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Deskhand.Rdp.Tests/Deskhand.Rdp.Tests.csproj">
+    <Project Path="tests/Deskhand.Tests/Deskhand.Tests.csproj">
       <Platform Project="x64" />
     </Project>
   </Folder>

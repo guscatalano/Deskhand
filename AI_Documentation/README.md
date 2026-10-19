@@ -5,6 +5,13 @@ human developer or an AI coding agent could recreate it from an empty folder wit
 source. Every type name, method name, P/Invoke signature, package version, and file path here matches the
 real code.
 
+> **Historical note:** the standalone **multi-PC fleet server** (`Deskhand.Fleet.Server`, its `:8799`
+> dashboard/MCP, the `deskhand_agent_*` / `/agents/{id}/…` surface) and the **protocol-level RDP** reach
+> (`Deskhand.Rdp` / `deskhand-rdp.exe` / `RdpBackend`) described in several pages below were **removed**.
+> Their role is filled by the single-machine **hybrid** model — a session-0 host that routes desktop ops
+> to a per-session `deskhand-agent` (the `Deskhand.Core.Fleet` primitives now serve only that). Treat any
+> fleet-server / RDP-backend material here as historical; see the top-level `README.md` and `CLAUDE.md`.
+
 ## What Deskhand is
 
 Deskhand is a **single-machine Windows desktop-automation system**. It exposes three capability families —

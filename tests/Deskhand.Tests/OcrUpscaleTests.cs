@@ -4,7 +4,7 @@ using System.Drawing.Text;
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>The Windows OCR engine returns nothing for text below ~14px; OcrService auto-upscales small
 /// captures to cross that floor. This guards that recovery (skips cleanly if no OCR language is installed).</summary>

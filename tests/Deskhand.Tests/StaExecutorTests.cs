@@ -2,7 +2,7 @@ using System.Threading;
 using Deskhand.Core;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Unit tests for the self-healing STA executor: a hung work item must not permanently wedge the
 /// worker — the caller fails fast and the next call runs on a fresh thread.</summary>

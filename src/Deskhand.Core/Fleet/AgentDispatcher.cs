@@ -46,8 +46,6 @@ public static class AgentDispatcher
                 var ir = Req(svc.Input, "input recorder");
                 return new { lastId = ir.LastId, recording = ir.IsRecording, events = ir.Since(a.Long("sinceId", 0)) };
             }
-            case FleetMethods.RdpInstallAgent:
-                return (svc.RdpInstallAgent ?? throw new InvalidOperationException("This agent isn't an RDP connector, so it can't install the native agent over RDP."))(a.Str("agentPath"));
             case FleetMethods.DumpProcess:
                 return Req(svc.Dumper, "process dumper").Dump(a.Int("pid"));
             case FleetMethods.DumpList:

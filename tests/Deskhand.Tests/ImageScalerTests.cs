@@ -3,7 +3,7 @@ using System.Drawing.Imaging;
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Fitting a screenshot to a resolution cap (maxWidth) and an output-size budget (maxBytes),
 /// including the PNG→JPEG switch when bytes alone can't be met by resolution.</summary>

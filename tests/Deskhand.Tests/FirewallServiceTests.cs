@@ -1,7 +1,7 @@
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>
 /// Firewall rule listing + the close-only-what-we-opened safety guard. Adding/removing rules needs Administrator

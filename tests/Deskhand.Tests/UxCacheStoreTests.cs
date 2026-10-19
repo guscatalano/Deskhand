@@ -1,7 +1,7 @@
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>The per-app cache behind deskhand_crawl_ux — save a crawled map, recall it, list, delete.</summary>
 public class UxCacheStoreTests

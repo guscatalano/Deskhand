@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Deskhand is a Windows desktop-automation server for AI agents: it exposes UI Automation, screen capture,
 synthetic input, OCR, on-screen vision, screen recording, and system control over **MCP** (stdio + Streamable-HTTP)
-and a **localhost HTTP API**, plus a multi-PC **fleet** and protocol-level **RDP** reach, behind a kill switch and
-an append-only audit log. .NET 9 + FlaUI (UIA3). Windows-only.
+and a **localhost HTTP API**, behind a kill switch and an append-only audit log. .NET 9 + FlaUI (UIA3).
+Windows-only. A single machine is covered in two scopes: session-agnostic work (files/registry/shell) runs in the
+host; desktop work (UIA/capture/input) runs in a per-session **agent** (the hybrid model — now the default).
 
 ## Build, run, test
 
@@ -16,8 +17,8 @@ dotnet build src/Deskhand.Core/Deskhand.Core.csproj -c Release   # one project (
 dotnet run --project src/Deskhand.Http -c Release   # HTTP + HTTP-MCP host; prints the URL, open it in a browser
 # src/Deskhand.Mcp is the stdio-MCP host (same backend); launched by an MCP client, not run by hand
 
-dotnet test tests/Deskhand.Rdp.Tests -c Release
-dotnet test tests/Deskhand.Rdp.Tests -c Release --filter "FullyQualifiedName~WindowWatch"   # a single test/class
+dotnet test tests/Deskhand.Tests -c Release
+dotnet test tests/Deskhand.Tests -c Release --filter "FullyQualifiedName~WindowWatch"   # a single test/class
 ```
 
 - **Target framework is `net9.0-windows10.0.19041.0`, x64 only.** Everything is Windows-specific (Win32 P/Invoke,
@@ -40,15 +41,15 @@ feature branches). Match that: bump `BuildInfo.Version` in the same commit as th
 ## Architecture — the one seam everything routes through
 
 `IAutomationBackend` (`src/Deskhand.Core/IAutomationBackend.cs`) is the single contract every command flows through.
-Both hosts and the fleet are **thin shells over it, so they expose identical capabilities and share one audit trail.**
-Implementations:
+Both hosts and the per-session hybrid agents are **thin shells over it, so they expose identical capabilities and
+share one audit trail.** Implementations:
 
 - **`LocalAutomationBackend`** — the in-session backend. UIA/COM work is marshalled onto **one STA thread**
   (`StaExecutor` / `_sta.Invoke(...)`), which is non-negotiable for FlaUI.
 - **`GovernedBackend`** — decorator that wraps the local backend: it **audits every call** and **gates input-class
   actions** on `ControlState` (the arm/kill switch). This is what the hosts actually resolve from DI.
-- **`RemoteAgentBackend`** — RPC client to a fleet agent (one method per `FleetMethods.*` constant).
-- **`RdpBackend`** — protocol-level RDP; UIA members throw `No<T>()` (capture/input only).
+- **`RemoteAgentBackend`** — RPC client to a per-session hybrid agent (one method per `FleetMethods.*` constant);
+  `RoutingBackend` (the host's backend in hybrid) uses it to forward desktop ops to the agent in the target session.
 
 ### Adding or changing a capability — the cross-cutting checklist
 
@@ -58,13 +59,12 @@ A new tool is **not** a one-file change. Because the surface fans out through th
 1. `IAutomationBackend.cs` — declare the method.
 2. `LocalAutomationBackend.cs` — implement (via `_sta.Invoke` for UIA).
 3. `Governance/GovernedBackend.cs` — delegate, wrapped in `Audited(...)` (and a gate if it's an input-class action).
-4. `Rdp/RdpBackend.cs` — `No<T>()` (or a real impl) so it still compiles.
-5. `Fleet/RemoteAgentBackend.cs` + `Fleet/FleetProtocol.cs` (add the `FleetMethods` constant) + `Fleet/AgentDispatcher.cs`
-   (the server-side `switch` arm) — the fleet RPC round-trip.
-6. **Both** host surfaces, which must stay in lockstep: `src/Deskhand.McpTools/DeskhandTools.cs` (the MCP tool,
+4. `Fleet/RemoteAgentBackend.cs` + `Fleet/FleetProtocol.cs` (add the `FleetMethods` constant) + `Fleet/AgentDispatcher.cs`
+   (the agent-side `switch` arm) — the hybrid agent RPC round-trip, so the op still works when routed to a per-session agent.
+5. **Both** host surfaces, which must stay in lockstep: `src/Deskhand.McpTools/DeskhandTools.cs` (the MCP tool,
    `[McpServerTool]`) **and** `src/Deskhand.Http/Program.cs` (the HTTP route). Keep MCP tool descriptions and HTTP
    routes mirrored — "both hosts expose identical capabilities" is an invariant, not an aspiration.
-7. The test fakes that implement `IAutomationBackend` (e.g. `tests/.../SetOfMarkTests.cs`'s `FakeBackend`) — the
+6. The test fakes that implement `IAutomationBackend` (e.g. `tests/Deskhand.Tests/SetOfMarkTests.cs`'s `FakeBackend`) — the
    build breaks otherwise.
 
 Many capabilities live **directly** in a `Deskhand.Core/Services/*` service (not on the backend) and are called
@@ -100,8 +100,11 @@ thin/unstable trees (Chromium/Electron). Prefer tree/ref targeting over coordina
 - **Secure desktop** (UAC/lock/logon): `Deskhand.Broker` (elevated launcher) starts `Deskhand.SecureHelper` as
   SYSTEM to *capture* the secure desktop. Driving input there is a hard Windows boundary — see
   `docs/secure-desktop-input.md`. The UAC consent prompt cannot be driven by synthetic input.
-- **Fleet:** `Deskhand.Fleet.Launcher` is a SYSTEM service that spawns a `deskhand-agent.exe` into every active user
-  session (`CreateProcessAsUser` onto `winsta0\default`); `Deskhand.Fleet.Server` routes tools by `agentId`.
+- **Per-session agents (hybrid):** `Deskhand.Fleet.Launcher` (service `DeskhandAgents`) is a SYSTEM service that spawns
+  a `deskhand-agent.exe` into every active user session (`CreateProcessAsUser` onto `winsta0\default`) plus a SYSTEM
+  agent at the logon/secure screen; the session-0 host connects to them over a local WebSocket and routes desktop ops
+  by session. (The former standalone multi-PC *fleet server* and protocol-level *RDP* reach were removed — see git
+  history; the `Deskhand.Core.Fleet` primitives now serve only this single-machine hybrid.)
 
 ## Configuration & governance
 

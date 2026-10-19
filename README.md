@@ -6,19 +6,17 @@
 
 A Windows desktop-automation server that exposes **UI Automation**, **screen capture**, **synthetic
 input**, **OCR**, on-screen **vision**, and **system control** over **MCP** (stdio *and* Streamable-HTTP)
-and a **localhost HTTP API** — with a real-PC **fleet** and protocol-level **RDP** reach, all behind a
-**kill switch** and an append-only **audit log**. Built on **.NET 9 + FlaUI (UIA3)**.
-(See `Deskhand.html` for the full architecture doc.)
+and a **localhost HTTP API**, all behind a **kill switch** and an append-only **audit log**. Built on
+**.NET 9 + FlaUI (UIA3)**. (See `Deskhand.html` for the full architecture doc.)
 
-Both hosts and the fleet are thin shells over one governed backend (`IAutomationBackend`), so they
-expose identical capabilities and record to the same audit trail. The current surface is **~136 local
-MCP tools**, **~81 fleet tools**, and **~161 HTTP routes**.
+Both hosts (HTTP and MCP) are thin shells over one governed backend (`IAutomationBackend`), so they
+expose identical capabilities and record to the same audit trail. The current surface is **~136
+MCP tools** and **~161 HTTP routes**.
 
-All five design phases are in this build: the single-machine **Default desktop** path (in-session UIA +
-capture + input), **secure-desktop capture** (UAC / lock / logon, via a SYSTEM helper), **governance**,
-the **fleet**, and **RDP**. Two things are capture-only / not fully exercised and called out where they
-appear: *driving input* on the secure desktop, and the protocol-level RDP backend's live input path
-(needs a reachable RDP host to validate).
+The build covers the single-machine **Default desktop** path (in-session UIA + capture + input),
+**secure-desktop capture** (UAC / lock / logon, via a SYSTEM helper), and **governance**. One thing is
+capture-only and called out where it appears: *driving input* on the secure desktop — a hard Windows
+boundary (capture works; synthetic input is refused even for a SYSTEM, `uiAccess` process).
 
 > **Secure-desktop input:** Deskhand can *view* the secure desktop, and ships an opt-in, best-effort
 > path to *drive* it. Testing showed the **UAC consent prompt cannot be driven by synthetic input** by
@@ -49,7 +47,7 @@ your own agent at (over MCP or HTTP).
 | **Platform** | Cross-OS (anything it can screenshot) | **Windows-deep** (UIA3 / Win32) — not cross-platform |
 | **Custom / canvas UIs** | Handles them natively (it's all pixels anyway) | OCR + Set-of-Mark + `element_from_point` cover UIA-blind apps (Chromium/Electron, plugins); still weaker than pure vision on fully bespoke canvases |
 | **Governance** | Left to the harness | Built in: **kill switch**, append-only **audit log**, confirmation gates, self-protection, opt-in dangerous surfaces, consent toasts |
-| **Scale / remote** | Usually one sandboxed VM | **Fleet** (many real PCs by `agentId`) + **RDP**, same surface routed by id |
+| **Scope** | Usually one sandboxed VM | One Windows machine; the hybrid model drives **every interactive session at once** (the console session and any RDP sessions into this machine) from one endpoint, routed by session |
 | **Shape** | A full agent loop | A **governed tool surface** — bring your own agent |
 
 **Rule of thumb:** reach for a CUA driver when you need one agent loop that works on *any* OS and app
@@ -79,8 +77,9 @@ src/
 Both hosts — **HTTP** (`Deskhand.Http`) and **MCP** (`Deskhand.Mcp`) — are thin shells over the
 same `IAutomationBackend`, so they expose identical capabilities.
 
-The whole surface routes through `IAutomationBackend`, so a future gRPC **fleet-agent** backend or a
-protocol-level **RDP** backend can implement the same contract without changing the HTTP layer.
+The whole surface routes through `IAutomationBackend`, so the **hybrid per-session agent**
+(`RemoteAgentBackend`, selected by `RoutingBackend`) implements the same contract — desktop ops forward
+to the agent in the target session without changing the HTTP layer.
 
 ## Build & run
 
@@ -120,7 +119,7 @@ in a **`deskhand.json`** config file for a reproducible, file-based install:
 - **Keys** may be friendly (`port`, `maxUploadMb`, `enable-shell`) or full env names (`DESKHAND_PORT`);
   booleans map to `1`/`0`. A missing or empty file is a no-op; a file that is **present but malformed is
   fatal** — Deskhand refuses to start rather than silently ignore settings you meant to apply.
-- Applies to all four hosts (dashboard, MCP stdio, fleet server, fleet agent). A sample is in
+- Applies to every host (the HTTP/dashboard server, the MCP stdio server, and the per-session agent). A sample is in
   [`installer/deskhand.example.json`](installer/deskhand.example.json).
 
 ### Running it in the background (service, sessions, logon)
@@ -243,7 +242,7 @@ games — where the UIA tree is thin or absent. Returns `{ window, uiaCount, tex
 - **`deskhand_secure_attention`** — **Ctrl+Alt+Del**. Plain injection can't forge the Secure Attention Sequence; this uses the `SendSAS` API, which works when Deskhand runs as **LocalSystem** *or* when the `SoftwareSASGeneration` policy allows apps. `deskhand_sas_status` tells you whether it'll work here; `deskhand_configure_sas` sets the policy (needs elevation). It raises the secure desktop — *clicking* its options still needs the SYSTEM secure-desktop path.
 - **`deskhand_lock_workstation`** — Win+L (via `LockWorkStation`).
 
-Keystrokes go to the focused window (pass `reference` to focus first); all require *armed* and are audited. Fleet parity for send/press/secure-attention/lock.
+Keystrokes go to the focused window (pass `reference` to focus first); all require *armed* and are audited.
 
 #### Windows that appear between turns — detect, and optionally auto-handle
 
@@ -309,7 +308,7 @@ require an explicit **`confirm:true`** (otherwise you get `{ confirmationRequire
 so a stray call can't do damage. Deskhand **refuses to kill/suspend its own process** or **stop the service
 hosting it** — absolutely, so automation can't cut its own legs off. OS-critical processes (winlogon, lsass,
 csrss, …) are refused unless you also pass **`force:true`**. Every guard lives in the service layer, so it
-protects the fleet path too.
+protects routed per-session calls too.
 
 #### UAC (`/uac`, `/uac/config`, `/uac/respond`, `deskhand_uac_*`)
 
@@ -350,15 +349,13 @@ best-first, each with a `score` and a **screen-coordinate** box + `centerX,cente
 top-level windows, which is the only structural path through a menu-driven app.)
 Search is coarse-to-fine (a downscaled pass finds candidates, each refined at full resolution) — a full 2880×1920
 screen scans in about a second — and overlapping hits are de-duplicated. NCC tolerates brightness/contrast
-shifts but **not** scaling or rotation of the template. Requires capture enabled. Fleet parity:
-`deskhand_agent_find_image`, `/agents/{id}/vision/find`.
+shifts but **not** scaling or rotation of the template. Requires capture enabled.
 
 #### Drag-and-drop (`/mouse/drag`, `deskhand_drag`)
 
 A real press → move → release gesture in one atomic call: `{fromX, fromY, toX, toY, button?, steps?, holdMs?}`.
 `steps` interpolates the motion for smoothness (default 20); `holdMs` dwells after the press and before the
-release (default 60) for drop targets that need it. Fleet parity: `/agents/{id}/mouse/drag`, `deskhand_agent_drag`
-(native agents; the RDP backend can't press-and-hold, so it returns a clear "not supported").
+release (default 60) for drop targets that need it.
 
 #### OpenAPI / Swagger
 
@@ -385,8 +382,7 @@ Windows' built-in OCR engine (`Windows.Media.Ocr` — no external dependency, no
 apps UI Automation **can't** see: custom-drawn UIs, Chromium/Electron canvases, games, remote-desktop pixels.
 Capture the screen / a region / a window, get back `{ text, words[{text,x,y,width,height}], wordCount, lineCount }`
 — and every word box is in **screen coordinates**, so you can hand it straight to a mouse-move/click. Needs an OCR
-language pack installed (most Windows installs have one). Fleet parity works on RDP agents too (it OCRs the remote
-target's pixels).
+language pack installed (most Windows installs have one).
 
 #### Clipboard & window management
 
@@ -410,8 +406,7 @@ target's pixels).
 
 Opening/closing needs Administrator; without it you get a clear `E_ACCESSDENIED` + "requires Administrator" hint,
 never an opaque failure. The dashboard has a **Firewall** tab — a filterable rules table (Deskhand's own rules are
-tagged and get a one-click **✕ close**) plus an **open-port** form. Fleet parity:
-`GET/POST /agents/{id}/firewall/rules|open|close` and the `deskhand_agent_firewall_*` tools.
+tagged and get a one-click **✕ close**) plus an **open-port** form.
 
 #### Launch into a session / desktop / user (`/process/launch-as`)
 
@@ -448,8 +443,7 @@ client, the browser dashboard included** (`Sec-Fetch-Site` can be forged off-loo
 no free pass), the loopback `Host` check is lifted, and `/mcp` requires the token too. The dashboard
 picks up the token from `?token=` on first load, stashes it in `sessionStorage`, and sends it as a
 bearer header (also via `?token=` on the `/events` stream). `/health` stays open; the static
-`index.html` is served without a token but is inert without one. (The **fleet** server has the same
-switch: `DESKHAND_FLEET_BIND=any` with a mandatory `DESKHAND_FLEET_TOKEN`.)
+`index.html` is served without a token but is inert without one.
 
 ### Optional HTTPS (`DESKHAND_TLS*`)
 
@@ -463,9 +457,8 @@ $env:DESKHAND_TLS_PASSWORD = "pfx-password"   # optional
 ```
 
 With TLS on, the server speaks `https://` (and the banner/URLs switch scheme). A self-signed cert
-triggers a browser trust warning — import it or use a CA-issued `.pfx` for a clean padlock. The
-fleet server mirrors this with `DESKHAND_FLEET_TLS` / `DESKHAND_FLEET_TLS_CERT` /
-`DESKHAND_FLEET_TLS_PASSWORD`. There's still no cert *management* (rotation, ACME) — for that, or to
+triggers a browser trust warning — import it or use a CA-issued `.pfx` for a clean padlock. There's
+still no cert *management* (rotation, ACME) — for that, or to
 terminate TLS centrally, front Deskhand with a reverse proxy (`caddy`, `nginx`) instead.
 - **No stealth** — input is honest `SendInput`; there is no anti-detection behavior.
 - Run **unelevated** to automate normal apps. Elevated / secure-desktop targets are refused with a
@@ -590,7 +583,7 @@ tree and keeps your selection, for when the app under inspection changes.
 
 ## MCP server
 
-`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (~136 tools, plus ~81 fleet tools:
+`Deskhand.Mcp` exposes the same capabilities as **MCP tools** over stdio (~136 tools:
 `deskhand_list_windows`, `deskhand_list_processes`, `deskhand_get_tree`, `deskhand_get_all_properties`,
 `deskhand_element_from_point`, `deskhand_invoke`, `deskhand_capture_window`,
 `deskhand_mouse_click`, `deskhand_wait_for_process`, `deskhand_record_start`,
@@ -623,18 +616,12 @@ returned as real MCP image content, so a model sees them directly.
   on; `deskhand_move_window_to_desktop` moves a window to the current (or a given) desktop. (Documented
   `IVirtualDesktopManager` only — listing/switching/creating desktops needs undocumented per-build COM.)
 
-All four observation capabilities are also **routed over the fleet** — drive any agent's events,
-`wait_for_process`, screen recording (downloadable through the server), and user-input recording by
-`agentId` (`deskhand_agent_*` tools / `/agents/{id}/…` endpoints). Recording a fleet PC's user shows the
-consent banner on *that* PC.
-
 `deskhand_element_from_point(x, y)` returns the deepest UIA element at a screen coordinate
 (virtual-desktop pixels), resolved fresh via UIA `FromPoint` — no tree walk, no stored ref. This
 is the **reliable "find element"** for apps whose UIA tree is thin or whose refs go stale
 (Chromium/Electron): capture the app, pick a pixel on the target, and act on the element you get
-back. The fleet mirror is `deskhand_agent_element_from_point`; the HTTP endpoints are
-`POST /uia/element-from-point` and `POST /agents/{id}/uia/element-from-point`. Both dashboards
-expose it as an **on-click → 🔍 pick element** mode on the screenshot.
+back. The HTTP endpoint is `POST /uia/element-from-point`. The dashboard exposes it as an
+**on-click → 🔍 pick element** mode on the screenshot.
 
 ```powershell
 dotnet build src/Deskhand.Mcp -c Release
@@ -755,103 +742,6 @@ HTTP: `POST /macro/start`, `POST /macro/stop` (returns the macro JSON), `GET /ma
 `POST /macro/expect {…conditions, timeoutMs}` (while recording), `POST /macro/play {speed?, macro?}`.
 MCP: `deskhand_macro_start/stop/status/expect/play`. Dashboard: a **Macro** panel (Screen & Input)
 plus an **Expect (macro)** action on any Explorer element.
-
-## Fleet (Phase 4)
-
-`Deskhand.Fleet.Server` + `Deskhand.Fleet.Agent` extend the single-machine backend to many machines.
-The **agent** dials *outbound* to the server over a WebSocket and serves commands against its local
-desktop (no inbound port on the agent). The **server** keeps a registry of connected agents and
-exposes the **full** automation surface routed to a selected agent — the server-side
-`RemoteAgentBackend` implements the entire `IAutomationBackend`, so every capability (UIA read/act,
-capture, input, launch) works remotely.
-
-```powershell
-$env:DESKHAND_FLEET_TOKEN="s3cret"                  # shared agent+client token (optional)
-$env:DESKHAND_FLEET_BIND="any"                      # accept remote agents (default: loopback)
-dotnet run --project src/Deskhand.Fleet.Server -c Release          # 8799
-# on each target machine:
-$env:DESKHAND_FLEET_TOKEN="s3cret"; $env:DESKHAND_FLEET_URL="ws://server:8799/agent/connect"
-$env:DESKHAND_AGENT_ID="WKS-1"; dotnet run --project src/Deskhand.Fleet.Agent -c Release
-```
-
-Client API (bearer token when configured): `GET /agents`, then the same surface per agent —
-`GET /agents/{id}/machine|foreground|windows`, `POST /agents/{id}/uia/tree|find|wait|invoke|set-value`,
-`/capture/screen|region|window|element`, `/mouse/*`, `/keyboard/*`, `/process/launch`.
-
-The fleet server also serves a **web dashboard** at `http://127.0.0.1:8799` — a live grid of every
-connected PC (screenshot thumbnails, machine/desktop/monitor info); click a PC to open it, watch its
-screen live, and drive it (click-to-click, keyboard). This is where you *see other machines* (the
-single-machine dashboard on `:8791` only shows the local one). The two dashboards cross-link in the
-top bar (**Fleet** ⇄ **This PC**).
-
-**The fleet is exposed over MCP too**, at `http://127.0.0.1:8799/mcp` — fleet-aware tools so a model
-can list your PCs and drive any of them by id: `deskhand_list_agents`, then `deskhand_agent_capture_screen`,
-`deskhand_agent_get_tree`, `deskhand_agent_click`, `deskhand_agent_type`, `deskhand_agent_invoke`,
-`deskhand_agent_launch`, etc. Register it alongside the local one:
-
-```powershell
-claude mcp add --transport http deskhand-fleet http://127.0.0.1:8799/mcp
-```
-
-So a model gets both surfaces: `deskhand_*` for the local PC (`:8791/mcp`) and `deskhand_list_agents`
-+ `deskhand_agent_*` for the whole fleet (`:8799/mcp`).
-
-**Audit & consent.** Every agent connect/disconnect and every routed action — from the dashboard,
-the HTTP API, *or* MCP — is recorded with the caller's address to a **durable append-only JSONL file**
-(`%LOCALAPPDATA%\Deskhand\fleet-audit\fleet-YYYYMMDD.jsonl`), flushed per line so it survives a crash
-and can be read afterward. View it live in the fleet dashboard's **Audit** drawer, or via the
-`deskhand_fleet_audit` MCP tool. And whenever the fleet captures or controls a PC, that machine's
-agent pops an on-screen **toast**, so the person there knows they're being watched.
-
-**Done & tested:** outbound WebSocket transport, agent registry + routing, the full remote backend,
-**shared-token auth** for agents and clients, and AnyIP binding — verified: no-token → 401,
-authenticated agent routing across the whole surface.
-
-**`Deskhand.Fleet.Launcher`** is a Windows Service (LocalSystem) that keeps an agent running in the
-active console session, launched as the logged-in user via `WTSQueryUserToken` + `CreateProcessAsUser`:
-
-```powershell
-sc create DeskhandLauncher binPath= "C:\path\deskhand-launcher.exe" start= auto obj= LocalSystem
-sc start DeskhandLauncher      # configure via machine env: DESKHAND_FLEET_URL / _TOKEN / DESKHAND_AGENT_EXE
-```
-
-The Launcher mechanism is **verified**: run as SYSTEM (e.g. `PsExec64 -s -d deskhand-launcher.exe`
-with `DESKHAND_AGENT_EXE` / `DESKHAND_FLEET_URL` as machine env), it spawned the agent into the
-interactive console session **as the logged-in user** (session 1, non-elevated), which then connected
-to the fleet server and served routed calls.
-
-> **Remaining hardening:** put **TLS** in front (reverse proxy or Kestrel HTTPS) for `wss://`, and
-> optionally mTLS client certs instead of the shared token.
-
-## RDP (Phase 5)
-
-There are two ways Deskhand reaches a **Remote Desktop** machine:
-
-1. **Agent in the RDP session (done, tested).** An RDP session is just another interactive session,
-   so an agent running inside it has the **full** capability — UIA, capture, and input. The Launcher
-   now enumerates **every active session** (`WTSEnumerateSessions`) — console *and* RDP — and spawns a
-   per-session agent (`<machine>-S<sessionId>`), each connecting to the fleet server independently.
-   Verified: run as SYSTEM, it discovered the session and registered `PORTARE-S1`; on a host with RDP
-   sessions you get `…-S2`, `…-S3`, etc., side by side.
-
-2. **Protocol-level, zero-install (`Deskhand.Rdp`, built).** A client that speaks the RDP wire
-   protocol to a host with **nothing installed on the target** — capture + input only, **no UIA**
-   (nothing runs in the session to read the tree). It hosts the **Microsoft RDP ActiveX control**
-   (`mstscax.dll`) headlessly on an STA thread, connects with NLA credentials, captures the remote
-   desktop with `PrintWindow`, and posts mouse/keyboard to the control's render window. `RdpBackend`
-   implements the shared `IAutomationBackend` (capture + input; UIA members throw). CLI:
-
-   ```powershell
-   deskhand-rdp <host> <user> <password> [--domain D] [--size 1280x800] [--capture out.png]
-   ```
-
-   The ActiveX interop (`src/Deskhand.Rdp/lib/*.dll`) is generated once from `C:\Windows\System32\mstscax.dll`:
-   `AxImp.exe mstscax.dll` (NETFX 4.8 Tools). **Verified:** the control hosts, the connect pipeline
-   fires, and capture returns a valid PNG. Input (posted to the render window) and a live connected
-   session need a reachable RDP host to validate — self-RDP to localhost would hijack the console.
-
-Model 1 gives full fidelity (UIA + capture + input) with an agent the Launcher places in each session;
-model 2 gives agentless reach when you can't install anything on the target.
 
 ## Recreation docs
 

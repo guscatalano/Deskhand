@@ -3,7 +3,7 @@ using System.Drawing.Imaging;
 using Deskhand.Core.Services;
 using Xunit;
 
-namespace Deskhand.Rdp.Tests;
+namespace Deskhand.Tests;
 
 /// <summary>Template (image) matching: locate a needle inside a haystack and hand back click-ready coordinates.</summary>
 public class VisionTests
